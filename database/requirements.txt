@@ -1,0 +1,6 @@
+# Python 3.13 on Windows: use versions that ship pre-built wheels (no MSVC Build Tools needed).
+# Older pins (e.g. psycopg2-binary 2.9.9) force a source build and fail with "Visual C++ 14.0 required".
+psycopg2-binary==2.9.11
+asyncpg==0.30.0
+python-dotenv==1.0.1
+faker==24.0.0

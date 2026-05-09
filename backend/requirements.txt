@@ -1,0 +1,18 @@
+# Python 3.13–friendly pins (numpy/sklearn wheels). Do not replace with older tutorial pins here:
+# downgrading FastAPI/pydantic/numpy breaks this repo's Phase 2 routes and ML stack.
+# Password length: handled in `utils/auth.py` (_bcrypt_plaintext) + passlib bcrypt.
+fastapi==0.115.0
+uvicorn==0.30.6
+psycopg2-binary==2.9.11
+python-dotenv==1.0.1
+scikit-learn==1.6.1
+numpy==2.2.2
+pandas==2.2.3
+openai==1.51.0
+pydantic==2.9.2
+python-multipart==0.0.12
+python-jose[cryptography]==3.3.0
+# passlib 1.7.4 breaks against bcrypt>=4.1 (__about__ removed; init hits bogus 72-byte error). Pin bcrypt 4.0.x.
+bcrypt==4.0.1
+passlib[bcrypt]==1.7.4
+email-validator==2.2.0

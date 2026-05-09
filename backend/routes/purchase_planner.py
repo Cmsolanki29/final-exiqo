@@ -1,0 +1,441 @@
+"""Big purchase planner — goals, EMI vs cash, sacrifice plan, Groq-backed English advice."""
+
+from __future__ import annotations
+
+import json
+from calendar import monthrange
+from datetime import date, datetime
+from typing import Any, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from db import get_db
+from services.ai_service import call_groq
+
+router = APIRouter(prefix="/purchases", tags=["Purchase Planner"])
+
+
+def _months_between(a: date, b: date) -> int:
+    if b <= a:
+        return 1
+    m = (b.year - a.year) * 12 + b.month - a.month
+    if b.day < a.day:
+        m -= 1
+    return max(1, m)
+
+
+def _add_months(d: date, months: int) -> date:
+    m0 = d.month - 1 + months
+    y = d.year + m0 // 12
+    mo = m0 % 12 + 1
+    last = monthrange(y, mo)[1]
+    return date(y, mo, min(d.day, last))
+
+
+def _best_buy_info(category: str, target_date: date) -> dict[str, Any]:
+    c = (category or "OTHER").upper()
+    if c == "APPLIANCE" and target_date.month in (4, 5, 6):
+        return {
+            "month": "March",
+            "reason": "Pre-summer window — AC/fridge deals before peak demand",
+            "discount_inr": 4000,
+        }
+    if c == "APPLIANCE":
+        return {
+            "month": "October 2026",
+            "reason": "Diwali / festive sale — strong appliance discounts",
+            "discount_inr": 5000,
+        }
+    if c == "VEHICLE":
+        return {
+            "month": "October 2026",
+            "reason": "Navratri/Dussehra — two-wheeler promos common",
+            "discount_inr": 5000,
+        }
+    if c == "ELECTRONICS":
+        return {
+            "month": "October–November 2026",
+            "reason": "Diwali + Amazon Great Indian Festival / Flipkart Big Billion Days",
+            "discount_inr": 15000,
+        }
+    return {
+        "month": "January 2027",
+        "reason": "New-year clearance on many categories",
+        "discount_inr": 3000,
+    }
+
+
+def _emi_cash_payload(amount: float) -> dict[str, Any]:
+    emi12_total = round(amount * 1.12, 2)
+    emi24_total = round(amount * 1.18, 2)
+    int12 = round(emi12_total - amount, 2)
+    int24 = round(emi24_total - amount, 2)
+    return {
+        "cash": {
+            "total": round(amount, 2),
+            "monthly": None,
+            "interest": 0,
+            "verdict": f"BEST — avoid ~₹{int12:,.0f}+ interest vs typical 12m EMI",
+        },
+        "emi_12": {
+            "total": emi12_total,
+            "monthly": round(emi12_total / 12.0, 2),
+            "interest": int12,
+            "verdict": f"Costs about ₹{int12:,.0f} extra vs cash",
+        },
+        "emi_24": {
+            "total": emi24_total,
+            "monthly": round(emi24_total / 24.0, 2),
+            "interest": int24,
+            "verdict": f"Costs about ₹{int24:,.0f} extra vs cash",
+        },
+    }
+
+
+def _top_category_spends(conn, user_id: int) -> list[tuple[str, float]]:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT COALESCE(NULLIF(TRIM(category), ''), 'Other') AS c,
+               SUM(amount)::float AS s
+        FROM transactions
+        WHERE user_id = %s AND type = 'DEBIT'
+          AND transaction_date >= CURRENT_DATE - INTERVAL '90 days'
+        GROUP BY 1
+        ORDER BY s DESC
+        LIMIT 6;
+        """,
+        (user_id,),
+    )
+    rows = [(r[0], float(r[1] or 0)) for r in cur.fetchall()]
+    cur.close()
+    return rows
+
+
+def _build_sacrifice_plan(
+    conn, user_id: int, monthly_gap: float, monthly_target: float
+) -> list[dict[str, Any]]:
+    if monthly_gap <= 0:
+        return []
+    cats = _top_category_spends(conn, user_id)
+    if not cats:
+        return []
+    total = sum(s for _, s in cats) or 1.0
+    plan: list[dict[str, Any]] = []
+    remaining_gap = monthly_gap
+    for cat, spend in cats:
+        if remaining_gap <= 0:
+            break
+        share = spend / total
+        suggested = min(spend * 0.35, remaining_gap * 0.55, spend * 0.9)
+        suggested = round(suggested, 2)
+        if suggested < 300:
+            continue
+        new_budget = max(0.0, round(spend - suggested, 2))
+        months_earlier = (suggested / monthly_target) if monthly_target > 0 else 0
+        impact = f"~{months_earlier:.1f} months faster toward goal" if months_earlier >= 0.1 else "Helps close monthly gap"
+        plan.append(
+            {
+                "category": cat,
+                "current_spend": round(spend, 2),
+                "suggested_cut": suggested,
+                "new_budget": new_budget,
+                "impact": impact,
+            }
+        )
+        remaining_gap -= suggested * 0.5
+    return plan[:5]
+
+
+def _avg_monthly_saved(conn, user_id: int) -> float:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT COALESCE(AVG(total_saved), 0)::float
+        FROM (
+          SELECT total_saved FROM monthly_summary
+          WHERE user_id = %s
+          ORDER BY year DESC, month DESC
+          LIMIT 6
+        ) t;
+        """,
+        (user_id,),
+    )
+    v = float(cur.fetchone()[0] or 0)
+    cur.close()
+    return v
+
+
+def generate_purchase_advice(
+    user_name: str,
+    item_name: str,
+    target_amount: float,
+    months_remaining: int,
+    monthly_target: float,
+    current_savings_rate: float,
+    best_buy_label: str,
+) -> str:
+    system = """You are SmartSpend financial advisor.
+Give personalized advice about a purchase goal in clear, professional English.
+Be specific with rupee amounts. Tone: supportive financial advisor.
+Plain text only, max 4 sentences — no JSON, no bullet labels."""
+
+    prompt = (
+        f"User: {user_name}\nWants: {item_name}\nCost: ₹{target_amount:,.0f}\n"
+        f"Months to save: {months_remaining}\nNeed per month: ₹{monthly_target:,.0f}\n"
+        f"Currently saving (avg/month): ₹{current_savings_rate:,.0f}\n"
+        f"Best time to buy: {best_buy_label}\n"
+        "Answer: (1) Is this realistic? one honest line. (2) One specific tip to save faster. "
+        "(3) EMI vs cash — one line. (4) Short encouragement."
+    )
+    out = call_groq(system, prompt, max_tokens=380, temperature=0.55)
+    text = out.strip() if isinstance(out, str) else ""
+    if text:
+        return text
+    return (
+        f"{user_name}, buying {item_name} for about ₹{target_amount:,.0f} in {months_remaining} months means saving "
+        f"₹{monthly_target:,.0f} per month consistently. You currently average ₹{current_savings_rate:,.0f}/month saved—"
+        f"close the gap by trimming discretionary spend. Prefer paying cash around {best_buy_label} to avoid EMI interest. "
+        f"Steady discipline still makes this goal achievable."
+    )
+
+
+def _milestones(target_date: date, target_amount: float, monthly: float) -> list[dict[str, Any]]:
+    labels = ["Month 1", "40% done!", "Halfway there!", "Almost there!", "BUY target"]
+    out = []
+    start = date.today()
+    for i in range(1, 6):
+        amt = min(target_amount, round(monthly * i, 2))
+        dt = _add_months(start, i)
+        if dt > target_date:
+            dt = target_date
+        out.append(
+            {
+                "month": dt.strftime("%B %Y"),
+                "amount": amt,
+                "label": labels[i - 1],
+            }
+        )
+    return out
+
+
+def _enrich_goal(conn, user_id: int, row: tuple) -> dict[str, Any]:
+    (
+        gid,
+        item_name,
+        target_amount,
+        saved_amount,
+        target_date,
+        monthly_target_db,
+        category,
+        priority,
+        status,
+        best_buy_month,
+        emi_json,
+        _sac_json,
+    ) = row
+    today = date.today()
+    td = target_date if isinstance(target_date, date) else datetime.strptime(str(target_date), "%Y-%m-%d").date()
+    months_rem = _months_between(today, td)
+    target_amount_f = float(target_amount or 0)
+    saved_f = float(saved_amount or 0)
+    monthly_target = target_amount_f / months_rem if months_rem else target_amount_f
+    avg_saved = _avg_monthly_saved(conn, user_id)
+    gap = max(0.0, monthly_target - avg_saved)
+    binfo = _best_buy_info(category, td)
+    effective = max(0.0, target_amount_f - binfo["discount_inr"])
+    best_buy = {
+        "month": binfo["month"],
+        "reason": binfo["reason"],
+        "effective_cost": round(effective, 2),
+    }
+    emi_vs = _emi_cash_payload(target_amount_f)
+    if isinstance(emi_json, str) and emi_json:
+        try:
+            parsed = json.loads(emi_json)
+            if isinstance(parsed, dict) and parsed.get("cash"):
+                emi_vs = parsed
+        except json.JSONDecodeError:
+            pass
+    sacrifice = _build_sacrifice_plan(conn, user_id, gap, monthly_target)
+
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM users WHERE id = %s;", (user_id,))
+    uname = (cur.fetchone() or ["User"])[0]
+    cur.close()
+
+    advice = generate_purchase_advice(
+        str(uname).strip(),
+        str(item_name),
+        target_amount_f,
+        months_rem,
+        monthly_target,
+        avg_saved,
+        best_buy_month or best_buy["month"],
+    )
+
+    progress_pct = round(100.0 * saved_f / target_amount_f, 1) if target_amount_f > 0 else 0.0
+
+    return {
+        "goal_id": gid,
+        "item_name": item_name,
+        "target_amount": target_amount_f,
+        "target_date": td.isoformat(),
+        "months_remaining": months_rem,
+        "monthly_target": round(monthly_target, 2),
+        "current_savings_rate": round(avg_saved, 2),
+        "gap_per_month": round(gap, 2),
+        "on_track": gap <= max(500, monthly_target * 0.15),
+        "best_buy_month": best_buy,
+        "emi_vs_cash": emi_vs,
+        "sacrifice_plan": sacrifice,
+        "ai_advice": advice,
+        "progress_pct": progress_pct,
+        "milestones": _milestones(td, target_amount_f, monthly_target),
+        "category": category,
+        "priority": priority,
+        "status": status,
+        "saved_amount": saved_f,
+    }
+
+
+@router.get("/{user_id}")
+def list_goals(user_id: int, conn=Depends(get_db)):
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM users WHERE id = %s;", (user_id,))
+    if not cur.fetchone():
+        cur.close()
+        raise HTTPException(404, "User not found")
+    cur.execute(
+        """
+        SELECT id, item_name, target_amount, saved_amount, target_date, monthly_target,
+               category, priority, status, best_buy_month, emi_vs_cash, sacrifice_plan
+        FROM purchase_goals
+        WHERE user_id = %s AND status <> 'CANCELLED'
+        ORDER BY
+          CASE priority WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END,
+          target_date;
+        """,
+        (user_id,),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    goals = [_enrich_goal(conn, user_id, r) for r in rows]
+    total_monthly = sum(g["monthly_target"] for g in goals)
+    avg_saved = _avg_monthly_saved(conn, user_id)
+    return {
+        "goals": goals,
+        "total_monthly_saving_needed": round(total_monthly, 2),
+        "current_savings_rate_monthly": round(avg_saved, 2),
+        "gap_monthly": round(max(0.0, total_monthly - avg_saved), 2),
+    }
+
+
+class AddGoalBody(BaseModel):
+    item_name: str = Field(..., min_length=1)
+    target_amount: float = Field(..., gt=0)
+    target_date: str
+    category: str = Field(default="OTHER", max_length=50)
+    priority: str = Field(default="MEDIUM")
+
+
+@router.post("/{user_id}/add-goal")
+def add_goal(user_id: int, body: AddGoalBody, conn=Depends(get_db)):
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM users WHERE id = %s;", (user_id,))
+    if not cur.fetchone():
+        cur.close()
+        raise HTTPException(404, "User not found")
+    try:
+        td = datetime.strptime(body.target_date[:10], "%Y-%m-%d").date()
+    except ValueError:
+        cur.close()
+        raise HTTPException(400, "target_date must be YYYY-MM-DD")
+
+    today = date.today()
+    months_rem = _months_between(today, td)
+    monthly_target = float(body.target_amount) / months_rem
+    binfo = _best_buy_info(body.category, td)
+    best_buy_str = f"{binfo['month']} — {binfo['reason']}"
+    emi_vs = json.dumps(_emi_cash_payload(float(body.target_amount)))
+    sacrifice = json.dumps(_build_sacrifice_plan(conn, user_id, max(0, monthly_target - _avg_monthly_saved(conn, user_id)), monthly_target))
+
+    cur.execute(
+        """
+        INSERT INTO purchase_goals (
+          user_id, item_name, target_amount, saved_amount, target_date, monthly_target,
+          category, priority, status, best_buy_month, emi_vs_cash, sacrifice_plan
+        ) VALUES (%s, %s, %s, 0, %s, %s, %s, %s, 'SAVING', %s, %s::jsonb, %s::jsonb)
+        RETURNING id, item_name, target_amount, saved_amount, target_date, monthly_target,
+                  category, priority, status, best_buy_month, emi_vs_cash, sacrifice_plan;
+        """,
+        (
+            user_id,
+            body.item_name.strip(),
+            float(body.target_amount),
+            td,
+            round(monthly_target, 2),
+            body.category.upper()[:50],
+            body.priority.upper()[:10],
+            best_buy_str[:200],
+            emi_vs,
+            sacrifice,
+        ),
+    )
+    row = cur.fetchone()
+    cur.close()
+    return _enrich_goal(conn, user_id, row)
+
+
+class UpdateSavingsBody(BaseModel):
+    amount_saved: float = Field(..., ge=0)
+
+
+@router.put("/{user_id}/{goal_id}/update-savings")
+def update_savings(user_id: int, goal_id: int, body: UpdateSavingsBody, conn=Depends(get_db)):
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, item_name, target_amount, saved_amount, target_date, monthly_target,
+               category, priority, status, best_buy_month, emi_vs_cash, sacrifice_plan
+        FROM purchase_goals
+        WHERE id = %s AND user_id = %s AND status <> 'CANCELLED';
+        """,
+        (goal_id, user_id),
+    )
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        raise HTTPException(404, "Goal not found")
+    new_saved = float(row[3] or 0) + float(body.amount_saved)
+    st = "COMPLETED" if new_saved >= float(row[2] or 0) else row[8]
+    cur.execute(
+        "UPDATE purchase_goals SET saved_amount = %s, status = %s WHERE id = %s;",
+        (new_saved, st, goal_id),
+    )
+    cur.execute(
+        """
+        SELECT id, item_name, target_amount, saved_amount, target_date, monthly_target,
+               category, priority, status, best_buy_month, emi_vs_cash, sacrifice_plan
+        FROM purchase_goals WHERE id = %s;
+        """,
+        (goal_id,),
+    )
+    row2 = cur.fetchone()
+    cur.close()
+    return _enrich_goal(conn, user_id, row2)
+
+
+@router.delete("/{user_id}/{goal_id}")
+def cancel_goal(user_id: int, goal_id: int, conn=Depends(get_db)):
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE purchase_goals SET status = 'CANCELLED' WHERE id = %s AND user_id = %s RETURNING id;",
+        (goal_id, user_id),
+    )
+    if not cur.fetchone():
+        cur.close()
+        raise HTTPException(404, "Goal not found")
+    cur.close()
+    return {"success": True, "status": "CANCELLED"}

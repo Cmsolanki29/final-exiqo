@@ -1,0 +1,265 @@
+"""Transaction listing, summary, and CSV upload."""
+
+from __future__ import annotations
+
+import io
+from datetime import date, datetime
+from typing import Optional
+
+import pandas as pd
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+
+from db import get_db
+from models.schemas import TransactionResponse
+from services.ml_model import ml_detector
+from services.categorizer import categorize_merchant
+
+router = APIRouter(prefix="/transactions", tags=["transactions"])
+
+# Register static sub-paths before `/{user_id}` so they are not captured as user ids.
+
+
+def _row_to_tx(row) -> TransactionResponse:
+    return TransactionResponse(
+        id=row[0],
+        user_id=row[1],
+        transaction_date=row[2],
+        transaction_time=row[3],
+        amount=float(row[4]),
+        type=row[5],
+        description=row[6],
+        merchant=row[7],
+        category=row[8],
+        payment_method=row[9],
+        anomaly_flag=bool(row[10]),
+        risk_score=int(row[11] or 0),
+        risk_level=row[12] or "LOW",
+        anomaly_reason=row[13],
+    )
+
+
+@router.get("/{user_id}/summary")
+def transaction_month_summary(user_id: int, conn=Depends(get_db)):
+    today = date.today()
+    m, y = today.month, today.year
+    cur = None
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT
+                COALESCE(SUM(CASE WHEN type = 'CREDIT' THEN amount ELSE 0 END), 0)::float,
+                COALESCE(SUM(CASE WHEN type = 'DEBIT' THEN amount ELSE 0 END), 0)::float,
+                COUNT(*)
+            FROM transactions
+            WHERE user_id = %s
+              AND EXTRACT(MONTH FROM transaction_date)::int = %s
+              AND EXTRACT(YEAR FROM transaction_date)::int = %s;
+            """,
+            (user_id, m, y),
+        )
+        inc, exp, cnt = cur.fetchone()
+        saved = float(inc or 0) - float(exp or 0)
+        return {
+            "user_id": user_id,
+            "year": y,
+            "month": m,
+            "total_income": float(inc or 0),
+            "total_expense": float(exp or 0),
+            "saved": round(saved, 2),
+            "transaction_count": int(cnt or 0),
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Database error: {e}") from e
+    finally:
+        if cur is not None:
+            cur.close()
+
+
+@router.get("/{user_id}", response_model=list[TransactionResponse])
+def list_transactions(
+    user_id: int,
+    month: Optional[int] = Query(None, ge=1, le=12),
+    year: Optional[int] = Query(None, ge=2000, le=2100),
+    category: Optional[str] = Query(None),
+    anomaly_only: Optional[bool] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    conn=Depends(get_db),
+):
+    cur = None
+    try:
+        cur = conn.cursor()
+        q = """
+            SELECT id, user_id, transaction_date, transaction_time, amount, type, description,
+                   merchant, category, payment_method, anomaly_flag, risk_score, risk_level, anomaly_reason
+            FROM transactions WHERE user_id = %s
+        """
+        params: list = [user_id]
+        if month is not None and year is not None:
+            q += " AND EXTRACT(MONTH FROM transaction_date)::int = %s AND EXTRACT(YEAR FROM transaction_date)::int = %s"
+            params.extend([month, year])
+        elif month is not None or year is not None:
+            raise HTTPException(400, "Provide both month and year, or neither.")
+        if category:
+            q += " AND category = %s"
+            params.append(category)
+        if anomaly_only:
+            q += " AND anomaly_flag = TRUE"
+        q += " ORDER BY transaction_date DESC, transaction_time DESC LIMIT %s"
+        params.append(limit)
+        cur.execute(q, params)
+        rows = cur.fetchall()
+        return [_row_to_tx(r) for r in rows]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Database error: {e}") from e
+    finally:
+        if cur is not None:
+            cur.close()
+
+
+def _parse_dt(val) -> tuple[date, datetime]:
+    if pd.isna(val):
+        raise ValueError("empty date")
+    if isinstance(val, datetime):
+        dt = val
+    elif isinstance(val, date):
+        dt = datetime.combine(val, datetime.min.time())
+    else:
+        s = str(val).strip()
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"):
+            try:
+                dt = datetime.strptime(s[:10], fmt)
+                break
+            except ValueError:
+                continue
+        else:
+            dt = pd.to_datetime(s).to_pydatetime()
+    d = dt.date()
+    t = dt.time().replace(second=0, microsecond=0)
+    return d, datetime.combine(d, t)
+
+
+def _parse_time(val, fallback: datetime) -> datetime:
+    if pd.isna(val) or val == "" or val is None:
+        return fallback
+    if isinstance(val, datetime):
+        return val
+    s = str(val).strip()
+    for fmt in ("%H:%M:%S", "%H:%M"):
+        try:
+            tt = datetime.strptime(s[:8] if len(s) >= 8 else s, fmt).time()
+            return datetime.combine(fallback.date(), tt.replace(second=0, microsecond=0))
+        except ValueError:
+            continue
+    return fallback
+
+
+@router.post("/{user_id}/upload")
+async def upload_csv(user_id: int, file: UploadFile = File(...), conn=Depends(get_db)):
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(400, "Please upload a .csv file")
+    raw = await file.read()
+    try:
+        df = pd.read_csv(io.BytesIO(raw))
+    except Exception as e:
+        raise HTTPException(400, f"Invalid CSV: {e}") from e
+
+    colmap = {c.lower().strip(): c for c in df.columns}
+
+    def pick(*names):
+        for n in names:
+            if n in colmap:
+                return colmap[n]
+        return None
+
+    c_date = pick("transaction_date", "date", "txn_date")
+    c_time = pick("transaction_time", "time")
+    c_amt = pick("amount", "debit", "credit")
+    c_type = pick("type", "dr_cr", "txn_type")
+    c_merch = pick("merchant", "payee", "description")
+    c_desc = pick("description", "narration", "remarks")
+    c_cat = pick("category")
+    if not c_date or not c_amt:
+        raise HTTPException(
+            400,
+            "CSV must include at least transaction_date (or date) and amount columns.",
+        )
+
+    inserted = 0
+    cur = None
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM users WHERE id = %s;", (user_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "User not found")
+
+        for _, row in df.iterrows():
+            try:
+                d, fallback_dt = _parse_dt(row[c_date])
+                dt = _parse_time(row[c_time], fallback_dt) if c_time else fallback_dt
+                amt = float(row[c_amt])
+                txn_type = str(row[c_type]).upper().strip() if c_type and not pd.isna(row[c_type]) else "DEBIT"
+                if txn_type not in ("DEBIT", "CREDIT"):
+                    txn_type = "DEBIT"
+                merchant = str(row[c_merch]).strip() if c_merch and not pd.isna(row[c_merch]) else ""
+                desc = str(row[c_desc]).strip() if c_desc and not pd.isna(row[c_desc]) else None
+                cat = (
+                    str(row[c_cat]).strip()
+                    if c_cat and not pd.isna(row[c_cat])
+                    else categorize_merchant(merchant)
+                )
+                hod = dt.hour
+                dow = dt.weekday()
+                wknd = dow >= 5
+                night = hod >= 23 or hod <= 5
+                cur.execute(
+                    """
+                    INSERT INTO transactions (
+                        user_id, transaction_date, transaction_time, amount, type, description,
+                        merchant, category, subcategory, payment_method, location,
+                        anomaly_flag, risk_score, risk_level, anomaly_reason, ml_processed,
+                        hour_of_day, day_of_week, is_weekend, is_night_txn
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        FALSE, 0, 'LOW', NULL, FALSE,
+                        %s, %s, %s, %s
+                    );
+                    """,
+                    (
+                        user_id,
+                        d,
+                        dt.time(),
+                        amt,
+                        txn_type,
+                        desc,
+                        merchant or None,
+                        cat,
+                        "Imported",
+                        "UPI",
+                        None,
+                        hod,
+                        dow,
+                        wknd,
+                        night,
+                    ),
+                )
+                inserted += 1
+            except Exception:
+                continue
+        ml_detector.train(user_id)
+        det = ml_detector.detect_and_update(user_id, process_all=False)
+        return {
+            "inserted": inserted,
+            "anomalies_found": det.get("anomalies_found", 0),
+            "high_risk": det.get("high_risk", 0),
+            "processed": det.get("processed", 0),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Upload failed: {e}") from e
+    finally:
+        if cur is not None:
+            cur.close()
