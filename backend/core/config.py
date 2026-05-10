@@ -196,6 +196,41 @@ class Settings(BaseSettings):
     # fastest on tiny positive sets.
     PHASE_11_MIN_POSITIVES_FOR_TRAINING: int = 20
 
+    # ------------------------------------------------------------------ #
+    # Phase 12 — Multi-Model Orchestrator (LLM-as-Judge)
+    # ------------------------------------------------------------------ #
+    # Master switch.  When False the orchestrator is a transparent
+    # passthrough (it still records the routed-tier label for analytics
+    # but performs no escalation, no LLM judge, and never overrides the
+    # baseline DecisionEngine action).
+    PHASE_12_ORCHESTRATOR_ENABLED: bool = False
+    # Sub-switches — each is independently rollable.
+    PHASE_12_AUTO_INVESTIGATE: bool = True       # auto-trigger Phase 9 LLM agent
+    PHASE_12_JUDGE_ENABLED: bool = True          # LLM-as-Judge cross-check
+    # Score thresholds for tier routing.  Inclusive on the lower bound.
+    PHASE_12_TIER0_MAX: int = 30                 # < 30  → Tier 0 (rules-only)
+    PHASE_12_TIER1_MAX: int = 60                 # < 60  → Tier 1 (XGBoost)
+    PHASE_12_TIER2_MAX: int = 75                 # < 75  → Tier 2 (+ GNN)
+    PHASE_12_TIER3_MAX: int = 85                 # < 85  → Tier 3 (+ DNN)
+    # When auto-investigate fires, this is the synchronous variant the
+    # /decide endpoint uses (different from the async fire-and-forget
+    # path in alert_consumer).  Default off — synchronous LLM in the
+    # decision path is opt-in to keep p99 latency bounded.
+    PHASE_12_SYNC_INVESTIGATION: bool = False
+    # LLM-as-Judge configuration — reuses the Phase 9 budget guard.
+    PHASE_12_JUDGE_MODEL: str = "llama-3.3-70b-versatile"
+    PHASE_12_JUDGE_TEMPERATURE: float = 0.1
+    PHASE_12_JUDGE_MAX_TOKENS: int = 800
+    # When |dnn_shadow_score - prod_score| >= this delta, the orchestrator
+    # treats the decision as "model disagreement" and routes to the judge
+    # even when the absolute score wouldn't normally qualify.
+    PHASE_12_DNN_DISAGREE_DELTA: float = 25.0
+    # If the judge requests an override (downgrade allow→review or
+    # upgrade allow→challenge), the orchestrator only honours it when
+    # the judge confidence is at least this value.  Below it, the
+    # judge's opinion is logged but ignored.
+    PHASE_12_JUDGE_MIN_CONFIDENCE: float = 0.70
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

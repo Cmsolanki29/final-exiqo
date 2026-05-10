@@ -336,6 +336,94 @@ PHASE_9_TO_12_LOG.md              (this entry)
   append-only and PII-free.
 
 ## Phase 12 — Multi-Model Orchestrator (LLM-as-Judge)
-**Status:** queued.
-Single decision-maker that routes between rules / hybrid / GNN / DNN /
-LLM agent paths and uses an LLM as a judge for borderline cases.
+
+**Status:** ✅ Implemented (this milestone — final 2026 parity phase)
+**Closes gap to:** PhonePe, advanced Tier-1 banks (model-routing +
+LLM-as-judge patterns).
+
+### What it does
+Wraps the existing `HybridScorer` + `DecisionEngine` and adds three
+things on top:
+
+1. **Tier labelling** (always on, even when master switch is OFF).  Pure
+   logic — no I/O — declares which models contributed to the decision:
+   `tier_0_rules` → `tier_4_llm_agent`.  Powers the UI badge and
+   tier-distribution analytics.
+2. **Selective sync Phase-9 investigation.**  When score reaches Tier 4
+   *and* both `PHASE_12_AUTO_INVESTIGATE` and
+   `PHASE_12_SYNC_INVESTIGATION` are on, the orchestrator synchronously
+   calls the Phase 9 investigator and may escalate the action to
+   `block` if the investigation returns `fraud_confirmed` with
+   confidence ≥ 0.7.
+3. **LLM-as-Judge.**  A separate, single-shot LLM call that
+   cross-checks the baseline decision.  Receives PII-redacted txn +
+   baseline action + signals (+ optional Phase 9 narrative) and
+   returns structured JSON: `{agree, confidence, concerns,
+   suggested_action, narrative}`.
+
+### Safety properties (CTO discipline)
+* **Pass-through when disabled.**  `PHASE_12_ORCHESTRATOR_ENABLED=false`
+  → final action == baseline action.  No LLM, no overrides; only the
+  tier label is recorded for analytics.
+* **Judge can only escalate.**  Action ladder is `allow < review <
+  challenge < block`.  Any judge suggestion below the baseline rank is
+  logged but ignored.  No LLM hallucination can ever turn a baseline
+  `block` into `allow`.
+* **Confidence gate.**  Judge overrides only fire when confidence ≥
+  `PHASE_12_JUDGE_MIN_CONFIDENCE` (default 0.70).  Timid judges are
+  recorded but not honoured.
+* **Shared budget guard.**  Reuses the Phase 9 daily cap; once breached
+  the judge returns `error="budget_exceeded"` and the orchestrator
+  silently keeps the baseline action — fail-closed.
+* **Read-only on shutdown.**  Persistence is best-effort; a write
+  failure to `orchestration_decisions` never breaks the orchestration
+  path.
+
+### Files added
+```
+backend/database/migrations/012_phase12_orchestrator.sql
+backend/services/phase_12_orchestrator/__init__.py
+backend/services/phase_12_orchestrator/routing_policy.py   # pure logic
+backend/services/phase_12_orchestrator/llm_judge.py
+backend/services/phase_12_orchestrator/orchestrator.py
+backend/routes/orchestrator.py
+backend/models/cards/orchestrator_v1.md
+backend/tests/test_phase12_orchestrator.py
+```
+
+### Files modified
+```
+backend/core/config.py            (Phase 12 settings block)
+backend/main.py                   (register /api/risk/orchestrator router)
+.env                              (Phase 12 flags)
+PHASE_9_TO_12_LOG.md              (this entry)
+```
+
+### API surface — `/api/risk/orchestrator/*`
+| Method | Path | Purpose | Auth |
+| --- | --- | --- | --- |
+| GET  | `/health`                       | Feature flags + thresholds | open |
+| GET  | `/route/preview`                | Pure-logic tier preview (no DB, no LLM) | admin |
+| GET  | `/tiers/distribution`           | Tier histogram for last N days | admin |
+| GET  | `/decisions/{transaction_id}`   | Most recent orchestration row | admin |
+| POST | `/decide`                       | Fully orchestrated decision | admin |
+| POST | `/judge/replay`                 | Re-judge a stored decision | admin |
+
+### Rollback
+* Soft (instant): `PHASE_12_ORCHESTRATOR_ENABLED=false`.
+* Hard: `git revert <phase-12 commit>`.  `orchestration_decisions` is
+  append-only and PII-free; leaving it is safe.
+
+---
+
+## Final 2026 parity status
+| Phase | Status | Industry comparable |
+| --- | --- | --- |
+| 9  | ✅ shipped | IBM Safer Payments, FIS+Anthropic, CommBank |
+| 10 | ✅ shipped | NVIDIA Blueprint, PayPal graph fraud |
+| 11 | ✅ shipped | Stripe Radar 2022+ |
+| 12 | ✅ shipped | PhonePe, Tier-1 banks |
+
+All four phases are off by default and rollable independently.  The
+existing 8-phase pipeline is unchanged when every Phase-9-12 flag is
+left at its default.
