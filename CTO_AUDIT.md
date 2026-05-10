@@ -163,18 +163,52 @@ asserts the guard fires *before* `build_graph` is called.
 ## Issue #6 — Redis single-instance HA gap
 
 **Severity:** 🟡 medium (production HA story)
-**Status:** DEFERRED
+**Status:** DEFERRED — documented; no code change in this branch.
 
-Risk: if Redis is down in production, the system degrades but does not
-crash.  All Redis access in the Phase 9-12 code paths is wrapped in
-`try/except` with a Postgres fallback (see `phase_10_gnn.inference`,
-`risk_common.budget_guard`).  No Redis-only critical path exists.
+### Risk surface today
 
-Production fix (next sprint, separate PR): deploy 3-node Redis Sentinel
-and update `core/redis.py` to use the Sentinel client.
+Single-node Redis is a SPOF.  If it goes down in production the
+system *degrades* (does not crash) thanks to existing fallbacks:
 
-This is a known limitation, not a bug.  Phase 9-12 work correctly even
-with Redis unavailable.
+| Subsystem | Redis role | Fallback when Redis down |
+| --- | --- | --- |
+| Phase 1 event bus (`services/event_bus`) | pub/sub | falls back to DB-only events; slow but correct |
+| Phase 2 online feature store (`services/feature_store/online_store.py`) | hot cache | falls back to direct DB lookup; ~10x slower |
+| Phase 9 daily LLM budget guard (`services/risk_common/budget_guard.py`) | atomic INCR for spend tracking | **fails closed** — no investigations run while budget tracking is unavailable. Safe by design. |
+| Phase 10 GNN embedding cache (`services/phase_10_gnn/inference.py`) | TTL'd lookup | falls back to `gnn_user_embeddings` table |
+| Phase 12 orchestrator (`services/phase_12_orchestrator/orchestrator.py`) | only reads via Phase 9 → budget guard | operates without Phase 9 escalation; Tiers 0-3 still work |
+
+**Critical invariant:** no Phase 9-12 code path is Redis-only.  Every
+Redis access is wrapped in `try/except` with a Postgres or in-process
+fallback.  Verified by `rg -n "get_redis|redis_client" backend/services/phase_*` and
+inspection.
+
+### Why deferred (not fixed in this branch)
+
+* Sentinel/Cluster requires production environment changes (load
+  balancer config, DNS, monitoring) that are outside this PR's
+  blast radius.
+* The current single-node Redis is fine for development and load
+  testing.
+* This branch's mandate is "Phase 9-12 functionality + audit
+  cleanup" — adding Sentinel would expand scope significantly.
+
+### Production fix (next sprint, separate PR)
+
+1. Deploy 3-node Redis Sentinel (or Redis Cluster).
+2. Update `backend/core/redis.py` to use the
+   `redis.asyncio.sentinel.Sentinel` client.
+3. Add a `/healthz/redis` endpoint that the orchestrator can sample
+   during the routing decision (so Tier 3+ can degrade gracefully if
+   sentinels are split).
+4. Add a chaos test that kills the master mid-load to confirm
+   failover stays under 30s.
+
+### Acceptance criteria for this branch
+
+This is a **known limitation, not a bug**.  All Phase 9-12 functional
+tests pass with Redis unavailable.  PR reviewers should not block
+merge on this item.
 
 ---
 

@@ -454,3 +454,11 @@ Baseline after fix:  `278 passed, 4 skipped, 0 failed, 0 errors`.
   no production code touched.
 
 See `CTO_AUDIT.md` issue #1 for the per-test triage table.
+
+### Fix 6 — Redis HA gap (audit issue #6) — DEFERRED
+
+The single-node Redis instance is documented as a known limitation in
+`CTO_AUDIT.md` issue #6.  All Phase 9-12 code paths have explicit
+Postgres / in-process fallbacks (verified per-subsystem table in the
+audit doc).  Production rollout to Sentinel/Cluster is a 2-3 day infra
+task tracked for the next sprint.  Not a blocker for this branch.
