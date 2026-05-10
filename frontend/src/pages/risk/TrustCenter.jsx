@@ -18,9 +18,9 @@ import { useRisk } from "../../contexts/RiskContext";
 import { PHASES } from "../../utils/risk/phaseConfig";
 import { fmtRelativeTime, fmtCurrency } from "../../utils/risk/formatters";
 import {
-  getGnnStatus,
-  getDnnStatus,
-  getCostsToday,
+  getGnnHealth,
+  getDnnHealth,
+  getOrchestratorHealth,
   getInvestigationHealth,
 } from "../../services/riskApi";
 
@@ -110,21 +110,20 @@ function AdvancedPhasesPanel({ userId }) {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const [c, g, d, inv] = await Promise.allSettled([
-        getCostsToday(),
-        getGnnStatus(),
-        getDnnStatus(),
+      const [inv, g, d, c] = await Promise.allSettled([
         getInvestigationHealth(),
+        getGnnHealth(),
+        getDnnHealth(),
+        getOrchestratorHealth(),
       ]);
       if (cancelled) return;
-      setCosts(c.status === "fulfilled" ? c.value : null);
-      setGnn(g.status === "fulfilled" ? g.value : null);
-      setDnn(d.status === "fulfilled" ? d.value : null);
+      // Phase 9 health uses `feature_flag_enabled`; 10-12 use `enabled`
       setInvCount(
-        inv.status === "fulfilled"
-          ? inv.value?.feature_flag_enabled ?? false
-          : null
+        inv.status === "fulfilled" ? (inv.value?.feature_flag_enabled ?? false) : null
       );
+      setGnn(g.status === "fulfilled" ? g.value : null);   // has `enabled`, `embed_dim`, etc.
+      setDnn(d.status === "fulfilled" ? d.value : null);   // has `enabled`, `promoted`, `model_loaded`
+      setCosts(c.status === "fulfilled" ? c.value : null); // has `enabled`, `judge_enabled`
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -145,32 +144,32 @@ function AdvancedPhasesPanel({ userId }) {
       color: "#0ea5e9",
       label: "Phase 10 · GNN",
       badge: "2026",
-      status: gnn !== null,
-      statusLabel: gnn !== null ? (gnn.trained ? "Trained" : "Untrained") : "Unavailable",
+      status: gnn !== null ? gnn.enabled : null,
+      statusLabel: gnn === null ? "Unavailable" : gnn.enabled ? "Enabled" : "Disabled",
       detail: gnn
-        ? `${gnn.graph_users ?? "?"} users in graph`
-        : "Backend offline or not yet trained",
+        ? `GraphSAGE · ${gnn.embed_dim ?? 64}-dim · ${gnn.training_days ?? 90}-day window`
+        : "Backend offline",
     },
     {
       icon: Layers,
       color: "#14b8a6",
       label: "Phase 11 · DNN (shadow)",
       badge: "2026",
-      status: dnn !== null,
-      statusLabel: dnn !== null ? (dnn.trained ? "Shadow active" : "Not trained") : "Unavailable",
+      status: dnn !== null ? dnn.enabled : null,
+      statusLabel: dnn === null ? "Unavailable" : dnn.enabled ? "Shadow active" : "Disabled",
       detail: dnn
-        ? `${dnn.training_positives ?? "?"} positives used`
-        : "Backend offline or not yet trained",
+        ? `Multi-branch DNN · promoted=${dnn.promoted ? "yes" : "no"} · model=${dnn.model_loaded ? "loaded" : "not trained"}`
+        : "Backend offline",
     },
     {
       icon: GitMerge,
       color: "#f43f5e",
       label: "Phase 12 · Orchestrator",
       badge: "2026",
-      status: costs !== null,
-      statusLabel: costs !== null ? "Active" : "Unavailable",
+      status: costs !== null ? costs.enabled : null,
+      statusLabel: costs === null ? "Unavailable" : costs.enabled ? "Active" : "Disabled",
       detail: costs
-        ? `$${costs.total_cost_usd?.toFixed(4)} spent · $${costs.remaining_usd?.toFixed(2)} remaining`
+        ? `Tiers 0-3 routing · judge=${costs.judge_enabled ? "on" : "off"}`
         : "Backend offline",
     },
   ];
