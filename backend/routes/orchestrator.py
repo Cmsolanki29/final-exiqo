@@ -12,10 +12,9 @@ Endpoints (mounted at /api/risk/orchestrator from main.py):
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any, Optional
 
-from fastapi import APIRouter, Body, Header, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from core.config import get_settings
 from core.db import get_pool
@@ -29,19 +28,13 @@ from services.phase_12_orchestrator.routing_policy import (
     RoutingPolicy,
     route,
 )
+from services.risk_common.admin_auth import require_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/risk/orchestrator", tags=["phase-12-orchestrator"])
 
-
-def _require_admin(
-    x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token"),
-) -> None:
-    expected = os.getenv("ADMIN_TOKEN", "dev-admin-secret")
-    if x_admin_token != expected:
-        raise HTTPException(
-            status_code=403, detail="Invalid or missing X-Admin-Token header"
-        )
+# audit-8: admin auth is JWT-OR-X-Admin-Token via the shared
+# `require_admin` dependency.
 
 
 @router.get("/health")
@@ -68,18 +61,16 @@ async def health() -> dict[str, Any]:
 @router.get("/tiers/distribution")
 async def tiers_distribution(
     period_days: int = Query(default=7, ge=1, le=90),
-    x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token"),
+    _admin: dict = Depends(require_admin),
 ) -> dict[str, Any]:
-    _require_admin(x_admin_token)
     return await tier_distribution(period_days)
 
 
 @router.get("/decisions/{transaction_id}")
 async def get_decision(
     transaction_id: int,
-    x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token"),
+    _admin: dict = Depends(require_admin),
 ) -> dict[str, Any]:
-    _require_admin(x_admin_token)
     record = await get_decision_for_txn(transaction_id)
     if record is None:
         raise HTTPException(status_code=404, detail="No orchestration record for this transaction")
@@ -93,11 +84,10 @@ async def preview_route(
     has_dnn_shadow: bool = Query(default=False),
     has_rule_override: bool = Query(default=False),
     dnn_shadow_score: Optional[float] = Query(default=None, ge=0, le=100),
-    x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token"),
+    _admin: dict = Depends(require_admin),
 ) -> dict[str, Any]:
     """Pure-logic preview of which tier a hypothetical score would land in.
     No DB writes, no LLM calls — useful for the UI when explaining policy."""
-    _require_admin(x_admin_token)
     s = get_settings()
     signals: dict[str, Any] = {}
     if has_gnn:
@@ -119,7 +109,7 @@ async def preview_route(
 @router.post("/decide")
 async def post_decide(
     payload: dict[str, Any] = Body(...),
-    x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token"),
+    _admin: dict = Depends(require_admin),
 ) -> dict[str, Any]:
     """Fully orchestrated decision for a transaction.
 
@@ -132,7 +122,6 @@ async def post_decide(
           "features": {... assembled features (optional) ...}
         }
     """
-    _require_admin(x_admin_token)
     user_id = payload.get("user_id")
     txn = payload.get("txn") or {}
     user = payload.get("user") or {"id": user_id}
@@ -157,7 +146,7 @@ async def post_decide(
 @router.post("/judge/replay")
 async def post_judge_replay(
     transaction_id: int = Query(..., description="Existing orchestration row to re-judge"),
-    x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token"),
+    _admin: dict = Depends(require_admin),
 ) -> dict[str, Any]:
     """Re-run *only* the LLM judge against a stored orchestration row.
 
@@ -166,7 +155,6 @@ async def post_judge_replay(
     * comparing model outputs after a prompt change,
     * debugging the judge prompt without re-running the full pipeline.
     """
-    _require_admin(x_admin_token)
     pool = get_pool()
     if pool is None:
         raise HTTPException(status_code=503, detail="db_unavailable")

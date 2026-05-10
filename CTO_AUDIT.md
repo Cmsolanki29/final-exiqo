@@ -242,7 +242,7 @@ No teammate migrations were moved (would break their local DB state).
 ## Issue #8 — Phase 9-12 admin auth uses `X-Admin-Token` instead of JWT
 
 **Severity:** 🟡 medium (security consistency)
-**Status:** _to be filled in by Fix 8 commit_
+**Status:** FIXED — additive JWT path on Phase 9-12 admin routes.
 
 **Audit premise correction (per pre-flight findings):** `X-Admin-Token`
 is not a Phase 9-12 invention — it is the **established Phase 1-8
@@ -250,10 +250,47 @@ convention** for admin endpoints (`routes/admin.py`,
 `routes/explainability.py`, `routes/feedback.py` admin paths).  JWT is
 used for end-user routes only.
 
-User-confirmed approach: **additive** — accept either `X-Admin-Token` OR
-a JWT bearer with `is_admin=true` on the four Phase 9-12 admin routes.
+User-confirmed approach: **additive** — accept either `X-Admin-Token`
+OR a JWT bearer whose `user_id` is in the `ADMIN_USER_IDS` allow-list.
 Phase 1-8 admin routes are untouched (would violate "don't touch
 teammate's files" rule).
+
+### What landed
+
+* New helper `services/risk_common/admin_auth.py` exposes a single
+  FastAPI dependency `require_admin` that succeeds on either auth
+  path and returns a small audit dict
+  (`{auth_path: "jwt"|"x_admin_token", user_id: int|None}`).
+* All four Phase 9-12 route files now use `Depends(require_admin)`:
+  * `backend/routes/investigations.py`
+  * `backend/routes/gnn.py`
+  * `backend/routes/dnn.py`
+  * `backend/routes/orchestrator.py`
+* `.env` gains `ADMIN_USER_IDS=` (empty default; an empty list means
+  "no JWT-admin path; X-Admin-Token still works").
+* JWT issuance unchanged (teammate territory).  No new claim required.
+
+### Verification
+
+`tests/test_audit8_admin_auth.py` — 5 tests against a real FastAPI
+TestClient:
+* `test_x_admin_token_happy_path` — legacy header still works.
+* `test_jwt_admin_happy_path` — bearer JWT for an allow-listed user is
+  accepted.
+* `test_jwt_with_non_admin_user_rejected` — well-formed JWT for a
+  non-admin user is rejected with 401.
+* `test_no_credentials_rejected` — bare request gets 401.
+* `test_wrong_x_admin_token_rejected` — wrong header value gets 401.
+
+All 5 pass.
+
+### What is NOT in this fix (intentional)
+
+* `routes/admin.py`, `routes/explainability.py`,
+  `routes/feedback.py` (admin paths) — Phase 1-8 territory, kept on
+  X-Admin-Token, not touched.
+* JWT `is_admin` claim issuance — teammate's `routes/auth.py` is the
+  owner; out of scope.
 
 ---
 

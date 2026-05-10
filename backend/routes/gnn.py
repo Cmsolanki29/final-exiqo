@@ -11,25 +11,21 @@ Endpoints (mounted at /api/risk/gnn from main.py):
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.config import get_settings
 from services.phase_10_gnn.inference import get_status, get_user_embedding
 from services.phase_10_gnn.trainer import train_gnn
+from services.risk_common.admin_auth import require_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/risk/gnn", tags=["phase-10-gnn"])
 
 
-def _require_admin(
-    x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token"),
-) -> None:
-    expected = os.getenv("ADMIN_TOKEN", "dev-admin-secret")
-    if x_admin_token != expected:
-        raise HTTPException(status_code=403, detail="Invalid or missing X-Admin-Token header")
+# audit-8: admin auth is JWT-OR-X-Admin-Token via the shared
+# `require_admin` dependency.
 
 
 @router.get("/health")
@@ -46,7 +42,7 @@ async def health() -> dict[str, Any]:
     }
 
 
-@router.post("/train", dependencies=[Depends(_require_admin)])
+@router.post("/train", dependencies=[Depends(require_admin)])
 async def train(
     days: Optional[int] = Query(default=None, ge=1, le=365),
     epochs: Optional[int] = Query(default=None, ge=1, le=2000),
@@ -58,13 +54,13 @@ async def train(
     return await train_gnn(days=days, epochs=epochs, lr=lr)
 
 
-@router.get("/status", dependencies=[Depends(_require_admin)])
+@router.get("/status", dependencies=[Depends(require_admin)])
 async def status() -> dict[str, Any]:
     """Embedding inventory + most recent training run."""
     return await get_status()
 
 
-@router.get("/users/{user_id}/embedding", dependencies=[Depends(_require_admin)])
+@router.get("/users/{user_id}/embedding", dependencies=[Depends(require_admin)])
 async def get_embedding(user_id: int) -> dict[str, Any]:
     """Read a single user's embedding (Redis-first, DB fallback)."""
     vec = await get_user_embedding(user_id)

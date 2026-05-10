@@ -11,10 +11,9 @@ Endpoints (mounted at /api/risk/investigations from main.py):
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.config import get_settings
 from services.phase_9_agent.investigation_service import (
@@ -22,21 +21,16 @@ from services.phase_9_agent.investigation_service import (
     investigate_transaction,
 )
 from services.risk_common import groq_llm_client
+from services.risk_common.admin_auth import require_admin
 from services.risk_common.budget_guard import budget_guard
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/risk/investigations", tags=["phase-9-investigations"])
 
 
-# ---------------------------------------------------------------------- #
-# Auth — same simple header check used by /api/admin/*
-# ---------------------------------------------------------------------- #
-def _require_admin(
-    x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token"),
-) -> None:
-    expected = os.getenv("ADMIN_TOKEN", "dev-admin-secret")
-    if x_admin_token != expected:
-        raise HTTPException(status_code=403, detail="Invalid or missing X-Admin-Token header")
+# audit-8: admin auth is now JWT-OR-X-Admin-Token (additive).  The
+# `require_admin` dependency lives in services/risk_common/admin_auth.py
+# and is shared by the Phase 9-12 admin routes.
 
 
 # ---------------------------------------------------------------------- #
@@ -57,7 +51,7 @@ async def health() -> dict[str, Any]:
     }
 
 
-@router.post("/{txn_id}/run", dependencies=[Depends(_require_admin)])
+@router.post("/{txn_id}/run", dependencies=[Depends(require_admin)])
 async def run_investigation(
     txn_id: int,
     user_id: Optional[int] = Query(default=None),
@@ -76,7 +70,7 @@ async def run_investigation(
     )
 
 
-@router.get("/{txn_id}", dependencies=[Depends(_require_admin)])
+@router.get("/{txn_id}", dependencies=[Depends(require_admin)])
 async def fetch_investigation(txn_id: int) -> dict[str, Any]:
     """Return the most recent investigation for a transaction."""
     inv = await get_investigation(txn_id)
@@ -85,7 +79,7 @@ async def fetch_investigation(txn_id: int) -> dict[str, Any]:
     return inv
 
 
-@router.get("/budget/today", dependencies=[Depends(_require_admin)])
+@router.get("/budget/today", dependencies=[Depends(require_admin)])
 async def today_budget() -> dict[str, Any]:
     """Today's LLM spend rollup, used by the admin UI to show the budget bar."""
     return await budget_guard.today_spend()
