@@ -311,7 +311,32 @@ cosine-similarity gate, and a "don't migrate just because" caveat.
 ## Issue #10 — Groq `response_format=json_object` not enforced
 
 **Severity:** 🟢 low (robustness)
-**Status:** _to be filled in by Fix 10 commit_
+**Status:** FIXED.
+
+State going in:
+* Phase 12 LLM-as-Judge already passed
+  `response_format={"type": "json_object"}` ✓
+* Phase 9 agent did NOT — its tool-use loop legitimately *cannot*
+  combine JSON-mode with `tools` (Groq disallows the combo).
+
+Fix:
+1. New helper `chat_for_json` in
+   `backend/services/risk_common/groq_llm_client.py`.  Always sets
+   `response_format={"type": "json_object"}`, drops `tools`, lowers
+   temperature to 0.1.
+2. Phase 9 agent's "parse-failed retry" path now goes through
+   `chat_for_json` instead of replaying through the tool loop.  The
+   model is forced to emit a clean JSON object on the second attempt,
+   eliminating the most common production failure mode.
+
+Tests:
+* `test_chat_for_json_sets_response_format_and_drops_tools` —
+  asserts the helper builds the right kwargs.
+* `test_agent_retry_uses_json_mode_after_parse_failure` — asserts
+  the agent's retry path actually invokes `chat_for_json` after a
+  parse failure.
+
+Both pass.
 
 ---
 

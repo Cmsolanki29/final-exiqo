@@ -180,6 +180,39 @@ async def chat(
 
 
 # ---------------------------------------------------------------------------- #
+# JSON-mode helper (audit-10)
+# ---------------------------------------------------------------------------- #
+async def chat_for_json(
+    messages: list[dict[str, Any]],
+    *,
+    model: str,
+    temperature: float = 0.1,
+    max_tokens: int = 1500,
+    fallback_model: str | None = "llama-3.1-70b-versatile",
+) -> LLMCallResult:
+    """Convenience wrapper that always enforces JSON-mode output.
+
+    Per the OpenAI / Groq contract, ``response_format={"type": "json_object"}``
+    cannot be combined with ``tools``.  This helper omits tools so the
+    model is forced to return a single JSON object.
+
+    audit-10: callers that previously sent free-form prompts and then
+    parsed the response should switch to this helper.  It eliminates the
+    "model emitted markdown around the JSON" failure mode and makes the
+    one-shot retry path in agents/judges much more reliable.
+    """
+    return await chat(
+        messages=messages,
+        model=model,
+        tools=None,
+        response_format={"type": "json_object"},
+        temperature=temperature,
+        max_tokens=max_tokens,
+        fallback_model=fallback_model,
+    )
+
+
+# ---------------------------------------------------------------------------- #
 # JSON parsing helpers (stricter retry pattern)
 # ---------------------------------------------------------------------------- #
 def parse_json_response(text: str) -> dict[str, Any] | None:

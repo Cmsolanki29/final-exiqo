@@ -356,3 +356,106 @@ class TestAgent:
         # Even though the model said "fraud_confirmed", confidence < 0.6
         # forces "inconclusive" — this is our hard rule.
         assert result["decision"] == "inconclusive"
+
+
+# ---------------------------------------------------------------------- #
+# audit-10 — JSON-mode helper + retry path
+# ---------------------------------------------------------------------- #
+class TestJsonModeAuditTen:
+    @pytest.mark.asyncio
+    async def test_chat_for_json_sets_response_format_and_drops_tools(
+        self, monkeypatch
+    ) -> None:
+        """`chat_for_json` must always send response_format={"type":
+        "json_object"} and never include `tools` (Groq disallows the
+        combination)."""
+        from services.risk_common import groq_llm_client
+
+        captured: dict = {}
+
+        async def _spy_create(**kwargs):
+            captured.update(kwargs)
+            return _make_mock_response(content='{"ok": true}')
+
+        fake_client = SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=_spy_create),
+            ),
+        )
+        monkeypatch.setattr(groq_llm_client, "get_client", lambda: fake_client)
+
+        result = await groq_llm_client.chat_for_json(
+            messages=[{"role": "user", "content": "hi"}],
+            model="llama-3.3-70b-versatile",
+        )
+        assert result.text_content == '{"ok": true}'
+        assert captured["response_format"] == {"type": "json_object"}
+        assert "tools" not in captured
+
+    @pytest.mark.asyncio
+    async def test_agent_retry_uses_json_mode_after_parse_failure(
+        self, monkeypatch
+    ) -> None:
+        """When the agent's first non-tool reply fails to parse, the
+        retry must go through chat_for_json (response_format=json_object,
+        no tools) instead of replaying the same tool-loop call."""
+        from services.phase_9_agent.agent import InvestigationAgent
+        from services.risk_common import groq_llm_client, budget_guard as bg_mod
+        from core.config import get_settings
+
+        s = get_settings()
+        monkeypatch.setattr(s, "PHASE_9_AGENT_ENABLED", True)
+
+        # Sequence:
+        #   call 1 (tool-loop, has `tools`):    returns garbage prose
+        #   call 2 (json-mode retry, no tools): returns valid JSON
+        garbage = _make_mock_response(content="Sure, here is my answer in plain English: ...")
+        good = _make_mock_response(content=json.dumps({
+            "decision": "legitimate",
+            "confidence": 0.92,
+            "narrative": "All clear.",
+            "key_evidence": ["normal merchant"],
+            "suggested_rules": [],
+        }))
+        responses = [garbage, good]
+        observed_kwargs: list[dict] = []
+
+        async def _fake_create(**kwargs):
+            observed_kwargs.append(kwargs)
+            return responses[len(observed_kwargs) - 1]
+
+        fake_client = SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=_fake_create),
+            ),
+        )
+        monkeypatch.setattr(groq_llm_client, "get_client", lambda: fake_client)
+        monkeypatch.setattr(groq_llm_client, "is_available", lambda: True)
+
+        async def _ok(*_a, **_kw): return True
+        async def _noop(*_a, **_kw): return None
+        monkeypatch.setattr(bg_mod.budget_guard, "check_and_reserve", _ok)
+        monkeypatch.setattr(bg_mod.budget_guard, "record_actual", _noop)
+
+        agent = InvestigationAgent(tools=[])
+        result = await agent.investigate(
+            transaction={"amount": 100.0, "merchant": "Coffee Shop"},
+            risk_score=55,
+            user_id=1,
+        )
+
+        # Final result was parsed from the JSON-mode retry.
+        assert result["decision"] == "legitimate"
+        assert result["error"] is None
+
+        # Two LLM calls were made.
+        assert len(observed_kwargs) == 2
+
+        # Call 1 was a normal tool-loop call (no response_format).
+        # (`tools` may be None when the agent is constructed without
+        # tools, so we don't strictly require its presence.)
+        assert observed_kwargs[0].get("response_format") is None
+
+        # Call 2 was the JSON-mode retry: response_format set and no tools.
+        assert observed_kwargs[1].get("response_format") == {"type": "json_object"}
+        assert "tools" not in observed_kwargs[1]

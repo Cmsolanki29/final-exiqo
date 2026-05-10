@@ -268,10 +268,15 @@ class InvestigationAgent:
             text = result.text_content
             parsed = groq_llm_client.parse_json_response(text)
             if parsed is None:
-                # One-shot retry asking the model to return strict JSON only
+                # audit-10: one-shot retry through chat_for_json which
+                # enforces response_format={"type": "json_object"}.
+                # Tools are dropped (Groq disallows JSON mode + tools in
+                # the same call) so the model is forced to emit a clean
+                # object instead of free-form prose.
                 if round_num < max_rounds - 1:
-                    messages.append({"role": "assistant", "content": text})
-                    messages.append({
+                    retry_messages = list(messages)
+                    retry_messages.append({"role": "assistant", "content": text})
+                    retry_messages.append({
                         "role": "user",
                         "content": (
                             "Your previous response was not valid JSON.  "
@@ -280,13 +285,57 @@ class InvestigationAgent:
                             "suggested_rules.  No markdown, no extra text."
                         ),
                     })
-                    continue
-                return self._inconclusive(
-                    "json_parse_failed", started,
-                    model=result.model, rounds=rounds_ref[0],
-                    tool_calls=tool_calls_log,
-                    input_t=total_tokens_ref[0], output_t=total_tokens_ref[1],
-                )
+                    try:
+                        retry_result = await groq_llm_client.chat_for_json(
+                            messages=retry_messages,
+                            model=chosen_model,
+                            temperature=0.1,
+                            max_tokens=max_tokens,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "agent: JSON-mode retry failed round=%d err=%s",
+                            round_num, exc,
+                        )
+                        return self._inconclusive(
+                            "json_parse_failed", started,
+                            model=result.model, rounds=rounds_ref[0],
+                            tool_calls=tool_calls_log,
+                            input_t=total_tokens_ref[0], output_t=total_tokens_ref[1],
+                        )
+                    total_tokens_ref[0] += retry_result.input_tokens
+                    total_tokens_ref[1] += retry_result.output_tokens
+                    actual_cost = cost_from_tokens(
+                        retry_result.model,
+                        retry_result.input_tokens,
+                        retry_result.output_tokens,
+                    )
+                    await budget_guard.record_actual(
+                        retry_result.model,
+                        retry_result.input_tokens,
+                        retry_result.output_tokens,
+                        actual_cost,
+                    )
+                    parsed = groq_llm_client.parse_json_response(
+                        retry_result.text_content
+                    )
+                    if parsed is None:
+                        return self._inconclusive(
+                            "json_parse_failed", started,
+                            model=retry_result.model, rounds=rounds_ref[0],
+                            tool_calls=tool_calls_log,
+                            input_t=total_tokens_ref[0], output_t=total_tokens_ref[1],
+                        )
+                    # Use the JSON-mode result for the rest of the
+                    # logic below (decision/confidence parsing).
+                    result = retry_result
+                else:
+                    return self._inconclusive(
+                        "json_parse_failed", started,
+                        model=result.model, rounds=rounds_ref[0],
+                        tool_calls=tool_calls_log,
+                        input_t=total_tokens_ref[0], output_t=total_tokens_ref[1],
+                    )
 
             decision = str(parsed.get("decision", "inconclusive"))
             if decision not in ("fraud_confirmed", "legitimate", "inconclusive"):
