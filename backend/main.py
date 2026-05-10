@@ -47,6 +47,7 @@ try:
     from routes import explainability as _explain_rt
     from routes import feedback as _feedback_rt
     from routes import risk_profile as _risk_profile_rt
+    from routes import investigations as _investigations_rt
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from core.db import init_pool, close_pool
     from core.redis import init_redis, close_redis
@@ -159,6 +160,7 @@ if _RISK_ENGINE_OK:
         app.include_router(_explain_rt.router, prefix="/api")
         app.include_router(_feedback_rt.router, prefix="/api")
         app.include_router(_risk_profile_rt.router, prefix="/api")
+        app.include_router(_investigations_rt.router, prefix="/api")
     except Exception as _e:
         print(f"[RiskEngine] Router registration skipped: {_e}")
 

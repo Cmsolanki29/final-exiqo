@@ -31,3 +31,16 @@ circuitbreaker>=2.0
 pytest-asyncio>=0.23
 httpx>=0.26
 pyod>=1.1
+
+# ── Phase 9-12 (2025-2026 parity) ──────────────────────────────────────────
+# Phase 9: LLM Investigation Agent — Groq via OpenAI-compatible SDK
+# (openai is already pinned above; groq SDK kept optional for future direct use)
+groq>=0.11
+
+# Phase 10/11 (queued, not active on this branch yet — declared so the
+# branch boots; actual model usage gated by feature flags)
+torch>=2.2
+networkx>=3.2
+# torch_geometric — install separately on the target machine; the wheel
+# pipeline differs by OS / CUDA / CPU and pip-only installs frequently fail
+# on Windows.  See PHASE_9_TO_12_LOG.md for the install matrix.

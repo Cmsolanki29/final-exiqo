@@ -1,0 +1,13 @@
+Investigate this flagged transaction.
+
+Risk score (0-100, higher = riskier): {risk_score}
+Triggered by: {triggered_by}
+
+Transaction (PII redacted):
+```json
+{transaction_json}
+```
+
+User ID for tool calls: {user_id}
+
+Begin your investigation now.  When done, return ONLY the JSON decision.

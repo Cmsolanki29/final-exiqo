@@ -14,9 +14,11 @@ Performance budget: handle() < 30ms (Redis cooldown check + DB insert).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
+from core.config import get_settings
 from services.alerts.cooldown import cooldown_manager
 from services.alerts.orchestrator import alert_orchestrator
 from services.event_bus.consumer_base import BaseConsumer
@@ -82,6 +84,29 @@ class AlertConsumer(BaseConsumer):
             risk_level,
             risk_score,
         )
+
+        # ── Phase 9: auto-trigger LLM investigation on high-risk score ──
+        # Fire-and-forget so the alert path stays under its latency budget.
+        settings = get_settings()
+        if (
+            settings.PHASE_9_AGENT_ENABLED
+            and isinstance(risk_score, (int, float))
+            and risk_score >= settings.PHASE_9_AUTO_TRIGGER_SCORE
+            and txn_id is not None
+        ):
+            try:
+                from services.phase_9_agent.investigation_service import (
+                    investigate_transaction,
+                )
+                asyncio.create_task(
+                    investigate_transaction(
+                        transaction_id=int(txn_id),
+                        user_id=int(user_id),
+                        triggered_by="auto_high_risk",
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("phase_9 auto-trigger skipped: %s", exc)
 
 
 # Module-level singleton (started in main.py lifespan)

@@ -119,6 +119,26 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------ #
     SCORING_TIMEOUT_MS: int = 500       # Return 503 if exceeded
 
+    # ------------------------------------------------------------------ #
+    # Phase 9 — LLM Investigation Agent (Groq Llama)
+    # ------------------------------------------------------------------ #
+    # Master switch: when False, agent is fully disabled (zero LLM calls,
+    # zero cost, no DB writes).  Default OFF — opt-in via env var.
+    PHASE_9_AGENT_ENABLED: bool = False
+    # Daily USD spend cap.  When exceeded, agent returns "inconclusive"
+    # (fail-closed) until the next UTC day.
+    PHASE_9_DAILY_BUDGET_USD: float = 1.00
+    # Default Groq model.  Llama 3.3 70B has reliable tool calling.
+    PHASE_9_DEFAULT_MODEL: str = "llama-3.3-70b-versatile"
+    # Same model for high-stakes (score >= 85), but with lower temperature.
+    PHASE_9_HIGH_STAKES_MODEL: str = "llama-3.3-70b-versatile"
+    # Auto-trigger threshold: investigations launched on score >= this value.
+    PHASE_9_AUTO_TRIGGER_SCORE: int = 60
+    # Per-investigation safety caps.
+    PHASE_9_MAX_TOOL_ROUNDS: int = 8
+    PHASE_9_MAX_OUTPUT_TOKENS: int = 1500
+    PHASE_9_TIMEOUT_SEC: int = 30
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
