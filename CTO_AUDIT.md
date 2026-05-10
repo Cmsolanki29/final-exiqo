@@ -44,10 +44,20 @@ verification.  Each row points to a commit when the fix landed.
 **Severity:** 🔴 critical (config layer clarity)
 **Status:** FIXED (clarifying comment added — variable is genuinely Phase 10).
 
-The variable controls the supervised-vs-unsupervised loss blend in
-GraphSAGE training (`backend/services/phase_10_gnn/trainer.py:247`).  It
-is **not** related to Phase 11 DNN; the name is correct.  Added a code
-comment to remove copy-paste ambiguity.
+Trace:
+
+| File | Role |
+| --- | --- |
+| `backend/core/config.py:166` | declaration (`float = 0.3`) |
+| `backend/services/phase_10_gnn/trainer.py:12` | docstring formula `L = (1 - w)*BPR + w*BCE` |
+| `backend/services/phase_10_gnn/trainer.py:247` | actual use as `sup_w = float(settings.PHASE_10_SUPERVISED_LOSS_WEIGHT)` |
+| `.env`, `PHASE_9_TO_12_LOG.md` | config / docs |
+
+Verdict: the variable is **genuinely Phase 10 GraphSAGE-owned** —
+controls the supervised-vs-unsupervised loss blend in GNN training.  It
+is **not** related to Phase 11 DNN.  Added a 9-line code comment to
+config.py so a future engineer cannot mistake it for a copy-paste from
+Phase 11.  Renaming would break `.env` schema and the GNN trainer.
 
 ---
 

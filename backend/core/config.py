@@ -163,6 +163,15 @@ class Settings(BaseSettings):
     PHASE_10_MIN_USERS_FOR_TRAINING: int = 3
     # Honest cap on supervised contribution to total loss.  Most of our
     # signal is unsupervised contrastive when labels are sparse.
+    #
+    # NOTE (audit-2): this knob is *Phase 10 GNN only* — it controls the
+    # supervised vs unsupervised mix in the GraphSAGE training loss
+    #     L = (1 - w) * L_unsup_BPR  +  w * L_sup_BCE
+    # in `backend/services/phase_10_gnn/trainer.py`.
+    # It is **not** related to Phase 11 DNN.  The DNN has its own
+    # `PHASE_11_*` settings further down in this file.  Do not rename
+    # this to `PHASE_11_*` — it would break the GNN trainer and the
+    # `.env` schema.  See CTO_AUDIT.md issue #2.
     PHASE_10_SUPERVISED_LOSS_WEIGHT: float = 0.3
 
     # ------------------------------------------------------------------ #
