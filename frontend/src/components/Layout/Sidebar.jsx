@@ -2,11 +2,15 @@ import React, { useMemo } from "react";
 import { motion } from "framer-motion";
 import {
   Bell,
+  Bot,
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  GitMerge,
+  Layers,
   LayoutDashboard,
   LogOut,
+  Share2,
   Shield,
   ShoppingBag,
   Sparkles,
@@ -25,6 +29,11 @@ const BASE_NAV = [
   { id: "festival",     label: "Festival Planner",  icon: Sparkles },
   // ── Phase 1-8 Risk Engine ──────────────────────────────────────────────
   { id: "trust-center", label: "Trust Center",      icon: ShieldCheck, riskOnly: true },
+  // ── Phase 9-12 (2026 parity) — section header rendered separately ──────
+  { id: "investigations", label: "Investigations",  icon: Bot,      group: "2026 AI Phases" },
+  { id: "orchestrator",   label: "Orchestrator",    icon: GitMerge, group: "2026 AI Phases" },
+  { id: "dnn-shadow",     label: "DNN Shadow",      icon: Layers,   group: "2026 AI Phases" },
+  { id: "gnn-training",   label: "GNN Training",    icon: Share2,   group: "2026 AI Phases" },
 ];
 
 const sidebarWidth = (collapsed) => (collapsed ? 84 : 280);
@@ -81,51 +90,62 @@ const Sidebar = ({ collapsed, onToggle, activeTab, onTabChange, onLogout, fraudB
         </button>
       </div>
 
-      <nav className="flex-1 space-y-1 px-3 py-5">
-        {navItems.map((item) => {
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">
+        {navItems.map((item, idx) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
+          const prevGroup = idx > 0 ? navItems[idx - 1].group : undefined;
+          const showGroupHeader = !!item.group && item.group !== prevGroup;
           return (
-            <motion.button
-              key={item.id}
-              type="button"
-              onClick={() => onTabChange(item.id)}
-              whileHover={{ x: 4 }}
-              whileTap={{ scale: 0.98 }}
-              className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 transition-all duration-200 ${
-                isActive
-                  ? "bg-exiqo-purple/15 text-white shadow-md shadow-exiqo-purple/10"
-                  : "text-exiqo-glow/70 hover:bg-exiqo-purple/10 hover:text-white"
-              }`}
-            >
-              {isActive ? (
-                <motion.div
-                  layoutId="active-indicator"
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  className="absolute left-0 top-1/2 h-7 w-1 -translate-y-1/2 rounded-r-full bg-gradient-to-b from-exiqo-purple to-exiqo-pink shadow-purple-glow"
+            <React.Fragment key={item.id}>
+              {showGroupHeader && !collapsed && (
+                <div className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-wider text-exiqo-glow/40">
+                  {item.group}
+                </div>
+              )}
+              {showGroupHeader && collapsed && (
+                <div className="mx-auto my-2 h-px w-8 bg-exiqo-purple/20" />
+              )}
+              <motion.button
+                type="button"
+                onClick={() => onTabChange(item.id)}
+                whileHover={{ x: 4 }}
+                whileTap={{ scale: 0.98 }}
+                className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 transition-all duration-200 ${
+                  isActive
+                    ? "bg-exiqo-purple/15 text-white shadow-md shadow-exiqo-purple/10"
+                    : "text-exiqo-glow/70 hover:bg-exiqo-purple/10 hover:text-white"
+                }`}
+              >
+                {isActive ? (
+                  <motion.div
+                    layoutId="active-indicator"
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                    className="absolute left-0 top-1/2 h-7 w-1 -translate-y-1/2 rounded-r-full bg-gradient-to-b from-exiqo-purple to-exiqo-pink shadow-purple-glow"
+                  />
+                ) : null}
+                <Icon
+                  size={18}
+                  className={`${collapsed ? "mx-auto" : ""} ${isActive ? "text-exiqo-glow" : ""}`}
                 />
-              ) : null}
-              <Icon
-                size={18}
-                className={`${collapsed ? "mx-auto" : ""} ${isActive ? "text-exiqo-glow" : ""}`}
-              />
-              {!collapsed ? <span className="flex-1 text-left text-sm font-medium">{item.label}</span> : null}
-              {!collapsed && item.badge ? (
-                <span className="rounded-md bg-exiqo-pink px-2 py-0.5 text-xs font-bold text-white shadow-pink-glow">
-                  {item.badge}
-                </span>
-              ) : null}
-              {collapsed ? (
-                <span className="pointer-events-none absolute left-full ml-2 whitespace-nowrap rounded-lg border border-exiqo-purple/30 bg-exiqo-dark px-3 py-1.5 text-sm text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
-                  {item.label}
-                  {item.badge ? (
-                    <span className="ml-2 rounded-md bg-exiqo-pink px-1.5 py-0.5 text-xs text-white">
-                      {item.badge}
-                    </span>
-                  ) : null}
-                </span>
-              ) : null}
-            </motion.button>
+                {!collapsed ? <span className="flex-1 text-left text-sm font-medium">{item.label}</span> : null}
+                {!collapsed && item.badge ? (
+                  <span className="rounded-md bg-exiqo-pink px-2 py-0.5 text-xs font-bold text-white shadow-pink-glow">
+                    {item.badge}
+                  </span>
+                ) : null}
+                {collapsed ? (
+                  <span className="pointer-events-none absolute left-full ml-2 whitespace-nowrap rounded-lg border border-exiqo-purple/30 bg-exiqo-dark px-3 py-1.5 text-sm text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
+                    {item.label}
+                    {item.badge ? (
+                      <span className="ml-2 rounded-md bg-exiqo-pink px-1.5 py-0.5 text-xs text-white">
+                        {item.badge}
+                      </span>
+                    ) : null}
+                  </span>
+                ) : null}
+              </motion.button>
+            </React.Fragment>
           );
         })}
       </nav>

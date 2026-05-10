@@ -21,6 +21,11 @@ const AIPerformance    = lazy(() => import("./pages/risk/AIPerformance"));
 const AlertsCenter     = lazy(() => import("./pages/risk/AlertsCenter"));
 const BehaviorProfile  = lazy(() => import("./pages/risk/BehaviorProfile"));
 const DeviceTrust      = lazy(() => import("./pages/risk/DeviceTrust"));
+// ── Phase 9-12 (2026 parity) pages ─────────────────────────────────────────
+const InvestigationViewer    = lazy(() => import("./pages/risk/InvestigationViewer"));
+const OrchestratorDashboard  = lazy(() => import("./pages/risk/OrchestratorDashboard"));
+const DNNShadowReport        = lazy(() => import("./pages/risk/DNNShadowReport"));
+const GNNTrainingPanel       = lazy(() => import("./pages/risk/GNNTrainingPanel"));
 
 const App = () => {
   const { user, loading: authLoading, logout, isAuthenticated } = useAuth();
@@ -213,6 +218,27 @@ const App = () => {
                 {activeTab === "device-trust" && (
                   <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading…</div>}>
                     <DeviceTrust userId={selectedUserId} onNavigate={setActiveTab} />
+                  </Suspense>
+                )}
+                {/* ── Phase 9-12 (2026 parity) tabs ───────────────────────── */}
+                {activeTab === "investigations" && (
+                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading Investigations…</div>}>
+                    <InvestigationViewer userId={selectedUserId} />
+                  </Suspense>
+                )}
+                {activeTab === "orchestrator" && (
+                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading Orchestrator…</div>}>
+                    <OrchestratorDashboard />
+                  </Suspense>
+                )}
+                {activeTab === "dnn-shadow" && (
+                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading DNN Shadow…</div>}>
+                    <DNNShadowReport />
+                  </Suspense>
+                )}
+                {activeTab === "gnn-training" && (
+                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading GNN Training…</div>}>
+                    <GNNTrainingPanel />
                   </Suspense>
                 )}
               </div>
