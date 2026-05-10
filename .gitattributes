@@ -1,0 +1,79 @@
+# =============================================================================
+# Line-ending policy (audit-3)
+# =============================================================================
+# This repo is developed across Windows (Cursor user) and macOS/Linux
+# (teammate).  We standardize on LF in the repo and let Git renormalize
+# on checkout per OS — this prevents future CRLF drift after the
+# baseline commit (60621c5) was authored with core.autocrlf=true and no
+# .gitattributes pinning the convention.
+#
+# After this file lands, Windows users SHOULD run, ONCE, on their
+# local clone:
+#     git rm --cached -r .
+#     git reset --hard
+# This forces Git to re-checkout files using the new rules.  Without
+# this, files committed before this rule may still appear "modified"
+# in `git status`.
+# =============================================================================
+
+# Default — let Git auto-detect text vs binary, normalize to LF in the repo.
+* text=auto eol=lf
+
+# ---------- Source code (always LF in repo) ----------
+*.py        text eol=lf
+*.pyi       text eol=lf
+*.js        text eol=lf
+*.jsx       text eol=lf
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.toml      text eol=lf
+*.md        text eol=lf
+*.sql       text eol=lf
+*.sh        text eol=lf
+*.css       text eol=lf
+*.scss      text eol=lf
+*.html      text eol=lf
+*.svg       text eol=lf
+*.txt       text eol=lf
+*.cfg       text eol=lf
+*.ini       text eol=lf
+.env*       text eol=lf
+.gitignore  text eol=lf
+.gitattributes text eol=lf
+Dockerfile  text eol=lf
+*.dockerfile text eol=lf
+
+# ---------- Windows-specific scripts (keep CRLF) ----------
+*.ps1       text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# ---------- Binary assets (Git won't try to diff or normalize) ----------
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.webp      binary
+*.pdf       binary
+*.pkl       binary
+*.pt        binary
+*.pth       binary
+*.h5        binary
+*.bin       binary
+*.zip       binary
+*.tar       binary
+*.gz        binary
+*.7z        binary
+*.db        binary
+*.sqlite    binary
+*.sqlite3   binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.eot       binary
+*.mp4       binary
+*.mp3       binary

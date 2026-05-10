@@ -80,7 +80,25 @@ Pre-flight investigation:
 normalised on commit, so stored bytes are pristine LF.  Teammate will
 NOT see massive line-ending diffs on `git pull`.
 
-Added `.gitattributes` to lock the convention going forward.
+Added `.gitattributes` to lock the convention going forward.  Verified
+with `git check-attr -a`:
+
+* `backend/main.py` → `text: set, eol: lf` ✓
+* `backend/scripts/start.ps1` → `text: set, eol: crlf` ✓
+* `backend/models/supervised_v0.pkl` → `binary: set, diff: unset` ✓
+
+**Action required for teammate** (mac/Linux): when this branch merges
+and they pull, they may want to run
+
+```bash
+git rm --cached -r .
+git reset --hard
+git pull
+```
+
+once on their local clone, so Git re-checks-out files with the new
+rules.  Skipping this is safe — they'll just see the rules apply on
+the next file edit.
 
 ---
 
