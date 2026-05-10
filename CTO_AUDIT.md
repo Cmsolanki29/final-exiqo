@@ -343,7 +343,40 @@ Both pass.
 ## Issue #11 — No unified LLM cost dashboard
 
 **Severity:** 🟢 low (observability)
-**Status:** _to be filled in by Fix 11 commit_
+**Status:** FIXED — `GET /api/risk/orchestrator/costs/today`.
+
+The orchestrator router was the natural aggregator (it already
+spans Phase 9 → Phase 12).  New endpoint joins three tables for
+today's date:
+
+* `risk_llm_budget_log` — by-model spend rollup (already populated
+  by `budget_guard.record_actual` from Phase 9 and Phase 12).
+* `risk_investigations` — Phase 9 investigation count.
+* `orchestration_decisions` — Phase 12 judge invocation count
+  (`judge_invoked = TRUE`).
+
+Response shape:
+
+```json
+{
+  "date": "2026-05-10",
+  "total_cost_usd": 0.45,
+  "daily_cap_usd": 1.50,
+  "remaining_usd": 1.05,
+  "by_model": [
+    {"model": "...", "requests": 5, "input_tokens": 10000,
+     "output_tokens": 2500, "cost_usd": 0.42}
+  ],
+  "phase_9_investigations": 7,
+  "phase_12_judge_calls": 4
+}
+```
+
+When DB is unavailable, returns 200 with zero-spend body and
+`note: "db_unavailable"` so the frontend dashboard never breaks.
+
+Tests: `test_costs_today_aggregates_budget_and_phase_counts` and
+`test_costs_today_falls_back_when_db_unavailable` (both pass).
 
 ---
 

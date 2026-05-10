@@ -383,3 +383,104 @@ async def test_orchestrator_judge_low_confidence_does_not_override(monkeypatch):
     # Judge ran but its low-confidence opinion was logged-only.
     assert out.final_action == "review"
     assert out.judge.confidence == pytest.approx(0.55)
+
+
+# --------------------------------------------------------------------- #
+# 5. /api/risk/orchestrator/costs/today  (audit-11)
+# --------------------------------------------------------------------- #
+class _FakeAcquireCM:
+    def __init__(self, conn):
+        self._conn = conn
+    async def __aenter__(self):
+        return self._conn
+    async def __aexit__(self, *exc):
+        return False
+
+
+def _fake_pool_with(rows, inv_count, judge_count):
+    """Build a tiny asyncpg-shaped pool that returns the given rollups."""
+    conn = AsyncMock()
+    conn.fetch = AsyncMock(return_value=rows)
+    # fetchval returns inv_count first, judge_count second
+    conn.fetchval = AsyncMock(side_effect=[inv_count, judge_count])
+
+    pool = AsyncMock()
+    pool.acquire = lambda: _FakeAcquireCM(conn)
+    return pool
+
+
+@pytest.mark.asyncio
+async def test_costs_today_aggregates_budget_and_phase_counts(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from routes import orchestrator as orch_routes
+
+    monkeypatch.setenv("ADMIN_TOKEN", "test-xat")
+    monkeypatch.setenv("PHASE_9_DAILY_BUDGET_USD", "1.50")
+    from core import config as core_cfg
+    core_cfg.get_settings.cache_clear()  # type: ignore[attr-defined]
+
+    rows = [
+        {"model": "llama-3.3-70b-versatile",
+         "request_count": 5, "input_tokens": 10_000,
+         "output_tokens": 2_500, "cost_usd": 0.42},
+        {"model": "llama-3.1-70b-versatile",
+         "request_count": 2, "input_tokens": 800,
+         "output_tokens": 200, "cost_usd": 0.03},
+    ]
+    fake_pool = _fake_pool_with(rows, inv_count=7, judge_count=4)
+    monkeypatch.setattr(orch_routes, "get_pool", lambda: fake_pool)
+
+    app = FastAPI()
+    app.include_router(orch_routes.router, prefix="/api")
+    client = TestClient(app)
+
+    r = client.get(
+        "/api/risk/orchestrator/costs/today",
+        headers={"X-Admin-Token": "test-xat"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    assert body["daily_cap_usd"] == pytest.approx(1.50)
+    assert body["total_cost_usd"] == pytest.approx(0.45, abs=1e-4)
+    assert body["remaining_usd"] == pytest.approx(1.05, abs=1e-4)
+    assert body["phase_9_investigations"] == 7
+    assert body["phase_12_judge_calls"] == 4
+    assert len(body["by_model"]) == 2
+    assert {m["model"] for m in body["by_model"]} == {
+        "llama-3.3-70b-versatile", "llama-3.1-70b-versatile"
+    }
+
+
+@pytest.mark.asyncio
+async def test_costs_today_falls_back_when_db_unavailable(monkeypatch):
+    """If get_pool() returns None (DB down), the endpoint must still
+    return 200 with a zero-spend body so the dashboard does not break."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from routes import orchestrator as orch_routes
+
+    monkeypatch.setenv("ADMIN_TOKEN", "test-xat")
+    monkeypatch.setenv("PHASE_9_DAILY_BUDGET_USD", "1.00")
+    from core import config as core_cfg
+    core_cfg.get_settings.cache_clear()  # type: ignore[attr-defined]
+
+    monkeypatch.setattr(orch_routes, "get_pool", lambda: None)
+
+    app = FastAPI()
+    app.include_router(orch_routes.router, prefix="/api")
+    client = TestClient(app)
+
+    r = client.get(
+        "/api/risk/orchestrator/costs/today",
+        headers={"X-Admin-Token": "test-xat"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total_cost_usd"] == 0.0
+    assert body["phase_9_investigations"] == 0
+    assert body["phase_12_judge_calls"] == 0
+    assert body["note"] == "db_unavailable"

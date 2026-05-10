@@ -3,6 +3,7 @@
 Endpoints (mounted at /api/risk/orchestrator from main.py):
 
   GET  /health                       — feature flags + readiness (open)
+  GET  /costs/today                  — unified LLM cost dashboard (admin) [audit-11]
   GET  /tiers/distribution           — tier histogram for last N days (admin)
   GET  /decisions/{transaction_id}   — most recent orchestration row (admin)
   POST /decide                       — fully orchestrated decision for a txn (admin)
@@ -12,6 +13,7 @@ Endpoints (mounted at /api/risk/orchestrator from main.py):
 from __future__ import annotations
 
 import logging
+from datetime import date
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -55,6 +57,82 @@ async def health() -> dict[str, Any]:
             "dnn_disagree_delta": s.PHASE_12_DNN_DISAGREE_DELTA,
             "judge_min_confidence": s.PHASE_12_JUDGE_MIN_CONFIDENCE,
         },
+    }
+
+
+@router.get("/costs/today")
+async def costs_today(
+    _admin: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """Aggregated LLM spend across the 2026-parity phases for today.
+
+    Reads three sources:
+      * ``risk_llm_budget_log`` (Phase 9 + 12 share this table for spend
+        accounting via ``budget_guard``);
+      * ``risk_investigations`` (Phase 9 row count);
+      * ``orchestration_decisions`` (Phase 12 row count where the LLM
+        judge actually ran).
+
+    audit-11: this is the single endpoint the frontend Trust Center
+    and ops monitoring are expected to call.  Falls back to a
+    zero-spend response if the DB is unavailable, so the dashboard
+    never breaks just because Postgres hiccuped.
+    """
+    s = get_settings()
+    today = date.today()
+    cap = float(s.PHASE_9_DAILY_BUDGET_USD)
+    empty = {
+        "date": today.isoformat(),
+        "total_cost_usd": 0.0,
+        "daily_cap_usd": cap,
+        "remaining_usd": round(cap, 4),
+        "by_model": [],
+        "phase_9_investigations": 0,
+        "phase_12_judge_calls": 0,
+    }
+    pool = get_pool()
+    if pool is None:
+        return {**empty, "note": "db_unavailable"}
+
+    try:
+        async with pool.acquire() as conn:
+            budget_rows = await conn.fetch(
+                "SELECT model, request_count, input_tokens, output_tokens, cost_usd "
+                "FROM risk_llm_budget_log WHERE date = $1",
+                today,
+            )
+            inv_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM risk_investigations "
+                "WHERE started_at::date = $1",
+                today,
+            )
+            judge_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM orchestration_decisions "
+                "WHERE created_at::date = $1 AND judge_invoked = TRUE",
+                today,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("costs_today: db query failed: %s", exc)
+        return {**empty, "note": f"db_error: {exc.__class__.__name__}"}
+
+    total_cost = sum(float(r["cost_usd"] or 0) for r in budget_rows)
+    return {
+        "date": today.isoformat(),
+        "total_cost_usd": round(total_cost, 4),
+        "daily_cap_usd": cap,
+        "remaining_usd": round(max(cap - total_cost, 0.0), 4),
+        "by_model": [
+            {
+                "model": r["model"],
+                "requests": int(r["request_count"] or 0),
+                "input_tokens": int(r["input_tokens"] or 0),
+                "output_tokens": int(r["output_tokens"] or 0),
+                "cost_usd": float(r["cost_usd"] or 0),
+            }
+            for r in budget_rows
+        ],
+        "phase_9_investigations": int(inv_count or 0),
+        "phase_12_judge_calls": int(judge_count or 0),
     }
 
 
