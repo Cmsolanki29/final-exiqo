@@ -162,3 +162,57 @@ Re-evaluate this model card when **any** of the following becomes true:
 At that point this card should be replaced with v2 carrying real
 PR-AUC / ROC-AUC numbers from a held-out test set, plus a measured
 blending weight in the hybrid scorer.
+
+## Migrating to torch_geometric (audit-9)
+
+The current implementation is **pure PyTorch + scipy.sparse**.  This
+choice was made because PyTorch Geometric (PyG) wheels were unstable
+for our target Python (3.13) on Windows during the Phase 10 rollout.
+Linux installs work, but a single dev environment that fails to build
+breaks everyone's `pip install -r requirements.txt`.
+
+The math is identical to PyG's `SAGEConv` — same mean aggregator,
+same per-relation linear, same residual self-transform.  Switching to
+PyG should produce embeddings within numerical noise of the current
+output.
+
+### When to migrate
+
+Either condition is sufficient:
+
+* **PyG ships a stable Windows wheel for the team's Python version**
+  (CI smoke `pip install torch_geometric` succeeds clean on Windows
+  + macOS + Linux for two consecutive PyG releases), OR
+* **The production deployment is Linux-only** (PyG has no
+  Windows-specific bugs there; the friction is install-time, not
+  runtime) AND CI on Linux can install it deterministically.
+
+### Migration steps (estimated 2-3 days)
+
+1. Pin PyG: `pip install "torch_geometric>=2.5"` (and the matching
+   `torch_scatter` / `torch_sparse` if not auto-installed).
+2. Replace `services/phase_10_gnn/gnn_model.py:HeteroSAGEConv` with
+   PyG's `SAGEConv`.  Keep the same input/output dims so call-sites
+   in `trainer.py` and `inference.py` don't need to change.
+3. Replace `services/phase_10_gnn/graph_builder.py` adjacency
+   construction with PyG's `HeteroData`.  This is the bulk of the
+   work — the rest is type-shim.
+4. Re-train.  Snapshot the *current* embeddings to a fixture and
+   assert the new embeddings have cosine similarity ≥ 0.95 with the
+   old ones for the existing user set.
+5. A/B for one week with both available behind the feature flag,
+   then deprecate the custom code in a follow-up commit.
+
+### Don't migrate just for the sake of it
+
+The custom code is ~300 lines, well-tested
+(`tests/test_phase10_gnn.py`), and self-contained.  PyG buys you:
+heterogeneous batching, attention-based aggregators, and downstream
+ecosystem compatibility — but only if you're going to use them.  If
+the production posture stays "single-batch full-graph SAGE" then the
+migration is a wash.
+
+The migration matters most when we want to use torch_geometric.nn
+modules in a *different* model (e.g. a HAN or a HeteroGAT in v2),
+because then the cost of maintaining two graph stacks doesn't pay
+off.

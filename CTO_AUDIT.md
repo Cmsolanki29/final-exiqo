@@ -297,7 +297,14 @@ All 5 pass.
 ## Issue #9 — Custom GraphSAGE locks out PyG
 
 **Severity:** 🟢 low (documentation only)
-**Status:** _to be filled in by Fix 9 commit_
+**Status:** FIXED — migration path documented in
+`backend/models/cards/fraud_gnn_v1.md` "Migrating to torch_geometric"
+section.
+
+The custom implementation will keep working as long as we want it
+to.  The migration plan covers: when to migrate (PyG wheel stability
+on Windows OR Linux-only deployment), 5-step procedure with a
+cosine-similarity gate, and a "don't migrate just because" caveat.
 
 ---
 
