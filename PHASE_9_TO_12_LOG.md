@@ -462,3 +462,42 @@ The single-node Redis instance is documented as a known limitation in
 Postgres / in-process fallbacks (verified per-subsystem table in the
 audit doc).  Production rollout to Sentinel/Cluster is a 2-3 day infra
 task tracked for the next sprint.  Not a blocker for this branch.
+
+### Fixes 2, 4, 5, 7, 8, 9, 10, 11 — completed
+
+All audit findings now have a disposition.  See `CTO_AUDIT.md` for the
+full per-issue table; in summary:
+
+| # | Title | Disposition |
+| --- | --- | --- |
+| 1 | 5 pre-existing test failures + 3 errors | FIXED 4 / SKIPPED 4 |
+| 2 | `PHASE_10_SUPERVISED_LOSS_WEIGHT` ownership | FIXED (clarifying comment) |
+| 3 | CRLF normalization risk | FIXED (Scenario A — `.gitattributes`, no restoration needed) |
+| 4 | DNN `predict_proba` saturation | FIXED (input clipping + 4 calibration tests) |
+| 5 | GNN trained on `anomaly_flag` | FIXED (allow-flag guard + strong card disclosure) |
+| 6 | Redis single-instance HA | DEFERRED (documented) |
+| 7 | Migration directory consolidation | FIXED (README + helper script) |
+| 8 | Admin auth = X-Admin-Token only | FIXED (additive JWT path on Phase 9-12 routes) |
+| 9 | Custom GraphSAGE locks out PyG | FIXED (migration path documented) |
+| 10 | Groq response_format not enforced | FIXED (`chat_for_json` helper + agent retry path) |
+| 11 | No unified cost dashboard | FIXED (`/api/risk/orchestrator/costs/today`) |
+
+### Final test state
+
+```
+$ pytest --tb=no -q
+292 passed, 4 skipped, 21 warnings in ~57s
+```
+
+The 4 skipped tests are documented in `CTO_AUDIT.md` issue #1 with
+clear un-skip criteria.
+
+### Branch shape going into review
+
+17 commits since `main`:
+* 1 baseline commit (`60621c5`)
+* 4 phase commits (Phase 9, 10, 11, 12)
+* 12 audit commits (one per audit fix; one follow-up for `.env.example`)
+
+No history rewrites, no force-pushes, no teammate code touched outside
+the additive JWT-on-Phase-9-12 path.
