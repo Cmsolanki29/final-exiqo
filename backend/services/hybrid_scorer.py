@@ -181,15 +181,31 @@ class HybridScorer:
         worrying about whether the inner ML calls block the event loop.
         The CPU-bound parts run in a thread executor.
 
-        Args:
-            user_id:  User identifier.
-            txn:      Raw transaction dict (TransactionIn.to_feature_dict() output).
-            features: Pre-assembled feature dict from FeatureAssembler; if None,
-                      falls back to ml_detector.score_single default feature path.
+        Phase 10: when ``PHASE_10_GNN_ENABLED`` is True, the user's GNN
+        embedding is fetched (Redis-first, DB-fallback) BEFORE entering
+        the executor and stashed on the txn dict so the sync scorer can
+        surface it in ``signals``.  We deliberately don't blend it into
+        the score yet — at the current data scale (4 users) the GNN
+        embedding adds topology context but no validated accuracy lift,
+        and shipping a blended weight without measurement would be a
+        model-card lie.  Phase 11/12 will use the embedding as a real
+        feature once labels and users grow.
 
         Returns:
             ScoreResult with both unsup_score and sup_score populated.
         """
+        # ── Phase 10: best-effort GNN embedding fetch (additive, no blending)
+        try:
+            settings = get_settings()
+            if getattr(settings, "PHASE_10_GNN_ENABLED", False) and user_id is not None:
+                from services.phase_10_gnn.inference import get_user_embedding
+                emb = await get_user_embedding(int(user_id))
+                if emb:
+                    txn = {**txn, "_gnn_embedding": emb}
+        except Exception as exc:  # noqa: BLE001
+            # Never block scoring on a GNN lookup failure.
+            logger.debug("hybrid_scorer: GNN embedding fetch skipped: %s", exc)
+
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, self._score_sync, int(user_id), txn, features
@@ -379,6 +395,17 @@ class HybridScorer:
             signals["sup_score_raw"] = round(sup_score, 4)
             signals["unsup_score_raw"] = round(unsup_score, 4)
             signals["blend"] = f"{int(settings.UNSUP_WEIGHT*100)}%unsup+{int(settings.SUP_WEIGHT*100)}%sup"
+
+        # ── Phase 10: surface the GNN embedding as a signal (no blending).
+        gnn_emb = txn.get("_gnn_embedding") if isinstance(txn, dict) else None
+        if isinstance(gnn_emb, list) and gnn_emb:
+            try:
+                norm = float(np.linalg.norm(np.asarray(gnn_emb, dtype=float)))
+            except Exception:
+                norm = 0.0
+            signals["gnn_emb_dim"] = len(gnn_emb)
+            signals["gnn_emb_norm"] = round(norm, 4)
+            signals["gnn_blend"] = "feature_only"
 
         # ---- Phase 7: SHAP explanation ---- #
         explanation_detail: Optional[dict[str, Any]] = None

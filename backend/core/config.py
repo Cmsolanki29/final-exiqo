@@ -139,6 +139,32 @@ class Settings(BaseSettings):
     PHASE_9_MAX_OUTPUT_TOKENS: int = 1500
     PHASE_9_TIMEOUT_SEC: int = 30
 
+    # ------------------------------------------------------------------ #
+    # Phase 10 — Graph Neural Network (heterogeneous GraphSAGE)
+    # ------------------------------------------------------------------ #
+    # Master switch: when False, the GNN is fully bypassed and the hybrid
+    # scorer continues to work exactly as before.
+    PHASE_10_GNN_ENABLED: bool = False
+    # Embedding dimension produced per user.  64 is a sane default — wide
+    # enough to be useful, small enough to fit in Redis cheaply.
+    PHASE_10_EMBED_DIM: int = 64
+    # GraphSAGE depth.  2 layers covers user -> merchant -> user reach,
+    # which is enough for fraud-ring detection at our scale.
+    PHASE_10_NUM_LAYERS: int = 2
+    # Default training look-back (days) — keeps the graph fresh.
+    PHASE_10_TRAINING_DAYS: int = 90
+    # Training hyperparams (kept conservative for laptop CPU).
+    PHASE_10_EPOCHS: int = 60
+    PHASE_10_LR: float = 1e-2
+    # Redis TTL for cached embeddings (24 h) — refreshed on each retrain.
+    PHASE_10_EMBED_TTL_SEC: int = 86400
+    # Minimum users in the graph below which we *refuse* to train.  Below
+    # this, the GNN is overfitting noise and we'd be lying with a model card.
+    PHASE_10_MIN_USERS_FOR_TRAINING: int = 3
+    # Honest cap on supervised contribution to total loss.  Most of our
+    # signal is unsupervised contrastive when labels are sparse.
+    PHASE_10_SUPERVISED_LOSS_WEIGHT: float = 0.3
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

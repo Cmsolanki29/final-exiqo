@@ -142,10 +142,105 @@ GROQ_API_KEY=<your key>                 # already configured in .env
 
 ---
 
-## Phase 10 — Graph Neural Network (GNN)
-**Status:** queued (not started this milestone).
-Train a GraphSAGE model over the existing user/device/IP/merchant graph
-and serve 64-dim user embeddings to the Phase 3 hybrid scorer via Redis.
+## Phase 10 — Graph Neural Network (heterogeneous GraphSAGE)
+
+**Status:** ✅ Implemented (this milestone).
+**Closes gap to:** NVIDIA Blueprint pattern, PayPal, TigerGraph.
+
+### What it does
+Builds a heterogeneous graph from the transactions table
+(user / merchant / category / location / bank — plus optional
+device / ip / card when populated), trains a 2-layer GraphSAGE on
+contrastive user↔merchant edges + a small supervised head, and
+persists the resulting 64-dim user embedding to **both Redis (TTL) and
+Postgres (durable)** so the hybrid scorer can fetch it cheaply at
+score time.
+
+### Architecture choice — pure PyTorch, no `torch_geometric`
+PyG's wheels are fragile on Windows / Python 3.13 and would have broken
+the branch's checkout-and-run guarantee.  We re-implement the SAGE-mean
+aggregator using `scipy.sparse.csr_matrix` left-multiplied against node
+embeddings.  The math is identical; only the package boundary differs.
+Switching to PyG later is a 50-line change once a stable wheel exists.
+
+### Files added
+```
+backend/database/migrations/010_phase10_gnn.sql
+backend/services/phase_10_gnn/__init__.py
+backend/services/phase_10_gnn/graph_builder.py
+backend/services/phase_10_gnn/gnn_model.py
+backend/services/phase_10_gnn/trainer.py
+backend/services/phase_10_gnn/inference.py
+backend/routes/gnn.py
+backend/tests/test_phase10_gnn.py
+backend/models/cards/fraud_gnn_v1.md
+```
+
+### Files modified (additive only)
+```
+backend/core/config.py           — Phase 10 settings block
+backend/main.py                  — register gnn router
+backend/services/hybrid_scorer.py — async pre-fetch + signals.gnn_emb_*
+.env                              — Phase 10 env vars
+```
+
+### Database
+* Migration `010_phase10_gnn.sql` applied — creates
+  `gnn_user_embeddings` and `gnn_training_runs`.
+
+### API surface (new)
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `GET`  | `/api/risk/gnn/health` | open | feature flag + config |
+| `POST` | `/api/risk/gnn/train?days=&epochs=&lr=` | `X-Admin-Token` | full pipeline |
+| `GET`  | `/api/risk/gnn/status` | `X-Admin-Token` | last run + inventory |
+| `GET`  | `/api/risk/gnn/users/{id}/embedding` | `X-Admin-Token` | one user's vector |
+
+### Hybrid-scorer integration (intentionally conservative)
+`HybridScorer.score()` pre-fetches the user's embedding asynchronously
+when `PHASE_10_GNN_ENABLED=true` and surfaces it in `signals` as
+`gnn_emb_dim`, `gnn_emb_norm`, `gnn_blend="feature_only"`.  We
+**deliberately do not blend it into the score** — see model card for the
+honest reasoning.  Phase 11/12 will use the embedding as a feature once
+the data justifies a measured weight.
+
+### Tests
+`backend/tests/test_phase10_gnn.py` — **10 / 10 passing**, no network:
+
+* Sparse utilities (empty matrix, row-normalisation, conv shape, full
+  forward, supervised head).
+* Graph builder (empty rows handled, anomaly-rate labelling correct).
+* Trainer (skips with `insufficient_graph_data` reason on tiny graphs).
+* Inference (Redis-hit, DB fallback, true-None when missing).
+
+### Configuration — new env vars
+```dotenv
+PHASE_10_GNN_ENABLED=false
+PHASE_10_EMBED_DIM=64
+PHASE_10_NUM_LAYERS=2
+PHASE_10_TRAINING_DAYS=90
+PHASE_10_EPOCHS=60
+PHASE_10_LR=0.01
+PHASE_10_EMBED_TTL_SEC=86400
+PHASE_10_MIN_USERS_FOR_TRAINING=3
+PHASE_10_SUPERVISED_LOSS_WEIGHT=0.3
+```
+
+### Honest caveats (and why this is still the right ship)
+* **Only 4 users in DB right now.**  Cannot learn fraud rings — there
+  are no rings.  The architecture is production-grade; the *learned
+  signal* is bounded by data scale.
+* **No real `is_fraud` labels.**  Supervised loss uses
+  `anomaly_flag` as a proxy.
+* **Bipartite-ish graph** — `device_id`/`ip_address`/`card_token` are
+  NULL on every row.  Phase 11/12 don't depend on these being populated;
+  they will benefit dramatically when they are.
+* See `backend/models/cards/fraud_gnn_v1.md` for the full caveat list.
+
+### Rollback
+* Soft (instant): set `PHASE_10_GNN_ENABLED=false` and reload.
+* Hard: `git revert <phase-10 commit>` — both new tables are append-only
+  and PII-free, so leaving them in place is safe.
 
 ## Phase 11 — DNN Migration Path
 **Status:** queued.
