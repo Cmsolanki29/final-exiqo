@@ -41,6 +41,23 @@ from routes import (
 from services.ml_model import ml_detector
 from services.scorer import calculate_health_score
 
+# ── Phase 1-8 Risk Engine imports (Chirag Solanki) ──────────────────────────
+try:
+    from routes import admin as _admin_rt
+    from routes import explainability as _explain_rt
+    from routes import feedback as _feedback_rt
+    from routes import risk_profile as _risk_profile_rt
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from core.db import init_pool, close_pool
+    from core.redis import init_redis, close_redis
+    from workers.retrain_feed_consumer import retrain_feed_consumer
+    from workers.review_queue_worker import run_assignment_cycle
+    _RISK_ENGINE_OK = True
+except Exception as _risk_err:
+    _RISK_ENGINE_OK = False
+    print(f"[RiskEngine] Skipping Phase 1-8 imports: {_risk_err}")
+_risk_scheduler = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -59,7 +76,40 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_warm_ml_models())
     print("SmartSpend Backend Ready (ML training running in background).")
+
+    # ── Phase 1-8 startup ──────────────────────────────────────────────────
+    if _RISK_ENGINE_OK:
+        try:
+            await init_pool()
+            await init_redis()
+        except Exception as _e:
+            print(f"[RiskEngine] Pool/Redis init skipped: {_e}")
+        try:
+            global _risk_scheduler
+            _risk_scheduler = AsyncIOScheduler(timezone="UTC")
+            _risk_scheduler.add_job(
+                run_assignment_cycle, "interval", minutes=5,
+                id="review_queue_worker", replace_existing=True,
+            )
+            _risk_scheduler.start()
+        except Exception as _e:
+            print(f"[RiskEngine] Scheduler skipped: {_e}")
+        try:
+            asyncio.create_task(retrain_feed_consumer.start())
+        except Exception as _e:
+            print(f"[RiskEngine] Background tasks skipped: {_e}")
+
     yield
+
+    # ── Phase 1-8 shutdown ─────────────────────────────────────────────────
+    if _RISK_ENGINE_OK:
+        try:
+            if _risk_scheduler and _risk_scheduler.running:
+                _risk_scheduler.shutdown(wait=False)
+            await close_redis()
+            await close_pool()
+        except Exception as _e:
+            print(f"[RiskEngine] Shutdown warning: {_e}")
 
 
 app = FastAPI(
@@ -101,6 +151,16 @@ app.include_router(fraud_shield.router, prefix="/api")
 app.include_router(festival_important_days.router, prefix="/api")
 app.include_router(festival_predictor.router, prefix="/api")
 app.include_router(purchase_planner.router, prefix="/api")
+
+# ── Phase 1-8 routers ──────────────────────────────────────────────────────
+if _RISK_ENGINE_OK:
+    try:
+        app.include_router(_admin_rt.router, prefix="/api")
+        app.include_router(_explain_rt.router, prefix="/api")
+        app.include_router(_feedback_rt.router, prefix="/api")
+        app.include_router(_risk_profile_rt.router, prefix="/api")
+    except Exception as _e:
+        print(f"[RiskEngine] Router registration skipped: {_e}")
 
 
 @app.get("/api")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -77,7 +77,7 @@ async def verify_otp(data: VerifyOTPRequest) -> dict[str, str | bool]:
         otp_id, otp_code, expires_at, verified = row[0], row[1], row[2], row[3]
         if verified:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP already used")
-        if datetime.now() > expires_at:
+        if datetime.now(timezone.utc) > expires_at:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP expired")
         if str(otp_code) != data.otp_code:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OTP")

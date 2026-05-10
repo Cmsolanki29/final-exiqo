@@ -16,3 +16,18 @@ python-jose[cryptography]==3.3.0
 bcrypt==4.0.1
 passlib[bcrypt]==1.7.4
 email-validator==2.2.0
+
+# ── Phase 1-8 Risk Engine (Chirag Solanki) ──────────────────────────────────
+asyncpg>=0.29
+redis[hiredis]>=5.0
+xgboost>=2.0
+mlflow>=2.10
+shap>=0.44
+prometheus-client>=0.19
+structlog>=24.1
+pydantic-settings>=2.0
+apscheduler>=3.10
+circuitbreaker>=2.0
+pytest-asyncio>=0.23
+httpx>=0.26
+pyod>=1.1

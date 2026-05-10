@@ -437,3 +437,9 @@ class EnhancedIsolationForest:
 
 
 ml_detector = EnhancedIsolationForest()
+
+# ── Phase 1-8 compatibility alias (Chirag Solanki) ─────────────────────────
+# hybrid_scorer.py / decision_engine.py expect `EnsembleAnomalyDetector`.
+# Existing class is API-compatible enough for import-time wiring; runtime
+# usage is guarded by try/except in main.py and the routes that consume it.
+EnsembleAnomalyDetector = EnhancedIsolationForest

@@ -1,0 +1,17 @@
+{
+  "model_path": "models/supervised_v0.pkl",
+  "trained_at": "2026-05-10T02:07:00Z",
+  "train_size": 1515,
+  "val_size": 505,
+  "n_fraud_train": 13,
+  "scale_pos_weight": 115.54,
+  "best_iteration": 4,
+  "roc_auc": 0.9334,
+  "pr_auc": 0.0373,
+  "val_aucpr": 1.0,
+  "recall_at_1pct_fpr": 0.0,
+  "recall_at_5pct_fpr": 0.5,
+  "precision_at_80_recall": 0.0303,
+  "total_rows": 2525,
+  "fraud_rate": 0.00832
+}

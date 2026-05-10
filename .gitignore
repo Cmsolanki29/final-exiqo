@@ -4,3 +4,33 @@ __pycache__/
 node_modules/
 dist/
 build/
+
+# ML artefacts — registered in MLflow, not git
+backend/mlflow.db
+backend/mlflow.db-journal
+backend/mlruns/
+backend/models/*.pkl
+*.pkl
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Python
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Frontend caches
+frontend/node_modules/.cache/
+frontend/.eslintcache
+
+# Logs
+*.log
+
+# Local-only experimental scripts
+backend/_inv.py
+backend/_scratch_*.py

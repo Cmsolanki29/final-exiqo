@@ -15,6 +15,22 @@ module.exports = {
           navy: "#0A0E27",
           dark: "#1A1F3A",
         },
+        // ── Phase 1-8 Risk Engine UI (additive, no existing tokens touched) ──
+        risk: {
+          safe:      "#10b981",
+          review:    "#f59e0b",
+          challenge: "#f97316",
+          block:     "#ef4444",
+          neutral:   "#6b7280",
+          info:      "#3b82f6",
+          bg: {
+            safe:      "#ecfdf5",
+            review:    "#fffbeb",
+            challenge: "#fff7ed",
+            block:     "#fef2f2",
+            info:      "#eff6ff",
+          },
+        },
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
@@ -24,6 +40,10 @@ module.exports = {
         "auth-shimmer": "auth-shimmer 2.2s ease-in-out infinite",
         "auth-particle": "auth-particle 14s ease-in-out infinite",
         "auth-glow-pulse": "auth-glow-pulse 3s ease-in-out infinite",
+        // ── Risk Engine animations (additive) ──
+        "risk-pulse":   "risk-pulse 2s ease-in-out infinite",
+        "risk-shimmer": "risk-shimmer 2s linear infinite",
+        "risk-spin":    "spin 1s linear infinite",
       },
       keyframes: {
         "auth-mesh-shift": {
@@ -41,6 +61,15 @@ module.exports = {
         "auth-glow-pulse": {
           "0%, 100%": { opacity: "0.35", transform: "scale(1)" },
           "50%": { opacity: "0.55", transform: "scale(1.08)" },
+        },
+        // ── Risk Engine keyframes (additive) ──
+        "risk-pulse": {
+          "0%, 100%": { opacity: "1" },
+          "50%":       { opacity: "0.4" },
+        },
+        "risk-shimmer": {
+          "0%":   { backgroundPosition: "-200% 0" },
+          "100%": { backgroundPosition:  "200% 0" },
         },
       },
       boxShadow: {

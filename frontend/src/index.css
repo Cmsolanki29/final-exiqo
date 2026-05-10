@@ -2509,3 +2509,38 @@ button:disabled {
   }
 }
 
+/* ================================================================ */
+/* Risk Engine UI utilities — Phase 1-8 fraud detection visibility  */
+/* Appended additively; no existing variables or rules modified.    */
+/* ================================================================ */
+@layer utilities {
+  .risk-shimmer-bg {
+    background: linear-gradient(
+      90deg,
+      rgba(229, 231, 235, 0) 0%,
+      rgba(229, 231, 235, 0.6) 50%,
+      rgba(229, 231, 235, 0) 100%
+    );
+    background-size: 200% 100%;
+    animation: risk-shimmer 2s linear infinite;
+  }
+
+  .risk-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 1rem;
+    transition: box-shadow 0.2s, border-color 0.2s;
+  }
+
+  .risk-card:hover {
+    border-color: rgba(124, 58, 237, 0.3);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  }
+
+  .risk-chip-safe      { background: #ecfdf5; color: #10b981; }
+  .risk-chip-review    { background: #fffbeb; color: #d97706; }
+  .risk-chip-challenge { background: #fff7ed; color: #ea580c; }
+  .risk-chip-block     { background: #fef2f2; color: #dc2626; }
+  .risk-chip-neutral   { background: #f3f4f6; color: #6b7280; }
+}
+

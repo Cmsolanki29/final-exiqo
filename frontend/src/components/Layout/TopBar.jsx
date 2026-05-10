@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Bell, ChevronDown, Search, Settings } from "lucide-react";
+import { RiskLiveTicker } from "../risk/RiskLiveTicker";
 
 const selectClass =
   "h-12 w-full appearance-none cursor-pointer rounded-xl border border-exiqo-purple/35 bg-exiqo-dark/50 " +
@@ -33,6 +34,11 @@ const TopBar = ({
 
   return (
     <header className="sticky top-0 z-40 border-b border-exiqo-purple/15 bg-exiqo-navy/95 backdrop-blur-xl">
+      {/* Risk live ticker — slim strip above the main header so it never squeezes search */}
+      <div className="hidden md:flex items-center justify-end px-4 sm:px-6 lg:px-8 py-1.5 border-b border-exiqo-purple/10 bg-exiqo-dark/30">
+        <RiskLiveTicker />
+      </div>
+
       <div className="mx-auto flex h-[4.75rem] max-w-[1920px] items-center gap-4 px-4 sm:gap-5 sm:px-6 lg:px-8">
         {/* Left — tighter copy, no cramped duplicate line */}
         <div className="min-w-0 shrink-0 lg:max-w-[min(18rem,28vw)]">
@@ -46,7 +52,7 @@ const TopBar = ({
           </p>
         </div>
 
-        {/* Center: search — larger, no shortcut badge */}
+        {/* Center: search + risk live ticker */}
         <div className="hidden min-w-0 flex-1 items-center justify-center md:flex">
           <div className="relative w-full max-w-2xl">
             <label htmlFor="topbar-search" className="sr-only">
@@ -66,7 +72,7 @@ const TopBar = ({
           </div>
         </div>
 
-        {/* Right — same height (h-12) as search */}
+        {/* Right — controls (ticker moved to its own strip above) */}
         <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
           <div className="relative w-[6.5rem] sm:w-[7.25rem]">
             <select

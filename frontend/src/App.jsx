@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, lazy, Suspense } from "react";
 import OnboardingPage from "./app/onboarding/page";
 import SignIn from "./components/Auth/SignIn";
 import SignUp from "./components/Auth/SignUp";
@@ -15,6 +15,12 @@ import { ToastProvider } from "./components/common/Toast";
 import { SkeletonCard } from "./components/common/SkeletonCard";
 import { useAuth } from "./context/AuthContext";
 import { getUsers } from "./services/api";
+// ── Phase 1-8 Risk Engine pages (lazy — no impact on initial bundle) ───────
+const TrustCenter      = lazy(() => import("./pages/risk/TrustCenter"));
+const AIPerformance    = lazy(() => import("./pages/risk/AIPerformance"));
+const AlertsCenter     = lazy(() => import("./pages/risk/AlertsCenter"));
+const BehaviorProfile  = lazy(() => import("./pages/risk/BehaviorProfile"));
+const DeviceTrust      = lazy(() => import("./pages/risk/DeviceTrust"));
 
 const App = () => {
   const { user, loading: authLoading, logout, isAuthenticated } = useAuth();
@@ -183,6 +189,32 @@ const App = () => {
                 )}
                 {activeTab === "purchase" && <PurchasePlanner userId={selectedUserId} />}
                 {activeTab === "festival" && <FestivalPredictor userId={selectedUserId} />}
+                {/* ── Phase 1-8 Risk Engine tabs ─────────────────────────── */}
+                {activeTab === "trust-center" && (
+                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading Trust Center…</div>}>
+                    <TrustCenter userId={selectedUserId} onNavigate={setActiveTab} />
+                  </Suspense>
+                )}
+                {activeTab === "ai-performance" && (
+                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading…</div>}>
+                    <AIPerformance />
+                  </Suspense>
+                )}
+                {activeTab === "alerts-center" && (
+                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading…</div>}>
+                    <AlertsCenter userId={selectedUserId} />
+                  </Suspense>
+                )}
+                {activeTab === "behavior-profile" && (
+                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading…</div>}>
+                    <BehaviorProfile userId={selectedUserId} onNavigate={setActiveTab} />
+                  </Suspense>
+                )}
+                {activeTab === "device-trust" && (
+                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading…</div>}>
+                    <DeviceTrust userId={selectedUserId} onNavigate={setActiveTab} />
+                  </Suspense>
+                )}
               </div>
             )}
           </div>

@@ -11,16 +11,20 @@ import {
   ShoppingBag,
   Sparkles,
   TrendingUp,
+  ShieldCheck,
 } from "lucide-react";
+import { RiskProtectionBadge } from "../risk/RiskProtectionBadge";
 
 const BASE_NAV = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "emi", label: "EMI Tracker", icon: CreditCard },
-  { id: "fraud", label: "Fraud Shield", icon: Shield },
-  { id: "subscriptions", label: "Subscriptions", icon: Bell },
-  { id: "dark-patterns", label: "Analytics", icon: TrendingUp },
-  { id: "purchase", label: "Purchase Planner", icon: ShoppingBag },
-  { id: "festival", label: "Festival Planner", icon: Sparkles },
+  { id: "dashboard",    label: "Dashboard",        icon: LayoutDashboard },
+  { id: "emi",          label: "EMI Tracker",       icon: CreditCard },
+  { id: "fraud",        label: "Fraud Shield",      icon: Shield },
+  { id: "subscriptions",label: "Subscriptions",     icon: Bell },
+  { id: "dark-patterns",label: "Analytics",         icon: TrendingUp },
+  { id: "purchase",     label: "Purchase Planner",  icon: ShoppingBag },
+  { id: "festival",     label: "Festival Planner",  icon: Sparkles },
+  // ── Phase 1-8 Risk Engine ──────────────────────────────────────────────
+  { id: "trust-center", label: "Trust Center",      icon: ShieldCheck, riskOnly: true },
 ];
 
 const sidebarWidth = (collapsed) => (collapsed ? 84 : 280);
@@ -125,6 +129,13 @@ const Sidebar = ({ collapsed, onToggle, activeTab, onTabChange, onLogout, fraudB
           );
         })}
       </nav>
+
+      {/* ── Risk protection badge ── */}
+      {!collapsed && (
+        <div className="px-4 pb-2">
+          <RiskProtectionBadge onNavigate={onTabChange} />
+        </div>
+      )}
 
       <div className="px-3 pb-6">
         <motion.button

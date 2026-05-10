@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at        TIMESTAMP DEFAULT NOW()
 );
 
+-- Onboarding / OTP: verified mobile (nullable until user completes flow)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS mobile_number VARCHAR(20);
+
 -- =====================
 -- TABLE 2: transactions (core table — ML-ready)
 -- =====================
