@@ -345,9 +345,19 @@ class TestTrainAndEvaluate:
 class TestHybridScorer:
 
     def test_has_supervised_model_false_when_no_file(self, mock_ensemble_detector):
-        """HybridScorer reports no supervised model when the file doesn't exist."""
+        """HybridScorer reports no supervised model when the file doesn't exist.
+
+        Note (audit-1 fix): we must also stub the MLflow registry's
+        load_production/load_shadow because HybridScorer.__init__ calls
+        ``_load_all_models()`` which tries the registry first and falls
+        back to disk only on miss.  Without these patches a real
+        registered model from a prior test run can satisfy the load.
+        """
         from services.hybrid_scorer import HybridScorer
-        with patch("services.hybrid_scorer.load_model", return_value=None):
+        from services.ml_registry.registry import model_registry as _reg
+        with patch("services.hybrid_scorer.load_model", return_value=None), \
+             patch.object(_reg, "load_production", return_value=None), \
+             patch.object(_reg, "load_shadow", return_value=None):
             scorer = HybridScorer(detector=mock_ensemble_detector)
         assert not scorer.has_supervised_model
 
@@ -431,9 +441,16 @@ class TestHybridScorer:
         assert result is False
 
     def test_reload_supervised_true_after_bootstrap(self, mock_ensemble_detector, trained_xgb_model):
-        """reload_supervised returns True and activates the model."""
+        """reload_supervised returns True and activates the model.
+
+        Note (audit-1 fix): registry stubs added so the "no model"
+        precondition holds even when MLflow has a stale staging entry.
+        """
         from services.hybrid_scorer import HybridScorer
-        with patch("services.hybrid_scorer.load_model", return_value=None):
+        from services.ml_registry.registry import model_registry as _reg
+        with patch("services.hybrid_scorer.load_model", return_value=None), \
+             patch.object(_reg, "load_production", return_value=None), \
+             patch.object(_reg, "load_shadow", return_value=None):
             scorer = HybridScorer(detector=mock_ensemble_detector)
         assert not scorer.has_supervised_model
 

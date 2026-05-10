@@ -179,10 +179,18 @@ class TestModelRegistry:
         assert versions == []
 
     def test_registry_degrades_gracefully_when_mlflow_unavailable(self, monkeypatch):
-        """When MLflow is unreachable, all registry methods return safe defaults."""
-        from services.ml_registry.registry import ModelRegistry
-        reg = ModelRegistry()
+        """When MLflow is unreachable, all registry methods return safe defaults.
+
+        Note (audit-1 fix): ``load_production`` falls back to disk when
+        MLflow is unavailable; we stub ``_load_model_from_disk`` so a
+        real ``.pkl`` left from a prior bootstrap run cannot satisfy the
+        fallback and falsify the assertion.
+        """
+        from services.ml_registry import registry as _reg_mod
+        reg = _reg_mod.ModelRegistry()
         reg._available = False  # Simulate unavailable MLflow
+
+        monkeypatch.setattr(_reg_mod, "_load_model_from_disk", lambda *_a, **_k: None)
 
         assert reg.register_model(MagicMock(), "test") is None
         assert reg.promote("test", "1", "production") is False
@@ -474,11 +482,16 @@ class TestHybridScorerPhase5:
         scorer._sup_model_path = "nonexistent.pkl"
         scorer._detector = MagicMock()
 
-        with patch("services.hybrid_scorer.get_settings") as mock_s:
+        # audit-1 fix: also stub the MLflow registry so the
+        # _load_from_registry_or_disk path can't satisfy the load via a
+        # leftover Production-stage model from a prior test run.
+        from services.ml_registry.registry import model_registry as _reg
+        with patch("services.hybrid_scorer.get_settings") as mock_s, \
+             patch("services.hybrid_scorer.load_model", return_value=None), \
+             patch("services.hybrid_scorer.HybridScorer._load_shadow_from_registry", return_value=None), \
+             patch.object(_reg, "load_production", return_value=None):
             mock_s.return_value.SUPERVISED_MODEL_PATH = "nonexistent.pkl"
-            with patch("services.hybrid_scorer.load_model", return_value=None):
-                with patch("services.hybrid_scorer.HybridScorer._load_shadow_from_registry", return_value=None):
-                    scorer.reload_models()  # Should not raise
+            scorer.reload_models()  # Should not raise
 
         assert scorer._sup_model is None   # No model found, remains None
 

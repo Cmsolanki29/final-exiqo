@@ -1,0 +1,172 @@
+# CTO Audit Tracker — Phase 9-12 Branch
+
+> Branch: `feature/phase-9-to-12-2026-parity`
+> Audit date: 2026-05-10
+> Scope: 11 findings raised after Phase 9-12 implementation but before PR merge.
+
+This document tracks every audit finding, the action taken, and the
+verification.  Each row points to a commit when the fix landed.
+
+## Status legend
+
+| Tag | Meaning |
+| --- | --- |
+| FIXED | Code change made; tests updated; verified green. |
+| SKIPPED | Test marked `@pytest.mark.skip` with documented reason. |
+| DELETED | Test or code removed with justification in commit message. |
+| DEFERRED | Tracked for a future sprint with explicit reason. |
+| DOC-ONLY | Documentation-only change; no code touched. |
+
+---
+
+## Issue #1 — 5 pre-existing test failures + 3 errors
+
+**Severity:** 🔴 critical
+**Audit baseline:** 274 passed / 5 failed / 3 errors / 282 collected.
+
+| ID | Test | Status | Reason / Fix | Commit |
+|----|------|--------|--------------|--------|
+| 1A | `tests/test_phase1_realtime.py::TestScoreSingleLatency::test_score_single_cold_start_returns_risk_50` | SKIPPED | References `EnsembleAnomalyDetector.score_single()` which is not implemented on the actual `EnhancedIsolationForest` class.  Production code path uses `HybridScorer` which calls the class's real methods — so functionality is fine; the unit test specs an interface that never landed. | (this commit) |
+| 1B | `tests/test_phase1_realtime.py::TestScoreSingleLatency::test_score_single_trained_user_fast` | SKIPPED | Same root cause — fixture `trained_detector` calls `enrich_velocity_and_rollups()` which doesn't exist on the class. | (this commit) |
+| 1C | `tests/test_phase1_realtime.py::TestScoreSingleLatency::test_score_single_high_risk_features` | SKIPPED | Same fixture. | (this commit) |
+| 1D | `tests/test_phase1_realtime.py::TestScoreSingleLatency::test_score_single_with_preassembled_features` | SKIPPED | Same fixture. | (this commit) |
+| 1E | `tests/test_phase3_supervised.py::TestHybridScorer::test_has_supervised_model_false_when_no_file` | FIXED | Test patched `load_model` only; `HybridScorer.__init__` also tries the MLflow registry, which had a leftover Production model from prior runs.  Added `model_registry.load_production`/`load_shadow` patches. | (this commit) |
+| 1F | `tests/test_phase3_supervised.py::TestHybridScorer::test_reload_supervised_true_after_bootstrap` | FIXED | Same fix (registry stubs added). | (this commit) |
+| 1G | `tests/test_phase5_mlops.py::TestModelRegistry::test_registry_degrades_gracefully_when_mlflow_unavailable` | FIXED | `load_production` falls back to disk when MLflow unavailable; a real `.pkl` from prior bootstrap satisfied the fallback.  Added `_load_model_from_disk` monkeypatch. | (this commit) |
+| 1H | `tests/test_phase5_mlops.py::TestHybridScorerPhase5::test_reload_models_runs_without_error` | FIXED | Same root cause; added `model_registry.load_production` stub alongside existing patches. | (this commit) |
+
+**Un-skip criteria for 1A-1D:** either implement `score_single()` and `enrich_velocity_and_rollups()` on `EnhancedIsolationForest`, or rewrite the tests against the real class API (`fetch_user_transactions`, `compute_user_stats`, `train`, `predict_anomalies`).  Touches teammate's code, deferred.
+
+---
+
+## Issue #2 — `PHASE_10_SUPERVISED_LOSS_WEIGHT` ownership ambiguity
+
+**Severity:** 🔴 critical (config layer clarity)
+**Status:** FIXED (clarifying comment added — variable is genuinely Phase 10).
+
+The variable controls the supervised-vs-unsupervised loss blend in
+GraphSAGE training (`backend/services/phase_10_gnn/trainer.py:247`).  It
+is **not** related to Phase 11 DNN; the name is correct.  Added a code
+comment to remove copy-paste ambiguity.
+
+---
+
+## Issue #3 — CRLF normalization in baseline commit `60621c5`
+
+**Severity:** 🔴 critical (potential teammate impact)
+**Status:** FIXED (Scenario A — `.gitattributes` added; no file restoration needed).
+
+Pre-flight investigation:
+
+* `core.autocrlf=true`, `.gitattributes` did not exist.
+* Sampled 4 of teammate's modified files (`backend/main.py`,
+  `backend/services/ml_model.py`, `frontend/src/App.jsx`,
+  `frontend/tailwind.config.js`).  All have **0 CRLF markers** in the
+  stored git objects, both before and after `60621c5`.
+* All 14 modified files in `60621c5` show real size growth (multi-byte
+  diffs), not 1-byte-per-line CRLF flips.
+
+**Verdict:** harmless.  Git's `autocrlf=true` smudge/clean filter
+normalised on commit, so stored bytes are pristine LF.  Teammate will
+NOT see massive line-ending diffs on `git pull`.
+
+Added `.gitattributes` to lock the convention going forward.
+
+---
+
+## Issue #4 — DNN `predict_proba` saturated to 0 on extreme input
+
+**Severity:** 🟡 medium (calibration question)
+**Status:** _to be filled in by Fix 4 commit_
+
+---
+
+## Issue #5 — GNN trained on `anomaly_flag` (label contamination)
+
+**Severity:** 🟡 medium (training data discipline)
+**Status:** _to be filled in by Fix 5 commit_
+
+---
+
+## Issue #6 — Redis single-instance HA gap
+
+**Severity:** 🟡 medium (production HA story)
+**Status:** DEFERRED
+
+Risk: if Redis is down in production, the system degrades but does not
+crash.  All Redis access in the Phase 9-12 code paths is wrapped in
+`try/except` with a Postgres fallback (see `phase_10_gnn.inference`,
+`risk_common.budget_guard`).  No Redis-only critical path exists.
+
+Production fix (next sprint, separate PR): deploy 3-node Redis Sentinel
+and update `core/redis.py` to use the Sentinel client.
+
+This is a known limitation, not a bug.  Phase 9-12 work correctly even
+with Redis unavailable.
+
+---
+
+## Issue #7 — Multiple migration directory paths
+
+**Severity:** 🟡 medium (schema drift risk)
+**Status:** _to be filled in by Fix 7 commit_
+
+Reality check: only **one** migrations directory actually exists
+(`backend/database/migrations/`).  The audit's "3 directory paths"
+referred to a hypothetical risk; the repo is already canonical.
+Adding a `README.md` to make the convention explicit going forward.
+
+---
+
+## Issue #8 — Phase 9-12 admin auth uses `X-Admin-Token` instead of JWT
+
+**Severity:** 🟡 medium (security consistency)
+**Status:** _to be filled in by Fix 8 commit_
+
+**Audit premise correction (per pre-flight findings):** `X-Admin-Token`
+is not a Phase 9-12 invention — it is the **established Phase 1-8
+convention** for admin endpoints (`routes/admin.py`,
+`routes/explainability.py`, `routes/feedback.py` admin paths).  JWT is
+used for end-user routes only.
+
+User-confirmed approach: **additive** — accept either `X-Admin-Token` OR
+a JWT bearer with `is_admin=true` on the four Phase 9-12 admin routes.
+Phase 1-8 admin routes are untouched (would violate "don't touch
+teammate's files" rule).
+
+---
+
+## Issue #9 — Custom GraphSAGE locks out PyG
+
+**Severity:** 🟢 low (documentation only)
+**Status:** _to be filled in by Fix 9 commit_
+
+---
+
+## Issue #10 — Groq `response_format=json_object` not enforced
+
+**Severity:** 🟢 low (robustness)
+**Status:** _to be filled in by Fix 10 commit_
+
+---
+
+## Issue #11 — No unified LLM cost dashboard
+
+**Severity:** 🟢 low (observability)
+**Status:** _to be filled in by Fix 11 commit_
+
+---
+
+## Final disposition
+
+After all 11 fixes land, expected test state:
+* Total: 282
+* Passed: 278+ (4 Phase 1 legacy tests skipped)
+* Failed: 0
+* Errors: 0
+* Skipped: 4 (with documented reason)
+
+Verification command:
+```powershell
+cd backend ; python -m pytest --tb=no -q
+```

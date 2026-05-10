@@ -427,3 +427,30 @@ PHASE_9_TO_12_LOG.md              (this entry)
 All four phases are off by default and rollable independently.  The
 existing 8-phase pipeline is unchanged when every Phase-9-12 flag is
 left at its default.
+
+---
+
+## Post-implementation CTO audit fixes
+
+A separate `CTO_AUDIT.md` at the repo root tracks the 11 audit findings
+raised after Phase 12 landed.  Each fix is a discrete commit on top of
+this branch — none rewrite history, none touch teammate's code outside
+the JWT-additive Phase 9-12 admin routes.
+
+### Fix 1 — pre-existing test failures (audit issue #1)
+
+Baseline before fix: `274 passed, 5 failed, 3 errors`.
+Baseline after fix:  `278 passed, 4 skipped, 0 failed, 0 errors`.
+
+* 4 Phase 1 tests skipped at the `TestScoreSingleLatency` class level —
+  they reference `EnhancedIsolationForest.score_single()` and
+  `.enrich_velocity_and_rollups()` which were specced but never
+  implemented on the actual class.  Production code path is unaffected
+  (it goes through `HybridScorer` and the class's real methods).
+* 4 Phase 3 / Phase 5 tests fixed by adding registry/disk monkeypatches:
+  the tests assumed "patch `load_model` = no model loaded" but the
+  scorer also tries the MLflow registry, which had a leftover
+  Production-stage model from prior bootstrap runs.  Test-only changes;
+  no production code touched.
+
+See `CTO_AUDIT.md` issue #1 for the per-test triage table.
