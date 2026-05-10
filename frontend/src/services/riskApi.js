@@ -42,9 +42,11 @@ adminClient.interceptors.request.use((config) => {
 const d = (res) => res.data;
 
 // ── Phase 1 — Real-time event health ──────────────────────────────────────
-// Backend health endpoint lives at GET /health (no /api prefix)
+// Backend health endpoint lives at GET /health (no /api prefix).
+// Derive the backend root from REACT_APP_API_URL (strips trailing /api).
+const _BACKEND_ROOT = BASE.replace(/\/api\/?$/, "");
 export const riskHealth = () =>
-  axios.get("http://localhost:8000/health", { timeout: 5000 })
+  axios.get(`${_BACKEND_ROOT}/health`, { timeout: 5000 })
     .then(d)
     .catch(() => ({ status: "degraded" }));
 
