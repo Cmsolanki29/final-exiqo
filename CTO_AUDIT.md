@@ -215,12 +215,27 @@ merge on this item.
 ## Issue #7 — Multiple migration directory paths
 
 **Severity:** 🟡 medium (schema drift risk)
-**Status:** _to be filled in by Fix 7 commit_
+**Status:** FIXED — README + idempotent helper script.
 
 Reality check: only **one** migrations directory actually exists
 (`backend/database/migrations/`).  The audit's "3 directory paths"
 referred to a hypothetical risk; the repo is already canonical.
-Adding a `README.md` to make the convention explicit going forward.
+However, that single directory has **two parallel numbering tracks**
+(risk-engine `00X_phaseY_*.sql` AND product-features
+`00X_<feature>.sql`) which can look like a problem to a new engineer.
+
+Two artefacts added:
+
+1. `backend/database/migrations/README.md` — explains the canonical
+   path, the two numbering tracks, the legacy `database/` directory
+   (bootstrap-only, NOT for migrations), and conventions for new
+   files.
+2. `backend/scripts/apply_migrations.py` — idempotent applier that
+   tracks applied files in a `_migration_history` table.  Supports
+   `--dry-run`.  Verified by `python -m scripts.apply_migrations
+   --help`.
+
+No teammate migrations were moved (would break their local DB state).
 
 ---
 
