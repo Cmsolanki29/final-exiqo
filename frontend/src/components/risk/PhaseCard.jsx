@@ -7,11 +7,13 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Zap, Database, Brain, Settings2, RefreshCw, Network, BarChart2, MessageSquare,
+  Bot, Share2, Layers, GitMerge,
   ChevronDown,
 } from "lucide-react";
 
 const ICONS = {
   Zap, Database, Brain, Settings2, RefreshCw, Network, BarChart2, MessageSquare,
+  Bot, Share2, Layers, GitMerge,
 };
 
 export function PhaseCard({ phase, index }) {
@@ -50,11 +52,18 @@ export function PhaseCard({ phase, index }) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
               <h4 className="font-semibold text-gray-900 text-sm">{phase.title}</h4>
-              {phase.adminOnly && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-50 text-orange-500 font-medium border border-orange-100 shrink-0">
-                  Admin
-                </span>
-              )}
+              <div className="flex items-center gap-1 shrink-0">
+                {phase.badge && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-600 font-bold border border-purple-100 uppercase tracking-wider">
+                    {phase.badge}
+                  </span>
+                )}
+                {phase.adminOnly && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-50 text-orange-500 font-medium border border-orange-100">
+                    Admin
+                  </span>
+                )}
+              </div>
             </div>
             <p className="text-xs text-gray-400 mt-0.5">{phase.subtitle}</p>
           </div>

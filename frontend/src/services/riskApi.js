@@ -134,3 +134,95 @@ export const getTrustScore = (_userId) =>
 // ── Live feed (not yet on backend — graceful stub) ───────────────────────
 export const getRiskFeed = (_since) =>
   Promise.reject(new Error("risk-feed endpoint not yet available"));
+
+// ══════════════════════════════════════════════════════════════════════════
+// Phase 9 — LLM Investigation Agent
+// ══════════════════════════════════════════════════════════════════════════
+
+/** Get the latest investigation for a transaction. */
+export const getInvestigation = (txnId) =>
+  adminClient.get(`/risk/investigations/${txnId}`).then(d);
+
+/** Manually trigger an LLM investigation for a transaction. */
+export const triggerInvestigation = (txnId, userId = null, triggeredBy = "manual") =>
+  adminClient
+    .post(`/risk/investigations/${txnId}/run`, null, {
+      params: { ...(userId != null ? { user_id: userId } : {}), triggered_by: triggeredBy },
+    })
+    .then(d);
+
+/** Get today's Phase 9 LLM budget spend rollup. */
+export const getInvestigationBudget = () =>
+  adminClient.get("/risk/investigations/budget/today").then(d);
+
+/** Phase 9 health check (public — no admin token required). */
+export const getInvestigationHealth = () =>
+  riskClient.get("/risk/investigations/health").then(d);
+
+// ══════════════════════════════════════════════════════════════════════════
+// Phase 10 — Graph Neural Network
+// ══════════════════════════════════════════════════════════════════════════
+
+/** Get GNN training status / embedding inventory. */
+export const getGnnStatus = () =>
+  adminClient.get("/risk/gnn/status").then(d);
+
+/** Trigger a GNN training run. */
+export const triggerGnnTrain = (params = {}) =>
+  adminClient.post("/risk/gnn/train", null, { params }).then(d);
+
+/** Get the GNN embedding for a user. */
+export const getGnnEmbedding = (userId) =>
+  adminClient.get(`/risk/gnn/users/${userId}/embedding`).then(d);
+
+/** Phase 10 health check (public). */
+export const getGnnHealth = () =>
+  riskClient.get("/risk/gnn/health").then(d);
+
+// ══════════════════════════════════════════════════════════════════════════
+// Phase 11 — Deep Neural Network
+// ══════════════════════════════════════════════════════════════════════════
+
+/** Get DNN training status / shadow metrics. */
+export const getDnnStatus = () =>
+  adminClient.get("/risk/dnn/status").then(d);
+
+/** Trigger a DNN training run. */
+export const triggerDnnTrain = () =>
+  adminClient.post("/risk/dnn/train").then(d);
+
+/** Get DNN shadow evaluation report. */
+export const getDnnShadowEvaluation = () =>
+  adminClient.get("/risk/dnn/shadow/evaluation").then(d);
+
+/** Run a DNN prediction (POST, requires feature payload). */
+export const getDnnPredict = (features) =>
+  adminClient.post("/risk/dnn/predict", features).then(d);
+
+/** Phase 11 health check (public). */
+export const getDnnHealth = () =>
+  riskClient.get("/risk/dnn/health").then(d);
+
+// ══════════════════════════════════════════════════════════════════════════
+// Phase 12 — Multi-Model Orchestrator
+// ══════════════════════════════════════════════════════════════════════════
+
+/** Get today's aggregated LLM cost dashboard (Phase 9 + 12). */
+export const getCostsToday = () =>
+  adminClient.get("/risk/orchestrator/costs/today").then(d);
+
+/** Run the orchestrator routing decision for a transaction. */
+export const orchestrateDecision = (payload) =>
+  adminClient.post("/risk/orchestrator/decide", payload).then(d);
+
+/** Get the orchestration decision record for a transaction. */
+export const getOrchestrationDecision = (txnId) =>
+  adminClient.get(`/risk/orchestrator/decisions/${txnId}`).then(d);
+
+/** Preview which tier a score would route to (dry-run). */
+export const previewOrchestrationRoute = (params = {}) =>
+  adminClient.get("/risk/orchestrator/route/preview", { params }).then(d);
+
+/** Phase 12 health check (public). */
+export const getOrchestratorHealth = () =>
+  riskClient.get("/risk/orchestrator/health").then(d);
