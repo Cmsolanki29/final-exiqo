@@ -132,7 +132,31 @@ Mitigation:
 ## Issue #5 — GNN trained on `anomaly_flag` (label contamination)
 
 **Severity:** 🟡 medium (training data discipline)
-**Status:** _to be filled in by Fix 5 commit_
+**Status:** FIXED — disclosure strengthened, allow-flag guard added.
+
+Three changes:
+
+1. **Strengthened model card disclosure.**
+   `backend/models/cards/fraud_gnn_v1.md` now opens with a prominent
+   "TRAINING DATA CONTAMINATION DISCLOSURE" section that explicitly
+   states the supervised head learns Phase 1's behaviour, not fraud,
+   and lists the exact promotion criteria.
+
+2. **`PHASE_10_ALLOW_PROXY_LABEL` flag** in `core/config.py`
+   (default `True` — we have 0 real labels today; flip to `False`
+   when real labels arrive to lock down the training path).
+   Companion `PHASE_10_MIN_REAL_LABELS` (default `50`).
+
+3. **Trainer guard** in
+   `backend/services/phase_10_gnn/trainer.py:train_gnn()` — when the
+   flag is `False` and real `is_fraud=TRUE` count is below the
+   threshold, the trainer refuses to train and returns
+   `trained=False, reason='insufficient_real_labels_proxy_disabled'`.
+
+Test:
+`tests/test_phase10_gnn.py::TestTrainer::
+test_trainer_refuses_when_real_labels_missing_and_proxy_disabled`
+asserts the guard fires *before* `build_graph` is called.
 
 ---
 

@@ -173,6 +173,18 @@ class Settings(BaseSettings):
     # this to `PHASE_11_*` — it would break the GNN trainer and the
     # `.env` schema.  See CTO_AUDIT.md issue #2.
     PHASE_10_SUPERVISED_LOSS_WEIGHT: float = 0.3
+    # audit-5: when fewer than PHASE_10_MIN_REAL_LABELS confirmed
+    # `transactions.is_fraud=TRUE` rows exist, training falls back to
+    # `anomaly_flag` as a *proxy* label.  Because anomaly_flag is the
+    # output of Phase 1, that creates label contamination — the GNN
+    # learns to mimic Phase 1, not detect fraud.  This flag MUST be
+    # `True` for the trainer to perform that fallback.  Default `True`
+    # for now (we have 0 real labels).  Flip to `False` once real
+    # labels arrive — the trainer will then refuse to train until the
+    # `MIN_REAL_LABELS` threshold is met, which is the right
+    # production posture.
+    PHASE_10_ALLOW_PROXY_LABEL: bool = True
+    PHASE_10_MIN_REAL_LABELS: int = 50
 
     # ------------------------------------------------------------------ #
     # Phase 11 — Multi-branch DNN (Stripe Radar-style migration path)

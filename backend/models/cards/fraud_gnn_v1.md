@@ -5,6 +5,52 @@
 > the embedding in `signals.gnn_emb_*` so downstream consumers (Phase
 > 11/12) can use it; the score itself is unchanged.
 
+## ⚠️ TRAINING DATA CONTAMINATION DISCLOSURE (audit-5)
+
+**This GNN was trained using `anomaly_flag` as the supervised label.
+`anomaly_flag` is itself the OUTPUT of the Phase 1 unsupervised
+detector.**
+
+What this means in practice:
+
+* The supervised head of this GNN does NOT learn to detect fraud.  It
+  learns to predict what the Phase 1 isolation forest would say.
+* The unsupervised BPR contrastive term still carries real graph
+  topology signal — that is where the embedding gets its semantic
+  structure.
+* The composite output is therefore **a graph embedding with a
+  Phase-1-mimicking projection on top**, not a fraud detector.
+
+This was a deliberate trade-off: we have **0** confirmed `is_fraud=true`
+labels in the database, so a fully supervised approach is impossible.
+We chose to keep the supervised head (with its proxy label) because:
+
+1. It produces *consistent* embeddings across runs (otherwise the
+   contrastive term alone gives different rotations each retrain).
+2. The contamination is documented and trackable in
+   `gnn_training_runs.label_source`.
+
+**Promotion criteria — ANY of these unblocks training on real labels:**
+
+* ≥50 confirmed `transactions.is_fraud = TRUE` rows in the database, OR
+* ≥6 months of Phase 8 feedback flywheel running, OR
+* A different supervised label source becomes available (chargebacks,
+  customer disputes, manual reviewer outcomes from the review queue).
+
+**Until ANY of those is met, the GNN embedding is SIGNAL only, not a
+DECISION.**  It is surfaced in `signals.gnn_*` for downstream models
+to consume, but never blended into the risk score.
+
+**This is not a deployment to be promoted.  It is an architecture
+demonstration with honest limitations.**
+
+The trainer enforces this disclosure: `PHASE_10_ALLOW_PROXY_LABEL`
+must be `true` in `.env` for the trainer to fall back to `anomaly_flag`
+when real labels are below the threshold.  Default is `true` for now
+(we have 0 real labels), so flipping this to `false` will refuse to
+train and force the operator to wait for real fraud labels — exactly
+the right behaviour for a 2027-onwards production posture.
+
 ## What it is
 
 A heterogeneous **GraphSAGE** model that produces a 64-dimensional

@@ -175,6 +175,38 @@ class TestTrainer:
         assert result["trained"] is False
         assert result["reason"] == "insufficient_graph_data"
 
+    @pytest.mark.asyncio
+    async def test_trainer_refuses_when_real_labels_missing_and_proxy_disabled(
+        self, monkeypatch
+    ) -> None:
+        """audit-5: when ALLOW_PROXY_LABEL=False, trainer must refuse to
+        fall back to anomaly_flag and instead bail out with a clear
+        reason and operator hint.
+        """
+        from services.phase_10_gnn import trainer as tr
+
+        monkeypatch.setenv("PHASE_10_ALLOW_PROXY_LABEL", "false")
+        monkeypatch.setenv("PHASE_10_MIN_REAL_LABELS", "50")
+        from core import config as core_cfg
+        core_cfg.get_settings.cache_clear()  # type: ignore[attr-defined]
+
+        async def _zero_real_labels() -> int:
+            return 0
+        monkeypatch.setattr(tr, "_count_real_fraud_labels", _zero_real_labels)
+
+        # Should never even reach build_graph — fail fast on the guard.
+        async def _no_build_graph_calls(*a, **kw):
+            raise AssertionError("build_graph must NOT be called when "
+                                  "the proxy guard refuses training")
+        monkeypatch.setattr(tr, "build_graph", _no_build_graph_calls)
+
+        result = await tr.train_gnn(epochs=2)
+        assert result["trained"] is False
+        assert result["reason"] == "insufficient_real_labels_proxy_disabled"
+        assert result["real_label_count"] == 0
+        assert result["required"] == 50
+        assert "PHASE_10_ALLOW_PROXY_LABEL" in result["hint"]
+
 
 # ====================================================================== #
 # Inference

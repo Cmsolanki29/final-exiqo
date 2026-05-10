@@ -106,6 +106,30 @@ def _negative_sample_pairs(
 
 
 # ---------------------------------------------------------------------- #
+# audit-5: real-label count helper
+# ---------------------------------------------------------------------- #
+async def _count_real_fraud_labels() -> int:
+    """Return the number of confirmed ``transactions.is_fraud=TRUE`` rows.
+
+    Best-effort: if the DB pool is unavailable we conservatively return
+    0 so the proxy-disabled guard fails closed (refuses to train).
+    """
+    try:
+        pool = await get_pool()
+        if pool is None:
+            return 0
+        async with pool.acquire() as conn:
+            row = await conn.fetchval(
+                "SELECT COUNT(*) FROM transactions WHERE is_fraud = TRUE"
+            )
+            return int(row or 0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("phase_10: real-label count failed (%s) — "
+                        "treating as 0", exc)
+        return 0
+
+
+# ---------------------------------------------------------------------- #
 # Persistence
 # ---------------------------------------------------------------------- #
 async def _persist_embeddings(
@@ -247,6 +271,28 @@ async def train_gnn(
     sup_w = float(settings.PHASE_10_SUPERVISED_LOSS_WEIGHT)
     min_users = int(settings.PHASE_10_MIN_USERS_FOR_TRAINING)
     embed_ttl = int(settings.PHASE_10_EMBED_TTL_SEC)
+
+    # ---- audit-5: real-label guard (anti-contamination) ---- #
+    # If we do NOT have enough real `is_fraud=TRUE` labels and the
+    # operator has NOT explicitly opted into the proxy fallback, refuse
+    # to train.  Anomaly_flag is the OUTPUT of Phase 1 — using it as a
+    # supervised label would teach the GNN to mimic Phase 1's mistakes,
+    # not detect fraud.  See models/cards/fraud_gnn_v1.md.
+    if not bool(settings.PHASE_10_ALLOW_PROXY_LABEL):
+        real_count = await _count_real_fraud_labels()
+        if real_count < int(settings.PHASE_10_MIN_REAL_LABELS):
+            return {
+                "trained": False,
+                "reason": "insufficient_real_labels_proxy_disabled",
+                "real_label_count": int(real_count),
+                "required": int(settings.PHASE_10_MIN_REAL_LABELS),
+                "hint": (
+                    "Set PHASE_10_ALLOW_PROXY_LABEL=true to train on "
+                    "anomaly_flag as a proxy (academic-only — see "
+                    "fraud_gnn_v1.md for the contamination disclosure)."
+                ),
+                "duration_sec": time.perf_counter() - started_at_perf,
+            }
 
     # ---- Build graph ---- #
     try:
