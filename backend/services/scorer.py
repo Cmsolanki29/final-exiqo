@@ -43,6 +43,30 @@ def calculate_health_score(conn, user_id: int, month: int, year: int) -> HealthS
             (user_id, month, year),
         )
         row = cur.fetchone()
+        # If monthly_summary has a pre-computed score > 0, return it directly
+        if row and row[4] and int(row[4]) > 0:
+            stored_score = int(row[4])
+            total_income = float(row[0] or 0)
+            total_expense = float(row[1] or 0)
+            savings_rate = float(row[2] or 0)
+            anomaly_count = int(row[3] or 0)
+            grade = _grade(stored_score)
+            py, pm = _shift_month(year, month, -1)
+            cur.execute(
+                "SELECT COALESCE(health_score, 0) FROM monthly_summary WHERE user_id = %s AND month = %s AND year = %s;",
+                (user_id, pm, py),
+            )
+            prev_row = cur.fetchone()
+            prev_score = int(prev_row[0]) if prev_row else stored_score
+            diff = stored_score - prev_score
+            trend = "IMPROVING" if diff >= 5 else "DECLINING" if diff <= -5 else "STABLE"
+            return HealthScoreResponse(
+                score=stored_score, grade=grade,
+                components={"savings_rate_pct": savings_rate, "anomaly_count": anomaly_count,
+                            "expense_to_income_ratio": round(total_expense/total_income, 3) if total_income > 0 else None,
+                            "total_income": total_income, "total_expense": total_expense},
+                trend=trend, recommendations=["Financial data for this month is pre-computed."]
+            )
         if not row:
             cur.execute(
                 """

@@ -1,7 +1,5 @@
-import React, { useEffect, useMemo, useState, lazy, Suspense } from "react";
+import React, { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import OnboardingPage from "./app/onboarding/page";
-import SignIn from "./components/Auth/SignIn";
-import SignUp from "./components/Auth/SignUp";
 import Dashboard from "./components/Dashboard/Dashboard";
 import FestivalPredictor from "./components/Festival/FestivalPredictor";
 import FraudShieldPage from "./components/FraudShield/FraudShieldPage";
@@ -11,36 +9,26 @@ import EMITrapDetector from "./components/EMI/EMITrapDetector";
 import Sidebar from "./components/Layout/Sidebar";
 import TopBar from "./components/Layout/TopBar";
 import SubscriptionGraveyard from "./components/Subscriptions/SubscriptionGraveyard";
+import IntroFlow from "./components/intro/IntroFlow";
 import { ToastProvider } from "./components/common/Toast";
 import { SkeletonCard } from "./components/common/SkeletonCard";
 import { useAuth } from "./context/AuthContext";
 import { getUsers } from "./services/api";
-// ── Phase 1-8 Risk Engine pages (lazy — no impact on initial bundle) ───────
-const TrustCenter      = lazy(() => import("./pages/risk/TrustCenter"));
-const AIPerformance    = lazy(() => import("./pages/risk/AIPerformance"));
-const AlertsCenter     = lazy(() => import("./pages/risk/AlertsCenter"));
-const BehaviorProfile  = lazy(() => import("./pages/risk/BehaviorProfile"));
-const DeviceTrust      = lazy(() => import("./pages/risk/DeviceTrust"));
-// ── Phase 9-12 (2026 parity) pages ─────────────────────────────────────────
-const InvestigationViewer    = lazy(() => import("./pages/risk/InvestigationViewer"));
-const OrchestratorDashboard  = lazy(() => import("./pages/risk/OrchestratorDashboard"));
-const DNNShadowReport        = lazy(() => import("./pages/risk/DNNShadowReport"));
-const GNNTrainingPanel       = lazy(() => import("./pages/risk/GNNTrainingPanel"));
+// Phase 1-8 Risk Engine pages
+const TrustCenter = lazy(() => import("./pages/risk/TrustCenter"));
+const AIPerformance = lazy(() => import("./pages/risk/AIPerformance"));
+const AlertsCenter = lazy(() => import("./pages/risk/AlertsCenter"));
+const BehaviorProfile = lazy(() => import("./pages/risk/BehaviorProfile"));
+const DeviceTrust = lazy(() => import("./pages/risk/DeviceTrust"));
+
+// Phase 9-12 pages
+const InvestigationViewer = lazy(() => import("./pages/risk/InvestigationViewer"));
+const OrchestratorDashboard = lazy(() => import("./pages/risk/OrchestratorDashboard"));
+const DNNShadowReport = lazy(() => import("./pages/risk/DNNShadowReport"));
+const GNNTrainingPanel = lazy(() => import("./pages/risk/GNNTrainingPanel"));
 
 const App = () => {
   const { user, loading: authLoading, logout, isAuthenticated } = useAuth();
-  // Premium signup (3D card) is the signup screen; show it first so new visitors see it.
-  // "Sign in" on that page switches to signin. Deep-link: ?auth=signin to open login first.
-  const [authMode, setAuthMode] = useState(() => {
-    try {
-      const q = new URLSearchParams(window.location.search).get("auth");
-      if (q === "signin") return "signin";
-      if (q === "signup") return "signup";
-    } catch {
-      /* ignore */
-    }
-    return "signup";
-  });
   const [users, setUsers] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState(1);
   const [darkMode, setDarkMode] = useState(true);
@@ -105,13 +93,15 @@ const App = () => {
   }
 
   if (!isAuthenticated) {
+    // Cinematic intro flow: splash -> intro story -> get started -> auth -> dashboard.
+    // Returning users (smartspend.seenIntro=true) skip straight to /auth/signin.
     return (
       <ToastProvider>
-        {authMode === "signin" ? (
-          <SignIn onSwitchToSignup={() => setAuthMode("signup")} />
-        ) : (
-          <SignUp onSwitchToSignin={() => setAuthMode("signin")} />
-        )}
+        <IntroFlow
+          onComplete={() => {
+            /* AuthContext flips isAuthenticated, which unmounts the flow. */
+          }}
+        />
       </ToastProvider>
     );
   }
@@ -194,51 +184,53 @@ const App = () => {
                 )}
                 {activeTab === "purchase" && <PurchasePlanner userId={selectedUserId} />}
                 {activeTab === "festival" && <FestivalPredictor userId={selectedUserId} />}
-                {/* ── Phase 1-8 Risk Engine tabs ─────────────────────────── */}
+
+                {/* Phase 1-8 Risk Engine */}
                 {activeTab === "trust-center" && (
-                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading Trust Center…</div>}>
-                    <TrustCenter userId={selectedUserId} onNavigate={setActiveTab} />
+                  <Suspense fallback={<SkeletonCard lines={4} height={88} />}>
+                    <TrustCenter userId={selectedUserId} />
                   </Suspense>
                 )}
                 {activeTab === "ai-performance" && (
-                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading…</div>}>
-                    <AIPerformance />
+                  <Suspense fallback={<SkeletonCard lines={4} height={88} />}>
+                    <AIPerformance userId={selectedUserId} />
                   </Suspense>
                 )}
                 {activeTab === "alerts-center" && (
-                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading…</div>}>
+                  <Suspense fallback={<SkeletonCard lines={4} height={88} />}>
                     <AlertsCenter userId={selectedUserId} />
                   </Suspense>
                 )}
                 {activeTab === "behavior-profile" && (
-                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading…</div>}>
-                    <BehaviorProfile userId={selectedUserId} onNavigate={setActiveTab} />
+                  <Suspense fallback={<SkeletonCard lines={4} height={88} />}>
+                    <BehaviorProfile userId={selectedUserId} />
                   </Suspense>
                 )}
                 {activeTab === "device-trust" && (
-                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading…</div>}>
-                    <DeviceTrust userId={selectedUserId} onNavigate={setActiveTab} />
+                  <Suspense fallback={<SkeletonCard lines={4} height={88} />}>
+                    <DeviceTrust userId={selectedUserId} />
                   </Suspense>
                 )}
-                {/* ── Phase 9-12 (2026 parity) tabs ───────────────────────── */}
+
+                {/* Phase 9-12 AI Phases */}
                 {activeTab === "investigations" && (
-                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading Investigations…</div>}>
+                  <Suspense fallback={<SkeletonCard lines={4} height={88} />}>
                     <InvestigationViewer userId={selectedUserId} />
                   </Suspense>
                 )}
                 {activeTab === "orchestrator" && (
-                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading Orchestrator…</div>}>
-                    <OrchestratorDashboard />
+                  <Suspense fallback={<SkeletonCard lines={4} height={88} />}>
+                    <OrchestratorDashboard userId={selectedUserId} />
                   </Suspense>
                 )}
                 {activeTab === "dnn-shadow" && (
-                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading DNN Shadow…</div>}>
-                    <DNNShadowReport />
+                  <Suspense fallback={<SkeletonCard lines={4} height={88} />}>
+                    <DNNShadowReport userId={selectedUserId} />
                   </Suspense>
                 )}
                 {activeTab === "gnn-training" && (
-                  <Suspense fallback={<div className="p-8 text-exiqo-glow/50 text-sm">Loading GNN Training…</div>}>
-                    <GNNTrainingPanel />
+                  <Suspense fallback={<SkeletonCard lines={4} height={88} />}>
+                    <GNNTrainingPanel userId={selectedUserId} />
                   </Suspense>
                 )}
               </div>

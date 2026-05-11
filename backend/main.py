@@ -271,13 +271,127 @@ def ml_status() -> dict[str, Any]:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health() -> dict[str, Any]:
     ok = test_db_connection()
     return {
         "status": "healthy" if ok else "degraded",
         "db": "connected" if ok else "disconnected",
         "ml": "ready",
+        "version": "2.0.0",
     }
+
+
+# ── Phase 9-12 individual health probes ────────────────────────────────────
+import time as _time
+
+
+@app.get("/api/health/llm-investigator")
+def health_llm_investigator() -> dict[str, Any]:
+    """Probe Phase 9 LLM investigator — checks Groq API reachability."""
+    t0 = _time.perf_counter()
+    try:
+        from services.ai_service import call_groq
+        result = call_groq(
+            "You are a health-check probe.",
+            "Reply with exactly the word: ok",
+            max_tokens=4,
+            temperature=0,
+        )
+        latency = int((_time.perf_counter() - t0) * 1000)
+        if result and "ok" in str(result).lower():
+            return {"status": "ok", "latency_ms": latency, "phase": 9}
+        return {"status": "degraded", "latency_ms": latency, "phase": 9}
+    except Exception as e:
+        latency = int((_time.perf_counter() - t0) * 1000)
+        return {"status": "offline", "latency_ms": latency, "phase": 9, "error": str(e)[:80]}
+
+
+@app.get("/api/health/gnn")
+def health_gnn() -> dict[str, Any]:
+    """Probe Phase 10 GNN — checks if model file and embedding store are ready."""
+    t0 = _time.perf_counter()
+    try:
+        from core.config import get_settings
+        s = get_settings()
+        import os
+        model_path = os.path.join("models", "gnn_model.pt")
+        loaded = os.path.exists(model_path)
+
+        # Also probe the inference module to confirm embeddings store
+        try:
+            from services.phase_10_gnn.inference import get_status
+            status = get_status()
+            loaded = loaded or bool(status.get("embeddings") or status.get("model_loaded"))
+        except Exception:
+            pass
+
+        latency = int((_time.perf_counter() - t0) * 1000)
+        enabled = bool(s.PHASE_10_GNN_ENABLED)
+        return {
+            "status": "ok" if (enabled and loaded) else ("degraded" if enabled else "offline"),
+            "latency_ms": latency,
+            "enabled": enabled,
+            "model_loaded": loaded,
+            "phase": 10,
+        }
+    except Exception as e:
+        latency = int((_time.perf_counter() - t0) * 1000)
+        return {"status": "offline", "latency_ms": latency, "phase": 10, "error": str(e)[:80]}
+
+
+@app.get("/api/health/dnn")
+def health_dnn() -> dict[str, Any]:
+    """Probe Phase 11 DNN — checks if DNN model file is loaded."""
+    t0 = _time.perf_counter()
+    try:
+        from core.config import get_settings
+        s = get_settings()
+        import os
+        model_path = os.path.join("models", "dnn_model.pt")
+        loaded = os.path.exists(model_path)
+
+        try:
+            from services.phase_11_dnn.inference import get_dnn_status
+            status = get_dnn_status()
+            loaded = loaded or bool(status.get("model_loaded"))
+        except Exception:
+            pass
+
+        latency = int((_time.perf_counter() - t0) * 1000)
+        enabled = bool(s.PHASE_11_DNN_ENABLED)
+        return {
+            "status": "ok" if (enabled and loaded) else ("degraded" if enabled else "offline"),
+            "latency_ms": latency,
+            "enabled": enabled,
+            "model_loaded": loaded,
+            "phase": 11,
+        }
+    except Exception as e:
+        latency = int((_time.perf_counter() - t0) * 1000)
+        return {"status": "offline", "latency_ms": latency, "phase": 11, "error": str(e)[:80]}
+
+
+@app.get("/api/health/orchestrator")
+def health_orchestrator() -> dict[str, Any]:
+    """Probe Phase 12 Orchestrator — checks routing table is initialized."""
+    t0 = _time.perf_counter()
+    try:
+        from core.config import get_settings
+        s = get_settings()
+        enabled = bool(s.PHASE_12_ORCHESTRATOR_ENABLED)
+        # The routing policy module only needs config — no file on disk required
+        from services.phase_12_orchestrator.routing_policy import route
+        latency = int((_time.perf_counter() - t0) * 1000)
+        return {
+            "status": "ok" if enabled else "offline",
+            "latency_ms": latency,
+            "enabled": enabled,
+            "routing_table": "initialized",
+            "phase": 12,
+        }
+    except Exception as e:
+        latency = int((_time.perf_counter() - t0) * 1000)
+        return {"status": "offline", "latency_ms": latency, "phase": 12, "error": str(e)[:80]}
 
 
 @app.get("/api/users", response_model=list[UserResponse])
@@ -509,3 +623,110 @@ def dashboard(user_id: int, conn=Depends(get_db)):
         monthly_trends=trends,
         unread_alerts=unread,
     )
+
+
+@app.get("/api/business-impact")
+def business_impact(conn=Depends(get_db)) -> dict[str, Any]:
+    """Compute real business-impact metrics from live DB data."""
+    cur = conn.cursor()
+    try:
+        # Confirmed frauds that were blocked (action = 'BLOCKED')
+        cur.execute(
+            """
+            SELECT COUNT(*), COALESCE(SUM(amount_at_risk), 0)::float
+            FROM fraud_alerts
+            WHERE user_action = 'BLOCKED';
+            """
+        )
+        row = cur.fetchone()
+        total_fraud_prevented = int(row[0] or 0)
+        total_money_saved = float(row[1] or 0)
+
+        # Frauds that slipped through (allowed despite being fraud pattern)
+        cur.execute(
+            "SELECT COUNT(*) FROM fraud_alerts WHERE user_action = 'ALLOWED' AND risk_score >= 60;"
+        )
+        false_negatives = int(cur.fetchone()[0] or 0)
+
+        # Avg fraud amount
+        avg_fraud_amount = (
+            round(total_money_saved / total_fraud_prevented, 2) if total_fraud_prevented > 0 else 0.0
+        )
+
+        # Detection rate (fraud prevented / total fraud events)
+        total_fraud_events = total_fraud_prevented + false_negatives
+        detection_rate = (
+            round(total_fraud_prevented / total_fraud_events * 100, 1) if total_fraud_events > 0 else 0.0
+        )
+
+        # Average fraud attempts per user (approximation)
+        cur.execute("SELECT COUNT(DISTINCT user_id) FROM fraud_alerts;")
+        user_count = int(cur.fetchone()[0] or 1)
+        avg_attempts_per_user = round(total_fraud_events / max(user_count, 1), 2)
+
+        # Projected savings per 1,000 users/year
+        projected_savings_per_1000 = round(
+            avg_fraud_amount * (detection_rate / 100) * avg_attempts_per_user * 1000, 0
+        )
+
+        # Total unique users in system
+        cur.execute("SELECT COUNT(*) FROM users;")
+        total_users = int(cur.fetchone()[0] or 0)
+
+        inr = "\u20b9"   # ₹ — Indian Rupee sign
+        x   = "\u00d7"   # × — multiplication sign
+        projection_sentence = (
+            f"At {inr}{int(avg_fraud_amount):,} avg fraud loss {x} {detection_rate}% detection rate, "
+            f"Fraud Shield prevents {inr}{int(projected_savings_per_1000):,} per 1,000 users/year"
+        )
+
+        return {
+            "total_fraud_prevented": total_fraud_prevented,
+            "total_money_saved_inr": round(total_money_saved, 2),
+            "avg_fraud_amount_inr": avg_fraud_amount,
+            "detection_rate_pct": detection_rate,
+            "false_negatives": false_negatives,
+            "avg_fraud_attempts_per_user": avg_attempts_per_user,
+            "projected_savings_per_1000_users_inr": projected_savings_per_1000,
+            "total_users": total_users,
+            "projection_sentence": projection_sentence,
+        }
+    except Exception as e:
+        raise HTTPException(500, str(e)) from e
+    finally:
+        cur.close()
+
+
+@app.get("/api/trust-score/{user_id}")
+def trust_score(user_id: int, conn=Depends(get_db)) -> dict[str, Any]:
+    """Compute a 0-1000 trust score from financial health + fraud safety signals."""
+    cur = conn.cursor()
+    try:
+        today = date.today()
+        hs = calculate_health_score(conn, user_id, today.month, today.year)
+        health = float(hs.score)
+
+        # Derive safety from fraud alerts
+        cur.execute(
+            "SELECT COALESCE(MAX(risk_score), 0) FROM fraud_alerts WHERE user_id = %s;",
+            (user_id,),
+        )
+        max_risk = int(cur.fetchone()[0] or 0)
+        cur.execute(
+            "SELECT COUNT(*) FROM fraud_alerts WHERE user_id = %s;",
+            (user_id,),
+        )
+        attempts = int(cur.fetchone()[0] or 0)
+        safety = max(0.0, min(100.0, float(100 - max_risk // 2 - (5 if attempts > 3 else 0))))
+
+        score = round((health * 0.7 + safety * 0.3) * 10, 1)
+        return {
+            "score": score,
+            "health_score": round(health, 1),
+            "safety_score": round(safety, 1),
+            "formula": "health \u00d7 0.7 + safety \u00d7 0.3, scaled to 1000",
+        }
+    except Exception as e:
+        raise HTTPException(500, str(e)) from e
+    finally:
+        cur.close()

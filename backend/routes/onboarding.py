@@ -100,18 +100,7 @@ async def link_bank(
     conn = get_connection()
     cur = conn.cursor()
     try:
-        cur.execute(
-            """
-            INSERT INTO bank_connections (user_id, bank_name, account_masked)
-            VALUES (%s, %s, %s)
-            RETURNING id
-            """,
-            (user_id, bank_name, "****1234"),
-        )
-        connection_row = cur.fetchone()
-        connection_id = int(connection_row[0]) if connection_row else None
-
-        # Require mobile OTP verification before bank linking.
+        # Check OTP FIRST before any DB writes
         cur.execute(
             """
             SELECT verified, expires_at
@@ -133,6 +122,28 @@ async def link_bank(
             is_expired = bool(cur.fetchone()[0])
             if is_expired:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP expired")
+
+        # Check for duplicate before inserting
+        cur.execute(
+            "SELECT id FROM bank_connections WHERE user_id = %s AND bank_name = %s",
+            (user_id, bank_name),
+        )
+        if cur.fetchone():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"{bank_name} is already linked to your account",
+            )
+
+        cur.execute(
+            """
+            INSERT INTO bank_connections (user_id, bank_name, account_masked)
+            VALUES (%s, %s, %s)
+            RETURNING id
+            """,
+            (user_id, bank_name, "****1234"),
+        )
+        connection_row = cur.fetchone()
+        connection_id = int(connection_row[0]) if connection_row else None
 
         cur.execute(
             """

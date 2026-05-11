@@ -83,6 +83,10 @@ async def verify_otp(data: VerifyOTPRequest) -> dict[str, str | bool]:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OTP")
 
         cur.execute("UPDATE otp_verifications SET verified = TRUE WHERE id = %s", (otp_id,))
+        cur.execute(
+            "UPDATE users SET is_verified = TRUE WHERE phone = %s",
+            (data.mobile_number,),
+        )
         conn.commit()
         return {"success": True, "message": "OTP verified successfully", "mobile_number": data.mobile_number}
     except HTTPException:

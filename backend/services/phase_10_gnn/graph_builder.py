@@ -133,20 +133,56 @@ def _to_csr(rows: list[int], cols: list[int], vals: list[float],
 async def build_graph(days: int = 90) -> GraphData:
     """Read the transactions table and produce a ``GraphData`` snapshot.
 
-    The label proxy is ``is_fraud`` when any rows have it populated,
-    otherwise we fall back to ``anomaly_flag`` (Phase 1 detector flag).
-    The current dataset has no real fraud labels, so anomaly_flag is the
-    pragmatic choice — and that's what ``label_proxy_source`` documents.
+    Label-source priority (highest fidelity first):
+
+    1. ``fraud_confirmed`` (Phase 8 analyst-confirmed feedback) when at
+       least ``min_confirmed_fraud_users`` distinct users carry a TRUE
+       row.  Defaults to 3 — small enough that the smallest realistic
+       review queue can flip the trainer onto real labels.
+    2. ``is_fraud`` — analyst-set fraud column.  Used when at least one
+       row has it populated.
+    3. ``anomaly_flag`` — Phase 1 heuristic.  Honest fallback only.
     """
     days = max(1, int(days))
     pool = get_pool()  # raises if uninitialised — caller decides what to do
+    min_confirmed_fraud_users = 3
 
     async with pool.acquire() as conn:
-        # Pick the labelling source by data availability
+        has_confirmed_col = bool(await conn.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                  FROM information_schema.columns
+                 WHERE table_name = 'transactions'
+                   AND column_name = 'fraud_confirmed'
+            )
+            """
+        ))
+        confirmed_users = 0
+        if has_confirmed_col:
+            confirmed_users = int(await conn.fetchval(
+                """
+                SELECT COUNT(DISTINCT user_id)
+                  FROM transactions
+                 WHERE fraud_confirmed = TRUE
+                """
+            ) or 0)
+
         has_real_fraud = await conn.fetchval(
             "SELECT COUNT(*) FROM transactions WHERE is_fraud = TRUE"
         )
-        label_source = "is_fraud" if (has_real_fraud or 0) > 0 else "anomaly_flag"
+
+        if has_confirmed_col and confirmed_users >= min_confirmed_fraud_users:
+            label_source = "fraud_confirmed"
+        elif (has_real_fraud or 0) > 0:
+            label_source = "is_fraud"
+        else:
+            label_source = "anomaly_flag"
+
+        logger.info(
+            "phase_10.graph_label_source chosen=%s confirmed_users=%d is_fraud_rows=%d",
+            label_source, confirmed_users, int(has_real_fraud or 0),
+        )
 
         # Pull the working window
         rows = await conn.fetch(

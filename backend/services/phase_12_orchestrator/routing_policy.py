@@ -45,6 +45,7 @@ class RoutingDecision:
     def to_dict(self) -> dict[str, Any]:
         return {
             "tier": self.tier.value,
+            "tier_label": tier_to_human(self.tier),
             "reason": self.reason,
             "invoke_judge": self.invoke_judge,
             "invoke_investigation": self.invoke_investigation,
@@ -131,27 +132,27 @@ def route(
 
     if risk_score < policy.tier0_max:
         tier = Tier.TIER_0_RULES
-        reason = f"score {risk_score} < tier0_max {policy.tier0_max} — rules-only path"
+        reason = f"score {risk_score} < tier0_max {policy.tier0_max} - rules-only path"
     elif risk_score < policy.tier1_max:
         tier = Tier.TIER_1_XGB
-        reason = f"score {risk_score} in [tier0_max, tier1_max) — standard hybrid"
+        reason = f"score {risk_score} in [tier0_max, tier1_max) - standard hybrid"
     elif risk_score < policy.tier2_max:
         tier = Tier.TIER_2_GNN if has_gnn else Tier.TIER_1_XGB
         reason = (
-            f"score {risk_score} in [tier1_max, tier2_max) — graph-augmented"
+            f"score {risk_score} in [tier1_max, tier2_max) - graph-augmented"
             if has_gnn
-            else f"score {risk_score} in [tier1_max, tier2_max) — gnn unavailable, hybrid only"
+            else f"score {risk_score} in [tier1_max, tier2_max) - gnn unavailable, hybrid only"
         )
     elif risk_score < policy.tier3_max:
         tier = Tier.TIER_3_DNN if has_dnn_shadow else Tier.TIER_2_GNN if has_gnn else Tier.TIER_1_XGB
         reason = (
-            f"score {risk_score} in [tier2_max, tier3_max) — DNN shadow available"
+            f"score {risk_score} in [tier2_max, tier3_max) - DNN shadow available"
             if has_dnn_shadow
-            else f"score {risk_score} in [tier2_max, tier3_max) — DNN unavailable"
+            else f"score {risk_score} in [tier2_max, tier3_max) - DNN unavailable"
         )
     else:
         tier = Tier.TIER_4_LLM_AGENT
-        reason = f"score {risk_score} ≥ tier3_max {policy.tier3_max} — LLM investigation tier"
+        reason = f"score {risk_score} >= tier3_max {policy.tier3_max} - LLM investigation tier"
 
     # ---- Disagreement / divergence detection ----
     dnn_score = signals.get("dnn_shadow_score")

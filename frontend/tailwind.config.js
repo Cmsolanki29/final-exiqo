@@ -15,35 +15,36 @@ module.exports = {
           navy: "#0A0E27",
           dark: "#1A1F3A",
         },
-        // ── Phase 1-8 Risk Engine UI (additive, no existing tokens touched) ──
-        risk: {
-          safe:      "#10b981",
-          review:    "#f59e0b",
-          challenge: "#f97316",
-          block:     "#ef4444",
-          neutral:   "#6b7280",
-          info:      "#3b82f6",
-          bg: {
-            safe:      "#ecfdf5",
-            review:    "#fffbeb",
-            challenge: "#fff7ed",
-            block:     "#fef2f2",
-            info:      "#eff6ff",
-          },
+        // SmartSpend brand tokens (intro flow)
+        ss: {
+          "bg-deep": "#070418",
+          "bg-rise": "#0F0A2E",
+          violet: "#7C3AED",
+          magenta: "#EC4899",
+          cyan: "#22D3EE",
+          ink: "#F5F3FF",
+          mute: "#9CA3CF",
         },
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
+        heading: ['"Space Grotesk"', "Inter", "system-ui", "sans-serif"],
+      },
+      transitionTimingFunction: {
+        brand: "cubic-bezier(0.22, 1, 0.36, 1)",
+      },
+      backgroundImage: {
+        "ss-brand": "linear-gradient(135deg,#7C3AED 0%,#A855F7 40%,#EC4899 75%,#22D3EE 100%)",
       },
       animation: {
         "auth-mesh": "auth-mesh-shift 18s ease-in-out infinite",
         "auth-shimmer": "auth-shimmer 2.2s ease-in-out infinite",
         "auth-particle": "auth-particle 14s ease-in-out infinite",
         "auth-glow-pulse": "auth-glow-pulse 3s ease-in-out infinite",
-        // ── Risk Engine animations (additive) ──
-        "risk-pulse":   "risk-pulse 2s ease-in-out infinite",
-        "risk-shimmer": "risk-shimmer 2s linear infinite",
-        "risk-spin":    "spin 1s linear infinite",
+        "ss-twinkle": "ss-twinkle 5.4s ease-in-out infinite",
+        "ss-mesh": "ss-mesh 12s ease-in-out infinite alternate",
+        "ss-spin-slow": "ss-spin 60s linear infinite",
+        "ss-shimmer": "ss-shimmer 3.6s linear infinite",
       },
       keyframes: {
         "auth-mesh-shift": {
@@ -62,14 +63,21 @@ module.exports = {
           "0%, 100%": { opacity: "0.35", transform: "scale(1)" },
           "50%": { opacity: "0.55", transform: "scale(1.08)" },
         },
-        // ── Risk Engine keyframes (additive) ──
-        "risk-pulse": {
-          "0%, 100%": { opacity: "1" },
-          "50%":       { opacity: "0.4" },
+        "ss-twinkle": {
+          "0%, 100%": { opacity: "0.25" },
+          "50%": { opacity: "0.95" },
         },
-        "risk-shimmer": {
-          "0%":   { backgroundPosition: "-200% 0" },
-          "100%": { backgroundPosition:  "200% 0" },
+        "ss-mesh": {
+          "0%": { backgroundPosition: "0% 50%" },
+          "100%": { backgroundPosition: "100% 50%" },
+        },
+        "ss-spin": {
+          "0%": { transform: "rotate(0deg)" },
+          "100%": { transform: "rotate(360deg)" },
+        },
+        "ss-shimmer": {
+          "0%": { backgroundPosition: "0% 50%" },
+          "100%": { backgroundPosition: "200% 50%" },
         },
       },
       boxShadow: {
@@ -79,6 +87,9 @@ module.exports = {
         "purple-glow": "0 0 40px rgba(124, 58, 237, 0.45)",
         "pink-glow": "0 0 40px rgba(236, 72, 153, 0.45)",
         "exiqo-card": "0 18px 48px rgba(0,0,0,0.35), 0 0 0 1px rgba(124,58,237,0.18), 0 0 36px rgba(124,58,237,0.15)",
+        "ss-glass": "0 8px 40px rgba(124,58,237,0.15)",
+        "ss-cta": "0 14px 44px rgba(124,58,237,0.40), 0 0 32px rgba(236,72,153,0.18)",
+        "ss-cta-hover": "0 20px 56px rgba(124,58,237,0.55), 0 0 40px rgba(34,211,238,0.18)",
       },
     },
   },

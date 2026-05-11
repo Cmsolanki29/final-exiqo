@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000/api";
+const BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8001";
 
 export const TOKEN_ACCESS_KEY = "smartspend_access_token";
 export const TOKEN_REFRESH_KEY = "smartspend_refresh_token";

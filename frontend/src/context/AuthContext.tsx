@@ -19,6 +19,8 @@ import {
   setAuthTokens,
 } from "../services/api";
 
+const SPLASH_SEEN_KEY = "smartspend_splash_seen";
+
 /** Shape returned by GET /auth/me (minimal fields used in UI). */
 export type AuthUser = {
   id: number;
@@ -93,6 +95,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (email: string, password: string) => {
       const data = await authSignin({ email, password });
       setAuthTokens(data.access_token, data.refresh_token);
+      try {
+        sessionStorage.setItem(SPLASH_SEEN_KEY, "true");
+      } catch {
+        /* ignore */
+      }
       await loadMe();
     },
     [loadMe]
@@ -102,6 +109,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (payload: SignupPayload) => {
       const data = await authSignup(payload);
       setAuthTokens(data.access_token, data.refresh_token);
+      try {
+        sessionStorage.setItem(SPLASH_SEEN_KEY, "true");
+      } catch {
+        /* ignore */
+      }
       await loadMe();
     },
     [loadMe]

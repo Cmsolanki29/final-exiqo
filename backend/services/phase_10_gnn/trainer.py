@@ -312,8 +312,14 @@ async def train_gnn(
             "reason": "insufficient_graph_data",
             "graph_stats": graph.stats,
             "min_users": min_users,
+            "label_source": graph.label_proxy_source,
             "duration_sec": time.perf_counter() - started_at_perf,
         }
+
+    logger.info(
+        "phase_10.train label_source=%s users=%d",
+        graph.label_proxy_source, n_users,
+    )
 
     # ---- Build sparse adjacency tensors ---- #
     adj_dict: dict[tuple[str, str, str], torch.Tensor] = {}

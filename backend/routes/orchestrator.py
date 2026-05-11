@@ -20,6 +20,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from core.config import get_settings
 from core.db import get_pool
+from schemas.score import ScoreResult
 from services.phase_12_orchestrator.orchestrator import (
     decide as orchestrator_decide,
     get_decision_for_txn,
@@ -204,6 +205,7 @@ async def post_decide(
     txn = payload.get("txn") or {}
     user = payload.get("user") or {"id": user_id}
     features = payload.get("features")
+    risk_score_override = payload.get("risk_score_override")
 
     if not isinstance(user_id, int):
         try:
@@ -211,11 +213,30 @@ async def post_decide(
         except (TypeError, ValueError):
             raise HTTPException(status_code=400, detail="user_id (int) is required")
 
+    score_override = None
+    if risk_score_override is not None:
+        try:
+            override_val = int(risk_score_override)
+            score_override = ScoreResult(
+                risk_score=override_val,
+                risk_level="CRITICAL" if override_val >= 85 else "HIGH",
+                unsup_score=override_val / 100,
+                sup_score=override_val / 100,
+                explanation=f"score_override:{override_val}",
+                explanation_detail={},
+                signals={"risk_score_override": True},
+                detector_version="override",
+                latency_ms=0,
+            )
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="risk_score_override must be an integer")
+
     outcome = await orchestrator_decide(
         user_id=user_id,
         txn=txn,
         user=user,
         features=features,
+        score_override=score_override,
         triggered_by="admin_decide_endpoint",
     )
     return outcome.to_dict()

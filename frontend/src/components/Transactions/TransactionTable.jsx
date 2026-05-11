@@ -4,29 +4,6 @@ import { apiUtils, getTransactions } from "../../services/api";
 import { EmptyState } from "../common/EmptyState";
 import { ErrorCard } from "../common/ErrorCard";
 import { SkeletonCard } from "../common/SkeletonCard";
-// ── Phase 1-8 Risk Engine addons ──────────────────────────────────────────
-import { RiskScoreChip } from "../risk/RiskScoreChip";
-import { RiskChallengeModal } from "../risk/RiskChallengeModal";
-
-/**
- * Derive a Phase 4-style risk_action from existing transaction fields when
- * the backend doesn't yet provide one. Keeps every transaction chip-ready.
- *
- * Rules:
- *   - explicit risk_action wins
- *   - anomaly_flag + HIGH risk_level → "block"
- *   - HIGH risk_level                → "challenge"
- *   - MEDIUM risk_level              → "review"
- *   - anything else                  → "allow"
- */
-function deriveRiskAction(tx) {
-  if (tx.risk_action) return tx.risk_action;
-  const lvl = String(tx.risk_level || "").toUpperCase();
-  if (tx.anomaly_flag && lvl === "HIGH") return "block";
-  if (lvl === "HIGH")    return "challenge";
-  if (lvl === "MEDIUM")  return "review";
-  return "allow";
-}
 
 const categories = ["All", "Food", "Shopping", "Travel", "Bills", "Anomalies Only"];
 
@@ -40,8 +17,6 @@ const TransactionTable = ({ userId, month, year }) => {
   const [category, setCategory] = useState("All");
   const [sortBy, setSortBy] = useState("date");
   const [page, setPage] = useState(1);
-  // ── Phase 7 SHAP modal state ─────────────────────────────────────────────
-  const [selectedTxn, setSelectedTxn] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -121,7 +96,6 @@ const TransactionTable = ({ userId, month, year }) => {
   };
 
   return (
-    <>
     <section className="glass-card table-wrap">
       <div className="panel-head">
         <h3>Transactions</h3>
@@ -196,15 +170,7 @@ const TransactionTable = ({ userId, month, year }) => {
                       {apiUtils.formatINR(tx.amount)}
                     </td>
                     <td>{tx.payment_method || "-"}</td>
-                    <td>
-                      {/* Phase 7 — SHAP chip; derives risk_action when backend doesn't supply one */}
-                      <RiskScoreChip
-                        txnId={tx.id}
-                        action={deriveRiskAction(tx)}
-                        score={tx.risk_score}
-                        onClick={() => setSelectedTxn(tx)}
-                      />
-                    </td>
+                    <td>{tx.anomaly_flag ? `?? ${tx.risk_level}` : "? Normal"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -225,14 +191,6 @@ const TransactionTable = ({ userId, month, year }) => {
         </>
       )}
     </section>
-
-    {/* ── Phase 7 SHAP explanation modal ──────────────────────────── */}
-    <RiskChallengeModal
-      txnId={selectedTxn?.id ?? null}
-      txnMeta={{ merchant: selectedTxn?.merchant, amount: selectedTxn?.amount }}
-      onClose={() => setSelectedTxn(null)}
-    />
-  </>
   );
 };
 

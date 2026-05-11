@@ -73,14 +73,41 @@ class TrainingResult:
 # --------------------------------------------------------------------- #
 
 
+def _has_column(conn, table: str, column: str) -> bool:
+    """Return True iff ``table.column`` exists in the connected DB."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1
+                  FROM information_schema.columns
+                 WHERE table_name = %s AND column_name = %s
+                 LIMIT 1
+                """,
+                (table, column),
+            )
+            return cur.fetchone() is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _load_transactions_df() -> tuple[pd.DataFrame | None, str]:
     """Pull DEBIT transactions from Postgres.
 
     Returns (df, label_source) where label_source is the column we'll
-    treat as the binary fraud label.  We prefer ``is_fraud`` when any
-    positives exist; otherwise we fall back to ``anomaly_flag`` (Phase 1
-    output) so the DNN at least has *some* signal to learn — and we
-    record the choice transparently in the training run log.
+    treat as the binary fraud label.  Priority:
+
+    1. ``fraud_confirmed`` (Phase 8 analyst-confirmed feedback) when
+       present and the count of positives meets
+       ``PHASE_11_MIN_POSITIVES_FOR_TRAINING``.  This is the
+       highest-fidelity label.
+    2. ``is_fraud`` — pre-Phase-8 confirmed fraud column, also written
+       by the analyst review queue.
+    3. ``anomaly_flag`` — Phase 1 heuristic; recorded honestly in the
+       run log so admins can tell at a glance the DNN learned a proxy.
+
+    Anything below 5 positives across all three columns falls through
+    to synthetic.
     """
     try:
         import psycopg2
@@ -89,24 +116,20 @@ def _load_transactions_df() -> tuple[pd.DataFrame | None, str]:
         return None, "synthetic_fraud"
 
     settings = get_settings()
+    min_positives = int(getattr(settings, "PHASE_11_MIN_POSITIVES_FOR_TRAINING", 5))
     try:
         conn = psycopg2.connect(settings.DATABASE_URL)
+        has_confirmed = _has_column(conn, "transactions", "fraud_confirmed")
+        select_cols = (
+            "id, user_id, amount, merchant, category, payment_method, "
+            "hour_of_day, day_of_week, is_weekend, balance_after, "
+            "transaction_date, type, is_fraud, anomaly_flag"
+        )
+        if has_confirmed:
+            select_cols += ", fraud_confirmed"
         df = pd.read_sql(
-            """
-            SELECT id,
-                   user_id,
-                   amount,
-                   merchant,
-                   category,
-                   payment_method,
-                   hour_of_day,
-                   day_of_week,
-                   is_weekend,
-                   balance_after,
-                   transaction_date,
-                   type,
-                   is_fraud,
-                   anomaly_flag
+            f"""
+            SELECT {select_cols}
               FROM transactions
              WHERE type = 'DEBIT'
              ORDER BY user_id, transaction_date
@@ -121,18 +144,37 @@ def _load_transactions_df() -> tuple[pd.DataFrame | None, str]:
     if df is None or df.empty:
         return None, "synthetic_fraud"
 
-    # Decide which column is the label.
+    confirmed_pos = (
+        int(df["fraud_confirmed"].fillna(False).sum())
+        if "fraud_confirmed" in df.columns
+        else 0
+    )
     is_fraud_pos = int(df["is_fraud"].fillna(False).sum()) if "is_fraud" in df else 0
     anomaly_pos = int(df["anomaly_flag"].fillna(False).sum()) if "anomaly_flag" in df else 0
 
-    if is_fraud_pos >= 5:
+    if confirmed_pos >= min_positives:
+        df["__label__"] = df["fraud_confirmed"].fillna(False).astype(bool)
+        logger.info(
+            "phase_11.dnn label_source=fraud_confirmed positives=%d (>= %d)",
+            confirmed_pos, min_positives,
+        )
+        return df, "fraud_confirmed"
+    if is_fraud_pos >= min_positives:
         df["__label__"] = df["is_fraud"].fillna(False).astype(bool)
+        logger.info(
+            "phase_11.dnn label_source=is_fraud positives=%d (fraud_confirmed=%d < %d)",
+            is_fraud_pos, confirmed_pos, min_positives,
+        )
         return df, "is_fraud"
     if anomaly_pos >= 5:
         df["__label__"] = df["anomaly_flag"].fillna(False).astype(bool)
+        logger.info(
+            "phase_11.dnn label_source=anomaly_flag positives=%d "
+            "(no real fraud labels available)",
+            anomaly_pos,
+        )
         return df, "anomaly_flag"
 
-    # Not enough real positives — caller will fall through to synthetic.
     return None, "insufficient_real_positives"
 
 

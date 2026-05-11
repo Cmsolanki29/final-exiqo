@@ -51,6 +51,41 @@ def _get_client() -> OpenAI | None:
 # ---------------------------------------------------------------------------
 
 
+def _call_groq_sync(
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int = 1000,
+    json_mode: bool = True,
+) -> dict[str, Any] | str:
+    """Synchronous Groq fallback using the OpenAI-compatible SDK."""
+    groq_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not groq_key:
+        return {} if json_mode else ""
+    try:
+        from openai import OpenAI as _OAI  # Groq uses the same SDK
+        _gc = _OAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
+        model = os.getenv("PHASE_9_DEFAULT_MODEL", "llama-3.3-70b-versatile")
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": 0.7,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        resp = _gc.chat.completions.create(**kwargs)
+        content = (resp.choices[0].message.content or "").strip()
+        if json_mode:
+            return json.loads(content) if content else {}
+        return content
+    except Exception as exc:
+        print(f"[call_groq_sync] Groq error: {exc}")
+        return {} if json_mode else ""
+
+
 def call_gpt(
     system_prompt: str,
     user_prompt: str,
@@ -59,7 +94,8 @@ def call_gpt(
 ) -> dict[str, Any] | str:
     client = _get_client()
     if client is None:
-        return {} if json_mode else ""
+        # OpenAI key not configured — fall back to Groq transparently
+        return _call_groq_sync(system_prompt, user_prompt, max_tokens, json_mode)
 
     for attempt in range(2):
         try:
@@ -90,7 +126,8 @@ def call_gpt(
                 time.sleep(1)
                 continue
             print(f"[call_gpt] OpenAI error after retry: {exc}")
-            return {} if json_mode else ""
+            # Final fallback: try Groq before giving up
+            return _call_groq_sync(system_prompt, user_prompt, max_tokens, json_mode)
 
 
 # ---------------------------------------------------------------------------

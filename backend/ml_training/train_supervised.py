@@ -54,7 +54,8 @@ def train_xgboost_model(
     y: pd.Series,
     params: dict[str, Any] | None = None,
     n_splits: int = 3,
-) -> tuple[xgb.XGBClassifier, dict[str, float]]:
+    label_source: str | None = None,
+) -> tuple[xgb.XGBClassifier, dict[str, Any]]:
     """Train an XGBoost fraud classifier using time-based cross-validation.
 
     Uses the LAST fold of TimeSeriesSplit as the validation set for early
@@ -62,10 +63,14 @@ def train_xgboost_model(
     trained on past, validated on future.
 
     Args:
-        X:        Feature DataFrame with SUPERVISED_FEATURE_COLUMNS columns.
-        y:        Binary label Series (1 = fraud, 0 = legitimate).
-        params:   XGBClassifier kwargs; merged over DEFAULT_PARAMS.
-        n_splits: Number of TimeSeriesSplit folds (last used for validation).
+        X:            Feature DataFrame with SUPERVISED_FEATURE_COLUMNS columns.
+        y:            Binary label Series (1 = fraud, 0 = legitimate).
+        params:       XGBClassifier kwargs; merged over DEFAULT_PARAMS.
+        n_splits:     Number of TimeSeriesSplit folds (last used for validation).
+        label_source: Free-form provenance string ("fraud_confirmed",
+                      "is_fraud", "anomaly_flag", "synthetic_fraud") that
+                      gets echoed into the returned metrics dict so the
+                      sidecar JSON can record it.
 
     Returns:
         (model, metrics): Trained classifier and training metrics dict.
@@ -128,7 +133,7 @@ def train_xgboost_model(
     except Exception:
         val_aucpr = None
 
-    metrics: dict[str, float] = {
+    metrics: dict[str, Any] = {
         "best_iteration": float(best_iteration or 0),
         "train_size": float(len(X_train)),
         "val_size": float(len(X_val)),
@@ -137,8 +142,13 @@ def train_xgboost_model(
     }
     if val_aucpr is not None:
         metrics["val_aucpr"] = float(val_aucpr)
+    if label_source:
+        metrics["label_source"] = str(label_source)
 
-    logger.info("train_xgboost: done — best_iter=%s val_aucpr=%s", best_iteration, val_aucpr)
+    logger.info(
+        "train_xgboost: done — best_iter=%s val_aucpr=%s label_source=%s",
+        best_iteration, val_aucpr, label_source,
+    )
     return model, metrics
 
 

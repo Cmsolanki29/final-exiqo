@@ -2,38 +2,37 @@ import React, { useMemo } from "react";
 import { motion } from "framer-motion";
 import {
   Bell,
-  Bot,
   ChevronLeft,
   ChevronRight,
   CreditCard,
-  GitMerge,
+  GitBranch,
   Layers,
   LayoutDashboard,
   LogOut,
-  Share2,
+  Network,
+  Search,
   Shield,
   ShoppingBag,
   Sparkles,
   TrendingUp,
-  ShieldCheck,
 } from "lucide-react";
-import { RiskProtectionBadge } from "../risk/RiskProtectionBadge";
 
 const BASE_NAV = [
-  { id: "dashboard",    label: "Dashboard",        icon: LayoutDashboard },
-  { id: "emi",          label: "EMI Tracker",       icon: CreditCard },
-  { id: "fraud",        label: "Fraud Shield",      icon: Shield },
-  { id: "subscriptions",label: "Subscriptions",     icon: Bell },
-  { id: "dark-patterns",label: "Analytics",         icon: TrendingUp },
-  { id: "purchase",     label: "Purchase Planner",  icon: ShoppingBag },
-  { id: "festival",     label: "Festival Planner",  icon: Sparkles },
-  // ── Phase 1-8 Risk Engine ──────────────────────────────────────────────
-  { id: "trust-center", label: "Trust Center",      icon: ShieldCheck, riskOnly: true },
-  // ── Phase 9-12 (2026 parity) — section header rendered separately ──────
-  { id: "investigations", label: "Investigations",  icon: Bot,      group: "2026 AI Phases" },
-  { id: "orchestrator",   label: "Orchestrator",    icon: GitMerge, group: "2026 AI Phases" },
-  { id: "dnn-shadow",     label: "DNN Shadow",      icon: Layers,   group: "2026 AI Phases" },
-  { id: "gnn-training",   label: "GNN Training",    icon: Share2,   group: "2026 AI Phases" },
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "emi", label: "EMI Tracker", icon: CreditCard },
+  { id: "fraud", label: "Fraud Shield", icon: Shield },
+  { id: "subscriptions", label: "Subscriptions", icon: Bell },
+  { id: "dark-patterns", label: "Analytics", icon: TrendingUp },
+  { id: "purchase", label: "Purchase Planner", icon: ShoppingBag },
+  { id: "festival", label: "Festival Planner", icon: Sparkles },
+];
+
+const AI_PHASES_NAV = [
+  { id: "trust-center",   label: "Trust Center",   icon: Shield },
+  { id: "investigations", label: "Investigations",  icon: Search },
+  { id: "orchestrator",   label: "Orchestrator",    icon: GitBranch },
+  { id: "dnn-shadow",     label: "DNN Shadow",      icon: Layers },
+  { id: "gnn-training",   label: "GNN Training",    icon: Network },
 ];
 
 const sidebarWidth = (collapsed) => (collapsed ? 84 : 280);
@@ -90,23 +89,14 @@ const Sidebar = ({ collapsed, onToggle, activeTab, onTabChange, onLogout, fraudB
         </button>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">
-        {navItems.map((item, idx) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
-          const prevGroup = idx > 0 ? navItems[idx - 1].group : undefined;
-          const showGroupHeader = !!item.group && item.group !== prevGroup;
-          return (
-            <React.Fragment key={item.id}>
-              {showGroupHeader && !collapsed && (
-                <div className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-wider text-exiqo-glow/40">
-                  {item.group}
-                </div>
-              )}
-              {showGroupHeader && collapsed && (
-                <div className="mx-auto my-2 h-px w-8 bg-exiqo-purple/20" />
-              )}
+      <nav className="flex-1 overflow-y-auto px-3 py-5">
+        <div className="space-y-1">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
               <motion.button
+                key={item.id}
                 type="button"
                 onClick={() => onTabChange(item.id)}
                 whileHover={{ x: 4 }}
@@ -145,17 +135,58 @@ const Sidebar = ({ collapsed, onToggle, activeTab, onTabChange, onLogout, fraudB
                   </span>
                 ) : null}
               </motion.button>
-            </React.Fragment>
-          );
-        })}
-      </nav>
-
-      {/* ── Risk protection badge ── */}
-      {!collapsed && (
-        <div className="px-4 pb-2">
-          <RiskProtectionBadge onNavigate={onTabChange} />
+            );
+          })}
         </div>
-      )}
+
+        {/* 2026 AI Phases */}
+        <div className="mt-5">
+          {!collapsed && (
+            <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-widest text-gray-500">
+              2026 AI Phases
+            </p>
+          )}
+          {collapsed && <div className="my-2 border-t border-exiqo-purple/20" />}
+          <div className="space-y-1">
+            {AI_PHASES_NAV.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <motion.button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onTabChange(item.id)}
+                  whileHover={{ x: 4 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 transition-all duration-200 ${
+                    isActive
+                      ? "bg-purple-600/20 text-purple-300 shadow-md shadow-purple-500/10"
+                      : "text-gray-400 hover:bg-exiqo-purple/10 hover:text-white"
+                  }`}
+                >
+                  {isActive ? (
+                    <motion.div
+                      layoutId="active-indicator-ai"
+                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                      className="absolute left-0 top-1/2 h-7 w-1 -translate-y-1/2 rounded-r-full bg-gradient-to-b from-purple-500 to-pink-500"
+                    />
+                  ) : null}
+                  <Icon
+                    size={16}
+                    className={`${collapsed ? "mx-auto" : ""} ${isActive ? "text-purple-300" : ""}`}
+                  />
+                  {!collapsed ? <span className="flex-1 text-left text-sm font-medium">{item.label}</span> : null}
+                  {collapsed ? (
+                    <span className="pointer-events-none absolute left-full ml-2 whitespace-nowrap rounded-lg border border-exiqo-purple/30 bg-exiqo-dark px-3 py-1.5 text-sm text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
+                      {item.label}
+                    </span>
+                  ) : null}
+                </motion.button>
+              );
+            })}
+          </div>
+        </div>
+      </nav>
 
       <div className="px-3 pb-6">
         <motion.button

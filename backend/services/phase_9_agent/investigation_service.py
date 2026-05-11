@@ -151,13 +151,17 @@ async def investigate_transaction(
         result.get("cost_usd") or 0.0, result.get("latency_ms") or 0,
     )
 
-    return {
+    out = {
         "investigation_id": investigation_id,
         "transaction_id": transaction_id,
         "user_id": txn_user_id,
         "triggered_by": triggered_by,
         **result,
     }
+    # `recommended_action` alias for frontend & E2E tests; uppercased for consistency.
+    if "recommended_action" not in out and "decision" in out:
+        out["recommended_action"] = str(out["decision"]).upper()
+    return out
 
 
 # ---------------------------------------------------------------------- #
@@ -192,4 +196,7 @@ async def get_investigation(transaction_id: int) -> dict[str, Any] | None:
     out["cost_usd"] = float(out["cost_usd"])
     out["started_at"] = out["started_at"].isoformat() if out["started_at"] else None
     out["completed_at"] = out["completed_at"].isoformat() if out["completed_at"] else None
+    # Normalise `recommended_action` so frontend + E2E tests can use a stable field name.
+    if "recommended_action" not in out and "decision" in out:
+        out["recommended_action"] = str(out["decision"] or "inconclusive").upper()
     return out

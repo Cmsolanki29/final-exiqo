@@ -57,18 +57,50 @@ logger = logging.getLogger("bootstrap_train")
 MIN_ROWS = 100  # Minimum rows needed for meaningful training
 
 
-def _load_from_db() -> pd.DataFrame | None:
-    """Pull DEBIT transactions from Postgres using psycopg2 (synchronous)."""
+MIN_REAL_LABEL_POSITIVES = 10
+
+
+def _load_from_db() -> tuple[pd.DataFrame | None, str]:
+    """Pull DEBIT transactions from Postgres using psycopg2 (synchronous).
+
+    Returns ``(df, label_source)`` where ``label_source`` describes which
+    column we'll treat as the binary fraud label:
+
+    - ``"fraud_confirmed"`` — preferred; analyst-confirmed.  Selected
+      when at least ``MIN_REAL_LABEL_POSITIVES`` rows are TRUE.
+    - ``"is_fraud"`` — review-queue resolution; selected when fraud_confirmed
+      is unavailable or below threshold but is_fraud has enough positives.
+    - ``"anomaly_flag"`` — Phase 1 heuristic; honest fallback.
+    - ``"none"`` — DB unreachable / empty; caller will inject synthetic
+      fraud on top of the synthetic-only dataset.
+    """
     try:
         import psycopg2
         settings = get_settings()
         dsn = settings.DATABASE_URL.replace("postgresql://", "postgresql://", 1)
         conn = psycopg2.connect(dsn)
+        # Detect the optional fraud_confirmed column dynamically so older
+        # schemas don't blow up the query.
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1 FROM information_schema.columns
+                 WHERE table_name='transactions' AND column_name='fraud_confirmed'
+                 LIMIT 1
+                """
+            )
+            has_confirmed = cur.fetchone() is not None
+
+        select_cols = (
+            "id, user_id, amount, merchant, category, payment_method, "
+            "hour_of_day, day_of_week, is_weekend, balance_after, "
+            "transaction_date, type, is_fraud, anomaly_flag"
+        )
+        if has_confirmed:
+            select_cols += ", fraud_confirmed"
         df = pd.read_sql(
-            """
-            SELECT id, user_id, amount, merchant, category, payment_method,
-                   hour_of_day, day_of_week, is_weekend, balance_after,
-                   transaction_date, type
+            f"""
+            SELECT {select_cols}
             FROM   transactions
             WHERE  type = 'DEBIT'
             ORDER  BY user_id, transaction_date
@@ -77,10 +109,60 @@ def _load_from_db() -> pd.DataFrame | None:
         )
         conn.close()
         logger.info("Loaded %d DEBIT transactions from database", len(df))
-        return df
+
+        confirmed_pos = (
+            int(df["fraud_confirmed"].fillna(False).sum())
+            if "fraud_confirmed" in df.columns
+            else 0
+        )
+        is_fraud_pos = (
+            int(df["is_fraud"].fillna(False).sum())
+            if "is_fraud" in df.columns
+            else 0
+        )
+        anomaly_pos = (
+            int(df["anomaly_flag"].fillna(False).sum())
+            if "anomaly_flag" in df.columns
+            else 0
+        )
+
+        if confirmed_pos >= MIN_REAL_LABEL_POSITIVES:
+            df["is_fraud"] = df["fraud_confirmed"].fillna(False).astype(bool)
+            logger.info(
+                "label_source=fraud_confirmed positives=%d (>= %d, real labels)",
+                confirmed_pos, MIN_REAL_LABEL_POSITIVES,
+            )
+            return df, "fraud_confirmed"
+
+        if is_fraud_pos >= MIN_REAL_LABEL_POSITIVES:
+            df["is_fraud"] = df["is_fraud"].fillna(False).astype(bool)
+            logger.info(
+                "label_source=is_fraud positives=%d (fraud_confirmed=%d < %d)",
+                is_fraud_pos, confirmed_pos, MIN_REAL_LABEL_POSITIVES,
+            )
+            return df, "is_fraud"
+
+        if anomaly_pos >= 5:
+            df["is_fraud"] = df["anomaly_flag"].fillna(False).astype(bool)
+            logger.info(
+                "label_source=anomaly_flag positives=%d (no real fraud labels yet)",
+                anomaly_pos,
+            )
+            return df, "anomaly_flag"
+
+        # Real DB but not enough positives anywhere — caller will
+        # synthetic-inject on top of these real rows so the schema /
+        # feature distribution still matches production.
+        logger.info(
+            "Insufficient positives in DB (confirmed=%d, is_fraud=%d, anomaly=%d) — "
+            "caller will synthetic-inject",
+            confirmed_pos, is_fraud_pos, anomaly_pos,
+        )
+        df.drop(columns=["is_fraud"], errors="ignore", inplace=True)
+        return df, "synthetic_injected"
     except Exception as exc:
         logger.warning("DB load failed (%s) — will generate fully synthetic data", exc)
-        return None
+        return None, "none"
 
 
 def _generate_synthetic_only(n_rows: int = 5000) -> pd.DataFrame:
@@ -126,16 +208,30 @@ def run(model_path: str | None = None) -> dict:
     logger.info("Output path: %s", output_path)
 
     # ---- Step 1: Load or generate data ---- #
-    df = _load_from_db()
+    df, label_source = _load_from_db()
     if df is None or len(df) < MIN_ROWS:
         logger.info("Using fully synthetic data (%d rows)", 5000)
         df = _generate_synthetic_only(n_rows=5000)
+        label_source = "synthetic_fraud"
 
-    # ---- Step 2: Inject synthetic fraud ---- #
-    df_with_fraud = generate_synthetic_fraud(df, fraud_rate=0.005)
+    # ---- Step 2: Inject synthetic fraud only when we don't already
+    # have real labels.  When the DB pulled real fraud_confirmed /
+    # is_fraud / anomaly_flag rows, we trust them — overlaying synthetic
+    # noise would dilute the signal we just promoted.
+    if label_source in ("fraud_confirmed", "is_fraud", "anomaly_flag"):
+        df_with_fraud = df.copy()
+        if "is_fraud" not in df_with_fraud.columns:
+            df_with_fraud["is_fraud"] = False
+    else:
+        df_with_fraud = generate_synthetic_fraud(df, fraud_rate=0.005)
+        if label_source != "synthetic_fraud":
+            label_source = "synthetic_injected"
     n_fraud = int(df_with_fraud["is_fraud"].sum())
     n_total = len(df_with_fraud)
-    logger.info("Dataset: %d rows, %d fraud (%.3f%%)", n_total, n_fraud, n_fraud / n_total * 100)
+    logger.info(
+        "Dataset: %d rows, %d fraud (%.3f%%) label_source=%s",
+        n_total, n_fraud, n_fraud / max(n_total, 1) * 100, label_source,
+    )
 
     # ---- Step 3: Build feature matrix ---- #
     logger.info("Building feature matrix...")
@@ -156,8 +252,10 @@ def run(model_path: str | None = None) -> dict:
     )
 
     # ---- Step 5: Train ---- #
-    logger.info("Training XGBoost...")
-    model, train_metrics = train_xgboost_model(X_train, y_train)
+    logger.info("Training XGBoost (label_source=%s)...", label_source)
+    model, train_metrics = train_xgboost_model(
+        X_train, y_train, label_source=label_source,
+    )
     logger.info("Training metrics: %s", train_metrics)
 
     # ---- Step 6: Evaluate ---- #
@@ -182,6 +280,7 @@ def run(model_path: str | None = None) -> dict:
     metrics_record = {
         "model_path": str(output_path),
         "trained_at": datetime.now(timezone.utc).isoformat(),
+        "label_source": label_source,
         "train_size": int(train_metrics.get("train_size", len(X_train))),
         "val_size": int(train_metrics.get("val_size", len(X_test))),
         "n_fraud_train": int(train_metrics.get("n_fraud_train", int(y_train.sum()))),

@@ -30,11 +30,18 @@ router = APIRouter(prefix="/risk/gnn", tags=["phase-10-gnn"])
 
 @router.get("/health")
 async def health() -> dict[str, Any]:
-    """Public probe — feature flag + minimal config disclosure."""
+    """Public probe — feature flag + minimal config disclosure.
+
+    ``enabled`` is the canonical key going forward; we keep
+    ``feature_flag_enabled`` for one release for backward compat with
+    older frontends.
+    """
     s = get_settings()
+    flag = bool(s.PHASE_10_GNN_ENABLED)
     return {
         "phase": 10,
-        "feature_flag_enabled": bool(s.PHASE_10_GNN_ENABLED),
+        "enabled": flag,
+        "feature_flag_enabled": flag,
         "embed_dim": s.PHASE_10_EMBED_DIM,
         "num_layers": s.PHASE_10_NUM_LAYERS,
         "training_days": s.PHASE_10_TRAINING_DAYS,
