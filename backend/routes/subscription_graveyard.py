@@ -347,6 +347,25 @@ def build_subscription_dashboard(user_id: int, conn) -> dict:
     suspicious = [s for s in detected if s["status"] == "SUSPICIOUS"]
     dead = [s for s in detected if s["status"] == "DEAD"]
     monthly_waste = round(sum(s["monthly_cost"] for s in dead), 2)
+    verdict_monthly_waste_total = 0.0
+    try:
+        vx = conn.cursor()
+        try:
+            vx.execute(
+                """
+                SELECT COALESCE(SUM(verdict_monthly_waste), 0)::float
+                FROM subscriptions
+                WHERE user_id = %s;
+                """,
+                (user_id,),
+            )
+            verdict_monthly_waste_total = float(vx.fetchone()[0] or 0)
+        finally:
+            vx.close()
+    except Exception:
+        verdict_monthly_waste_total = 0.0
+    if verdict_monthly_waste_total > monthly_waste + 0.005:
+        monthly_waste = round(verdict_monthly_waste_total, 2)
     annual_waste = round(monthly_waste * 12, 2)
 
     dead_top = sorted(dead, key=lambda x: x["monthly_cost"], reverse=True)[:3]

@@ -25,6 +25,7 @@ import {
   getSubscriptionIntelligenceHub,
   getSubscriptionRecommendation,
   getSubscriptionRemindersPending,
+  patchSubscriptionInsightRead,
   postSubscriptionDeviceLink,
   postSubscriptionReminderAction,
   postSubscriptionResetDemo,
@@ -130,18 +131,25 @@ export default function SubscriptionGraveyard({ userId }) {
   const [recoById, setRecoById] = useState({});
   const [recoLoading, setRecoLoading] = useState(false);
   const [banner, setBanner] = useState(null);
+  const [snoozeModal, setSnoozeModal] = useState({ open: false, id: null });
+  const [snoozeReason, setSnoozeReason] = useState("");
 
-  const loadHub = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const loadHub = useCallback(async (opts = {}) => {
+    const silent = !!opts.silent;
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
     try {
       const data = await getSubscriptionIntelligenceHub(userId);
       setHub(data);
     } catch (e) {
-      setError(e.message || "Failed to load subscription intelligence");
-      setHub(null);
+      if (!silent) {
+        setError(e.message || "Failed to load subscription intelligence");
+        setHub(null);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [userId]);
 
@@ -176,6 +184,43 @@ export default function SubscriptionGraveyard({ userId }) {
     if (!Array.isArray(list) || list.length === 0) return EMPTY_LIST;
     return list;
   }, [hub]);
+
+  const connectedApps = useMemo(() => {
+    const list = hub?.connected_apps;
+    if (!Array.isArray(list) || list.length === 0) return EMPTY_LIST;
+    return list;
+  }, [hub]);
+
+  const intelligenceInsights = useMemo(() => {
+    const list = hub?.intelligence_insights;
+    if (!Array.isArray(list) || list.length === 0) return EMPTY_LIST;
+    return list;
+  }, [hub]);
+
+  /** Collapse chips that share the same display label (legacy rows / similar package tails). */
+  const connectedAppsDisplay = useMemo(() => {
+    const groups = new Map();
+    for (const a of connectedApps) {
+      const lab = (a.display_label || a.app_package || "App").trim() || "App";
+      const key = lab.toLowerCase();
+      if (!groups.has(key)) {
+        groups.set(key, {
+          app_package: a.app_package,
+          display_label: lab,
+          pkgs: [a.app_package].filter(Boolean),
+        });
+      } else {
+        const g = groups.get(key);
+        if (a.app_package && !g.pkgs.includes(a.app_package)) g.pkgs.push(a.app_package);
+      }
+    }
+    return Array.from(groups.values()).map((g) => ({
+      key: g.pkgs.join("|"),
+      display_label: g.pkgs.length > 1 ? `${g.display_label} (${g.pkgs.length})` : g.display_label,
+      title: g.pkgs.length > 1 ? g.pkgs.join("\n") : g.pkgs[0] || "",
+    }));
+  }, [connectedApps]);
+
   const deviceLinked = !!hub?.device_linked;
   const discoveryMsg = hub?.discovery?.message || "";
 
@@ -235,14 +280,40 @@ export default function SubscriptionGraveyard({ userId }) {
     if (sid && expanded !== sid) loadReco(sid);
   };
 
-  const reminderAction = async (id, action) => {
+  const reminderAction = async (id, action, accountabilityReason) => {
     try {
-      await postSubscriptionReminderAction(userId, id, action);
+      const payload =
+        action === "remind_later"
+          ? { action, accountability_reason: (accountabilityReason || "").trim() }
+          : { action };
+      await postSubscriptionReminderAction(userId, id, payload);
       showToast("Updated");
       setBanner(null);
       await pollReminders();
+      await loadHub({ silent: true });
     } catch (e) {
       showToast(e.message || "Action failed");
+    }
+  };
+
+  const submitSnooze = async () => {
+    const text = snoozeReason.trim();
+    if (text.length < 10) {
+      showToast("Please explain why you are keeping this subscription (min 10 characters).");
+      return;
+    }
+    if (!snoozeModal.id) return;
+    await reminderAction(snoozeModal.id, "remind_later", text);
+    setSnoozeModal({ open: false, id: null });
+    setSnoozeReason("");
+  };
+
+  const dismissInsight = async (insightId) => {
+    try {
+      await patchSubscriptionInsightRead(userId, insightId);
+      await loadHub({ silent: true });
+    } catch (e) {
+      showToast(e.message || "Could not update insight");
     }
   };
 
@@ -295,7 +366,7 @@ export default function SubscriptionGraveyard({ userId }) {
       <PageHeader
         eyebrow="SUBSCRIPTIONS"
         title="Subscription Intelligence"
-        subtitle="We infer value from your device usage — like Digital Wellbeing or Apple Screen Time — mapped to every recurring debit."
+        subtitle="Device usage + bank debits → verdicts, substitution insights, and a renewal engine with accountability (snooze requires a reason). Same idea as Digital Wellbeing / Screen Time, tuned for spend."
         accentHex="#a855f7"
         rightSlot={
           <div className="flex flex-wrap gap-2">
@@ -341,6 +412,16 @@ export default function SubscriptionGraveyard({ userId }) {
         </motion.p>
       ) : null}
 
+      {hub?.reminder_escalation_active ? (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-50 backdrop-blur-md"
+        >
+          <span className="font-semibold">Escalated accountability.</span> Renewal reminders now follow the denser T-15 → T-1 cadence after you kept subscriptions through a full billing cycle without cancelling.
+        </motion.div>
+      ) : null}
+
       {banner ? (
         <motion.div
           initial={{ opacity: 0, y: -8 }}
@@ -354,6 +435,9 @@ export default function SubscriptionGraveyard({ userId }) {
               <p className="text-xs text-exiqo-glow/65">
                 {banner.reminder_type} · {inr(banner.monthly_cost)}/mo
               </p>
+              <p className="mt-2 text-[11px] text-amber-200/80">
+                “Remind later” opens an accountability prompt — your reason is stored with the snooze.
+              </p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -366,7 +450,10 @@ export default function SubscriptionGraveyard({ userId }) {
             </button>
             <button
               type="button"
-              onClick={() => reminderAction(banner.id, "remind_later")}
+              onClick={() => {
+                setSnoozeReason("");
+                setSnoozeModal({ open: true, id: banner.id });
+              }}
               className="rounded-xl border border-white/20 px-3 py-2 text-xs font-semibold text-white"
             >
               Remind later
@@ -411,6 +498,97 @@ export default function SubscriptionGraveyard({ userId }) {
           <span className="font-semibold">Device intelligence active.</span> Aggregated signals only — see privacy callout in the modal anytime.
         </div>
       )}
+
+      {deviceLinked ? (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-xl">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-exiqo-glow/50">Connected applications</h3>
+            <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-200">
+              Live sync
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-exiqo-glow/55">
+            Normalized from your last device link. Re-open Connect to add or remove packages — revoked apps stay in the database for audit, but drop off this list.
+          </p>
+          {connectedAppsDisplay.length > 0 ? (
+            <ul className="mt-4 flex flex-wrap gap-2">
+              {connectedAppsDisplay.map((a) => (
+                <li
+                  key={a.key}
+                  title={a.title || undefined}
+                  className="rounded-full border border-violet-500/25 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-100"
+                >
+                  {a.display_label}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-4 rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-xs text-exiqo-glow/65">
+              No packages synced yet. Press <span className="font-semibold text-white">Refresh</span> after linking, or reconnect from the device modal.
+            </p>
+          )}
+        </div>
+      ) : null}
+
+      {deviceLinked ? (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-exiqo-glow/50">AI intelligence feed</h3>
+            <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-cyan-100">
+              Deduped
+            </span>
+          </div>
+          <p className="text-xs text-exiqo-glow/55">
+            Behavioral alerts (not billing pings). Persisted in your workspace — mark read when you have acted on them.
+          </p>
+          {intelligenceInsights.length > 0 ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {intelligenceInsights.map((ins) => (
+                <div
+                  key={ins.id}
+                  className={`rounded-2xl border p-4 backdrop-blur-xl ${
+                    ins.read_at ? "border-white/5 bg-white/[0.02] opacity-70" : "border-cyan-500/25 bg-cyan-500/5"
+                  }`}
+                >
+                  <p className="text-xs font-bold uppercase tracking-wide text-cyan-200/90">
+                    {(ins.insight_type === "verdict"
+                      ? "Verdict"
+                      : ins.insight_type === "substitution"
+                        ? "Substitution"
+                        : ins.insight_type) || "Insight"}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">{ins.title}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-exiqo-glow/70">{ins.body}</p>
+                  {!ins.read_at ? (
+                    <button
+                      type="button"
+                      onClick={() => dismissInsight(ins.id)}
+                      className="mt-3 text-[11px] font-semibold text-cyan-200 underline-offset-2 hover:underline"
+                    >
+                      Mark read
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-xs text-exiqo-glow/70">
+              <p>
+                No behavioral feed cards yet. Use <span className="font-semibold text-white">Refresh hub data</span>{" "}
+                below — declining, dormant, and dead verdicts sync into this feed; substitution alerts appear when migration
+                signals fire.
+              </p>
+              <button
+                type="button"
+                className="mt-3 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-500/20"
+                onClick={() => loadHub({ silent: true })}
+              >
+                Refresh hub data
+              </button>
+            </div>
+          )}
+        </div>
+      ) : null}
 
       {substitutions.length ? (
         <div>
@@ -604,6 +782,65 @@ export default function SubscriptionGraveyard({ userId }) {
                   Grant Access &amp; Connect
                 </button>
               )}
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {snoozeModal.open ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[125] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
+            onClick={() => setSnoozeModal({ open: false, id: null })}
+            role="presentation"
+          >
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-3xl border border-white/10 bg-[#0b0b22] p-6 shadow-2xl"
+            >
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <h3 className="text-lg font-bold text-white">Accountability check</h3>
+                <button
+                  type="button"
+                  className="rounded-lg p-1 text-exiqo-glow/50 hover:text-white"
+                  onClick={() => setSnoozeModal({ open: false, id: null })}
+                  aria-label="Close"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <p className="text-sm text-exiqo-glow/75">
+                Why are you keeping this subscription despite low usage? We log this with your snooze so SmartSpend can tune future nudges.
+              </p>
+              <textarea
+                value={snoozeReason}
+                onChange={(e) => setSnoozeReason(e.target.value)}
+                rows={4}
+                className="mt-4 w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-exiqo-glow/40 focus:border-violet-500/50 focus:outline-none"
+                placeholder="Be specific (min 10 characters)…"
+              />
+              <div className="mt-4 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSnoozeModal({ open: false, id: null })}
+                  className="rounded-xl border border-white/15 px-4 py-2 text-xs font-semibold text-exiqo-glow"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={submitSnooze}
+                  className="rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 px-4 py-2 text-xs font-bold text-white"
+                >
+                  Snooze 24h
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         ) : null}

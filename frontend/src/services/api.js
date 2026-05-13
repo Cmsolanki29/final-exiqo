@@ -355,8 +355,39 @@ export const getSubscriptionRecommendation = async (userId, subscriptionId) =>
 export const getSubscriptionRemindersPending = async (userId) =>
   request(api.get(`/subscription-intelligence/${userId}/reminders/pending`));
 
-export const postSubscriptionReminderAction = async (userId, reminderId, action) =>
-  request(api.post(`/subscription-intelligence/${userId}/reminders/${reminderId}/action`, { action }));
+/** payload: { action } or { action, accountability_reason } for remind_later */
+export const postSubscriptionReminderAction = async (userId, reminderId, payload) => {
+  const body = typeof payload === "string" ? { action: payload } : payload;
+  return request(api.post(`/subscription-intelligence/${userId}/reminders/${reminderId}/action`, body));
+};
+
+export const patchSubscriptionInsightRead = async (userId, insightId) =>
+  request(api.patch(`/subscription-intelligence/${userId}/insights/${insightId}/read`, {}));
+
+/** Phase 3 subscription-intelligence bundle (verdicts + migrations + rollups). */
+export const getSubscriptionIntelHealth = () =>
+  request(api.get("/subscription-intelligence/health"));
+
+export const getSubscriptionIntelAiSummary = (userId) =>
+  request(api.get(`/subscription-intelligence/${userId}/ai-summary`));
+
+export const getSubscriptionIntelVerdictsSnapshot = (userId) =>
+  request(api.get(`/subscription-intelligence/${userId}/verdicts/snapshot`));
+
+export const getSubscriptionIntelMigrationsCategory = (userId) =>
+  request(api.get(`/subscription-intelligence/${userId}/migrations/category`));
+
+export const postSubscriptionIntelMigrationsPersist = (userId) =>
+  request(api.post(`/subscription-intelligence/${userId}/migrations/category/persist`));
+
+export const postSubscriptionIntelRemindersScheduleUpcoming = (userId) =>
+  request(api.post(`/subscription-intelligence/${userId}/reminders/schedule-upcoming`));
+
+export const getSubscriptionIntelInsightsFeed = (userId, params = {}) =>
+  request(api.get(`/subscription-intelligence/${userId}/insights/feed`, { params }));
+
+export const getSubscriptionIntelSavings = (userId) =>
+  request(api.get(`/subscription-intelligence/${userId}/savings`));
 
 export const postSubscriptionSimulateNextDay = async (userId) =>
   request(api.post(`/subscription-intelligence/${userId}/reminders/simulate-next-day`, {}));

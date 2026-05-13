@@ -1,46 +1,17 @@
-# Python 3.13–friendly pins (numpy/sklearn wheels). Do not replace with older tutorial pins here:
-# downgrading FastAPI/pydantic/numpy breaks this repo's Phase 2 routes and ML stack.
-# Password length: handled in `utils/auth.py` (_bcrypt_plaintext) + passlib bcrypt.
-fastapi==0.115.0
-uvicorn==0.30.6
-psycopg2-binary==2.9.11
-python-dotenv==1.0.1
-scikit-learn==1.6.1
-numpy==2.2.2
-pandas==2.2.3
-openai==1.51.0
-pydantic==2.9.2
-python-multipart==0.0.12
-python-jose[cryptography]==3.3.0
-# passlib 1.7.4 breaks against bcrypt>=4.1 (__about__ removed; init hits bogus 72-byte error). Pin bcrypt 4.0.x.
-bcrypt==4.0.1
-passlib[bcrypt]==1.7.4
-email-validator==2.2.0
-
-# ── Phase 1-8 Risk Engine (Chirag Solanki) ──────────────────────────────────
-asyncpg>=0.29
-redis[hiredis]>=5.0
-xgboost>=2.0
-mlflow>=2.10
-shap>=0.44
-prometheus-client>=0.19
-structlog>=24.1
-pydantic-settings>=2.0
-apscheduler>=3.10
-circuitbreaker>=2.0
-pytest-asyncio>=0.23
-httpx>=0.26
-pyod>=1.1
-
-# ── Phase 9-12 (2025-2026 parity) ──────────────────────────────────────────
-# Phase 9: LLM Investigation Agent — Groq via OpenAI-compatible SDK
-# (openai is already pinned above; groq SDK kept optional for future direct use)
-groq>=0.11
-
-# Phase 10/11 (queued, not active on this branch yet — declared so the
-# branch boots; actual model usage gated by feature flags)
-torch>=2.2
-networkx>=3.2
-# torch_geometric — install separately on the target machine; the wheel
-# pipeline differs by OS / CUDA / CPU and pip-only installs frequently fail
-# on Windows.  See PHASE_9_TO_12_LOG.md for the install matrix.
+# Full install (CI / Linux / dev machines with long-path or short-path venvs):
+#   pip install -r requirements.txt
+#
+# Windows + Microsoft Store Python: if the full install fails with OSError / long paths
+# during setuptools or torch, use a project venv first:
+#   cd backend
+#   python -m venv .venv
+#   .\.venv\Scripts\Activate.ps1
+#   python -m pip install -U pip wheel
+#   pip install -r requirements-base.txt -r requirements-ml-risk.txt
+# Then optionally (needs long paths or clean venv):
+#   pip install -r requirements-torch.txt
+#
+# torch_geometric — install separately; see PHASE_9_TO_12_LOG.md if present.
+-r requirements-base.txt
+-r requirements-ml-risk.txt
+-r requirements-torch.txt

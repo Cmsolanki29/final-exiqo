@@ -1,0 +1,5 @@
+# Phase 10/11 — PyTorch pins setuptools<82; on Windows + long USER paths, install this
+# only inside a venv or after enabling long paths:
+# https://pip.pypa.io/warnings/enable-long-paths
+torch>=2.2
+networkx>=3.2

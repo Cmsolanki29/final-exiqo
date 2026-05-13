@@ -11,6 +11,8 @@ import FamilyEventsPage from "./components/FamilyEvents/FamilyEventsPage";
 import Sidebar from "./components/Layout/Sidebar";
 import TopBar from "./components/Layout/TopBar";
 import SubscriptionGraveyard from "./components/Subscriptions/SubscriptionGraveyard";
+import SubscriptionIntelligence from "./pages/SubscriptionIntelligence";
+import SmartReminders from "./pages/SmartReminders";
 import IntroFlow from "./components/intro/IntroFlow";
 import { ToastProvider } from "./components/common/Toast";
 import { SkeletonCard } from "./components/common/SkeletonCard";
@@ -31,10 +33,32 @@ const App = () => {
   const [darkMode, setDarkMode] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
+  /** Subscriptions tab: hub vs smart-reminders (no React Router in CRA shell). */
+  const [subscriptionsSubView, setSubscriptionsSubView] = useState("hub");
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [userError, setUserError] = useState("");
   /** After sign-in, show cinematic intro once per tab session before OTP / bank onboarding. */
   const [preOnboardIntroDone, setPreOnboardIntroDone] = useState(false);
+
+  /** Reset subscriptions sub-view when leaving that tab. */
+  useEffect(() => {
+    if (activeTab !== "subscriptions") setSubscriptionsSubView("hub");
+  }, [activeTab]);
+
+  /** Remove stale `fraudTab` from URL when viewing other tabs (avoids confusion + stale deep-links). */
+  useEffect(() => {
+    if (activeTab === "fraud") return;
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has("fraudTab")) return;
+      url.searchParams.delete("fraudTab");
+      const q = url.searchParams.toString();
+      const next = `${url.pathname}${q ? `?${q}` : ""}${url.hash}`;
+      window.history.replaceState({}, "", next);
+    } catch {
+      /* ignore */
+    }
+  }, [activeTab]);
 
   /** Legacy sidebar tab ids → unified FraudShield hub + URL sub-tab. */
   useEffect(() => {
@@ -250,7 +274,22 @@ const App = () => {
                   </Suspense>
                 )}
                 {activeTab === "emi" && <EMITrapDetector userId={selectedUserId} />}
-                {activeTab === "subscriptions" && <SubscriptionGraveyard userId={selectedUserId} />}
+                {activeTab === "subscriptions" && subscriptionsSubView === "reminders" && (
+                  <SmartReminders onBack={() => setSubscriptionsSubView("hub")} />
+                )}
+                {activeTab === "subscriptions" && subscriptionsSubView === "hub" && (
+                  <div className="mx-auto max-w-6xl space-y-10">
+                    <SubscriptionIntelligence
+                      onOpenReminders={() => setSubscriptionsSubView("reminders")}
+                    />
+                    <section className="border-t border-white/10 pt-8">
+                      <h2 className="mb-4 font-heading text-lg font-semibold text-white">
+                        Devices, renewals & subscription list
+                      </h2>
+                      <SubscriptionGraveyard key={`subscriptions-${selectedUserId}`} userId={selectedUserId} />
+                    </section>
+                  </div>
+                )}
                 {activeTab === "dark-patterns" && <DarkPatternDetector userId={selectedUserId} />}
                 {activeTab === "fraud" && (
                   <FraudShieldPage userId={selectedUserId} userName={selectedUser?.name} />

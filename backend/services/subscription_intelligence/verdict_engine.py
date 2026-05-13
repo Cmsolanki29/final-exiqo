@@ -115,7 +115,7 @@ def evaluate_subscription(conn: PgConnection, subscription_id: int) -> VerdictRe
             return VerdictResult(
                 verdict="declining",
                 confidence=40,
-                reason="No device link yet — connect SmartSpend Device Intelligence for usage-grounded verdicts.",
+                reason="No device link yet - connect SmartSpend Device Intelligence for usage-grounded verdicts.",
                 monthly_waste=round(monthly_cost * 0.15, 2),
                 usage_delta_30d=0.0,
                 substitution=None,
@@ -218,7 +218,7 @@ def evaluate_subscription(conn: PgConnection, subscription_id: int) -> VerdictRe
             return VerdictResult(
                 verdict="upgrade",
                 confidence=85,
-                reason=f"{hours:.0f}h/month in-app — pro tier likely ROI-positive for your workflow",
+                reason=f"{hours:.0f}h/month in-app - pro tier likely ROI-positive for your workflow",
                 monthly_waste=0.0,
                 usage_delta_30d=delta,
                 substitution=None,
@@ -260,3 +260,224 @@ def persist_verdict(conn: PgConnection, subscription_id: int, vr: VerdictResult)
         )
     finally:
         cur.close()
+
+
+def detect_thriving_subscriptions(conn: PgConnection, user_id: int) -> list[dict[str, Any]]:
+    """
+    Subscriptions with strong recent usage (>20h / 30d) and non-negative trend vs prior 30d.
+    Uses DB function calculate_usage_change (migration 023).
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT
+                s.id,
+                s.merchant,
+                COALESCE(s.monthly_cost, 0)::float,
+                calc.current_usage_hours,
+                calc.previous_usage_hours,
+                calc.change_percentage
+            FROM subscriptions s
+            CROSS JOIN LATERAL calculate_usage_change(s.user_id, s.id, 30, 30) AS calc
+            WHERE s.user_id = %s
+              AND s.linked_app_package IS NOT NULL
+              AND length(trim(s.linked_app_package)) > 0
+              AND COALESCE(calc.current_usage_hours, 0) > 20
+              AND COALESCE(calc.change_percentage, 0) >= 0
+              AND COALESCE(s.monthly_cost, 0) > 0;
+            """,
+            (user_id,),
+        )
+        out: list[dict[str, Any]] = []
+        for sid, merchant, cost, cur_h, prev_h, chg in cur.fetchall():
+            chg_f = float(chg or 0)
+            out.append(
+                {
+                    "subscription_id": int(sid),
+                    "subscription_name": merchant or "",
+                    "verdict": "thriving",
+                    "reasoning": "Healthy usage pattern vs prior month",
+                    "confidence_score": 0.90,
+                    "current_usage_hours": float(cur_h or 0),
+                    "previous_usage_hours": float(prev_h or 0),
+                    "usage_change_percentage": chg_f,
+                    "monthly_cost": float(cost or 0),
+                }
+            )
+        return out
+    except Exception:
+        return []
+    finally:
+        cur.close()
+
+
+def detect_declining_subscriptions(conn: PgConnection, user_id: int) -> list[dict[str, Any]]:
+    """Usage down more than 50% (percentage points) vs prior 30 days."""
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT
+                s.id,
+                s.merchant,
+                COALESCE(s.monthly_cost, 0)::float,
+                calc.current_usage_hours,
+                calc.previous_usage_hours,
+                calc.change_percentage
+            FROM subscriptions s
+            CROSS JOIN LATERAL calculate_usage_change(s.user_id, s.id, 30, 30) AS calc
+            WHERE s.user_id = %s
+              AND s.linked_app_package IS NOT NULL
+              AND length(trim(s.linked_app_package)) > 0
+              AND COALESCE(calc.change_percentage, 0) < -50;
+            """,
+            (user_id,),
+        )
+        out: list[dict[str, Any]] = []
+        for sid, merchant, cost, cur_h, prev_h, chg in cur.fetchall():
+            cur_f = float(cur_h or 0)
+            cost_f = float(cost or 0)
+            chg_f = float(chg or 0)
+            waste_amount = cost_f if cur_f < 2.0 else round(cost_f * 0.7, 2)
+            out.append(
+                {
+                    "subscription_id": int(sid),
+                    "subscription_name": merchant or "",
+                    "verdict": "declining",
+                    "reasoning": (
+                        f"Usage down {abs(int(round(chg_f)))}% vs prior 30 days. "
+                        f"Approx. waste flagged: Rs.{int(round(waste_amount))}/mo."
+                    ),
+                    "confidence_score": 0.85,
+                    "current_usage_hours": cur_f,
+                    "previous_usage_hours": float(prev_h or 0),
+                    "usage_change_percentage": chg_f,
+                    "monthly_cost": cost_f,
+                    "potential_monthly_savings": waste_amount,
+                    "potential_yearly_savings": round(waste_amount * 12, 2),
+                }
+            )
+        return out
+    except Exception:
+        return []
+    finally:
+        cur.close()
+
+
+def detect_upgrade_opportunities_for_user(conn: PgConnection, user_id: int) -> list[dict[str, Any]]:
+    """High in-app time on a low/zero nominal plan - suggest paid tier when not already is_pro."""
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT
+                s.id,
+                s.merchant,
+                COALESCE(s.monthly_cost, 0)::float,
+                calc.current_usage_hours,
+                calc.previous_usage_hours,
+                COALESCE(s.is_pro, FALSE)
+            FROM subscriptions s
+            CROSS JOIN LATERAL calculate_usage_change(s.user_id, s.id, 30, 30) AS calc
+            WHERE s.user_id = %s
+              AND s.linked_app_package IS NOT NULL
+              AND length(trim(s.linked_app_package)) > 0
+              AND COALESCE(s.is_pro, FALSE) IS NOT TRUE
+              AND COALESCE(calc.current_usage_hours, 0) > 15
+              AND (
+                    COALESCE(s.monthly_cost, 0) <= 0
+                    OR lower(coalesce(s.merchant, '')) LIKE '%%free%%'
+                    OR lower(coalesce(s.merchant, '')) LIKE '%%basic%%'
+                );
+            """,
+            (user_id,),
+        )
+        out: list[dict[str, Any]] = []
+        for sid, merchant, cost, cur_h, prev_h, _is_pro in cur.fetchall():
+            m = merchant or ""
+            if not has_pro_tier(m):
+                continue
+            cur_f = float(cur_h or 0)
+            out.append(
+                {
+                    "subscription_id": int(sid),
+                    "subscription_name": m,
+                    "verdict": "upgrade_recommended",
+                    "reasoning": f"{int(cur_f)}h/month in-app - pro tier likely ROI-positive for your workflow",
+                    "confidence_score": 0.80,
+                    "current_usage_hours": cur_f,
+                    "previous_usage_hours": float(prev_h or 0),
+                    "monthly_cost": float(cost or 0),
+                }
+            )
+        return out
+    except Exception:
+        return []
+    finally:
+        cur.close()
+
+
+def detect_dormant_subscriptions(conn: PgConnection, user_id: int) -> list[dict[str, Any]]:
+    """Delegates to evaluate_subscription for verdict == dormant (session-aware)."""
+    cur = conn.cursor()
+    out: list[dict[str, Any]] = []
+    try:
+        cur.execute(
+            "SELECT id, merchant, COALESCE(monthly_cost, 0)::float FROM subscriptions WHERE user_id = %s ORDER BY id;",
+            (user_id,),
+        )
+        for sid, merchant, mc in cur.fetchall():
+            vr = evaluate_subscription(conn, int(sid))
+            if vr is None or vr.verdict != "dormant":
+                continue
+            out.append(
+                {
+                    "subscription_id": int(sid),
+                    "subscription_name": merchant or "",
+                    "verdict": "dormant",
+                    "reasoning": vr.reason,
+                    "confidence_score": round((vr.confidence or 0) / 100.0, 2),
+                    "monthly_cost": float(mc or 0),
+                }
+            )
+        return out
+    except Exception:
+        return []
+    finally:
+        cur.close()
+
+
+def generate_all_verdict_reports(conn: PgConnection, user_id: int) -> dict[str, list[dict[str, Any]]]:
+    """Run batch detectors (SQL + evaluate_subscription) for dashboards and QA."""
+    return {
+        "thriving": detect_thriving_subscriptions(conn, user_id),
+        "declining": detect_declining_subscriptions(conn, user_id),
+        "dormant": detect_dormant_subscriptions(conn, user_id),
+        "upgrade_recommended": detect_upgrade_opportunities_for_user(conn, user_id),
+    }
+
+
+if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+
+    _root = Path(__file__).resolve().parents[2]
+    sys.path.insert(0, str(_root))
+    from db import get_connection
+
+    uid = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+    print("=" * 60)
+    print("TESTING VERDICT ENGINE (batch SQL + evaluate_subscription)")
+    print("=" * 60)
+    with get_connection() as conn:
+        verdicts = generate_all_verdict_reports(conn, uid)
+        for bucket in ("thriving", "declining", "dormant", "upgrade_recommended"):
+            rows = verdicts.get(bucket) or []
+            print(f"\n{bucket}: {len(rows)}")
+            for v in rows[:8]:
+                name = v.get("subscription_name") or "?"
+                print(f"  - {name}: {v.get('reasoning', '')[:72]}")
+    print("\n" + "=" * 60)
+    print("VERDICT ENGINE TEST COMPLETE")
+    print("=" * 60)

@@ -2,12 +2,18 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any
+
+_backend_dir = Path(__file__).resolve().parents[2]
+if str(_backend_dir) not in sys.path:
+    sys.path.insert(0, str(_backend_dir))
 
 from psycopg2.extensions import connection as PgConnection
 
-from .verdict_engine import compute_pkg_growth
+from services.subscription_intelligence.verdict_engine import compute_pkg_growth
 
 
 def detect_substitutions(conn: PgConnection, user_id: int) -> list[dict[str, Any]]:
@@ -101,3 +107,139 @@ def detect_substitutions(conn: PgConnection, user_id: int) -> list[dict[str, Any
         return out
     finally:
         cur.close()
+
+
+def detect_category_migrations(conn: PgConnection, user_id: int) -> list[dict[str, Any]]:
+    """
+    Same intelligence_category: one subscription sharply down, another materially up
+    (usage migration signal). Complements graph-based detect_substitutions().
+    """
+    cur = conn.cursor()
+    insights: list[dict[str, Any]] = []
+    try:
+        cur.execute(
+            """
+            SELECT
+                s.id,
+                s.merchant,
+                COALESCE(s.monthly_cost, 0)::float,
+                s.intelligence_category,
+                calc.current_usage_hours,
+                calc.previous_usage_hours,
+                calc.change_percentage
+            FROM subscriptions s
+            CROSS JOIN LATERAL calculate_usage_change(s.user_id, s.id, 30, 30) AS calc
+            WHERE s.user_id = %s
+              AND s.linked_app_package IS NOT NULL
+              AND length(trim(s.linked_app_package)) > 0
+              AND s.intelligence_category IS NOT NULL
+              AND length(trim(s.intelligence_category)) > 0
+              AND COALESCE(calc.change_percentage, 0) < -50;
+            """,
+            (user_id,),
+        )
+        declining = cur.fetchall()
+        for dec_id, dec_name, dec_cost, category, _dc, _dp, _dchg in declining:
+            cur.execute(
+                """
+                SELECT
+                    s.id,
+                    s.merchant,
+                    COALESCE(s.monthly_cost, 0)::float,
+                    calc.current_usage_hours,
+                    calc.change_percentage
+                FROM subscriptions s
+                CROSS JOIN LATERAL calculate_usage_change(s.user_id, s.id, 30, 30) AS calc
+                WHERE s.user_id = %s
+                  AND s.id <> %s
+                  AND s.intelligence_category IS NOT DISTINCT FROM %s
+                  AND s.linked_app_package IS NOT NULL
+                  AND COALESCE(calc.current_usage_hours, 0) > 10
+                  AND COALESCE(calc.change_percentage, 0) > 0;
+                """,
+                (user_id, int(dec_id), category),
+            )
+            for thr_id, thr_name, thr_cost, thr_cur, thr_chg in cur.fetchall():
+                dec_cost_f = float(dec_cost or 0)
+                insights.append(
+                    {
+                        "insight_type": "migration_detected",
+                        "primary_subscription_id": int(dec_id),
+                        "secondary_subscription_id": int(thr_id),
+                        "title": "Subscription migration detected",
+                        "description": f"You shifted time from {dec_name} toward {thr_name} within {category}.",
+                        "recommendation": (
+                            f"If the new habit stuck, cancel {dec_name} to save "
+                            f"Rs.{int(round(dec_cost_f))}/month."
+                        ),
+                        "potential_savings_monthly": dec_cost_f,
+                        "potential_savings_yearly": round(dec_cost_f * 12, 2),
+                        "confidence_score": 0.85,
+                    }
+                )
+        return insights
+    except Exception:
+        return []
+    finally:
+        cur.close()
+
+
+def save_category_migration_insights(conn: PgConnection, user_id: int, insights: list[dict[str, Any]]) -> int:
+    """Persist category migration cards into subscription_intelligence_insights."""
+    if not insights:
+        return 0
+    cur = conn.cursor()
+    n = 0
+    try:
+        for ins in insights:
+            pid = ins.get("primary_subscription_id")
+            sid2 = ins.get("secondary_subscription_id")
+            if pid is None or sid2 is None:
+                continue
+            dedupe_key = f"migration_cat:{pid}:{sid2}"[:220]
+            title = str(ins.get("title") or "Migration detected")[:240]
+            desc = str(ins.get("description") or "")
+            rec = str(ins.get("recommendation") or "")
+            body = f"{desc}\n\n{rec}".strip()
+            cur.execute(
+                """
+                INSERT INTO subscription_intelligence_insights (
+                    user_id, subscription_id, dedupe_key, insight_type, title, body, priority, updated_at
+                ) VALUES (%s, %s, %s, 'migration_detected', %s, %s, 1, NOW())
+                ON CONFLICT (user_id, dedupe_key) DO UPDATE SET
+                    title = EXCLUDED.title,
+                    body = EXCLUDED.body,
+                    subscription_id = COALESCE(EXCLUDED.subscription_id, subscription_intelligence_insights.subscription_id),
+                    priority = LEAST(subscription_intelligence_insights.priority, EXCLUDED.priority),
+                    updated_at = NOW();
+                """,
+                (user_id, int(pid), dedupe_key, title, body),
+            )
+            n += 1
+        return n
+    finally:
+        cur.close()
+
+
+if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+
+    _root = Path(__file__).resolve().parents[2]
+    sys.path.insert(0, str(_root))
+    from db import get_connection
+
+    uid = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+    print("=" * 60)
+    print("TESTING SUBSTITUTION DETECTOR (category migrations)")
+    print("=" * 60)
+    with get_connection() as conn:
+        migrations = detect_category_migrations(conn, uid)
+        print(f"\nmigrations: {len(migrations)}")
+        for m in migrations[:10]:
+            print(f"  - {m.get('title')}: {m.get('description', '')[:70]}")
+        if migrations:
+            n = save_category_migration_insights(conn, uid, migrations)
+            conn.commit()
+            print(f"\nsaved_rows: {n}")
+    print("=" * 60)

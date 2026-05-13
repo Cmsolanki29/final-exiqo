@@ -1,9 +1,8 @@
 """
 Apply subscription-intelligence DDL when the DB is behind migrations.
 
-Local/demo DBs sometimes skip `python -m scripts.apply_migrations`; missing columns
-then surface as psycopg2.errors.UndefinedColumn on /subscription-intelligence/* routes.
-This module replays migration 021 idempotently (ADD COLUMN IF NOT EXISTS, CREATE IF NOT EXISTS).
+Replays 021, 022, then 023 (categories + savings + usage helper) idempotently.
+SIMULATED boundary comments live in migration files for mobile SDK areas.
 """
 from __future__ import annotations
 
@@ -18,9 +17,10 @@ logger = logging.getLogger(__name__)
 _BOOT_LOCK = threading.Lock()
 _SCHEMA_OK = False
 
-_MIGRATION_PATH = (
-    Path(__file__).resolve().parents[2] / "database" / "migrations" / "021_subscription_intelligence.sql"
-)
+_MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "database" / "migrations"
+_M021 = _MIGRATIONS_DIR / "021_subscription_intelligence.sql"
+_M022 = _MIGRATIONS_DIR / "022_subscription_intelligence_platform.sql"
+_M023 = _MIGRATIONS_DIR / "023_subscription_intelligence_categories_savings.sql"
 
 
 def _intel_schema_ready(cur) -> bool:
@@ -34,9 +34,7 @@ def _intel_schema_ready(cur) -> bool:
         LIMIT 1;
         """
     )
-    if cur.fetchone():
-        return True
-    return False
+    return cur.fetchone() is not None
 
 
 def _device_links_table_ready(cur) -> bool:
@@ -46,6 +44,32 @@ def _device_links_table_ready(cur) -> bool:
         FROM information_schema.tables
         WHERE table_schema = current_schema()
           AND table_name = 'device_links'
+        LIMIT 1;
+        """
+    )
+    return cur.fetchone() is not None
+
+
+def _platform_022_ready(cur) -> bool:
+    cur.execute(
+        """
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = current_schema()
+          AND table_name = 'connected_apps'
+        LIMIT 1;
+        """
+    )
+    return cur.fetchone() is not None
+
+
+def _platform_023_ready(cur) -> bool:
+    cur.execute(
+        """
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = current_schema()
+          AND table_name = 'subscription_categories'
         LIMIT 1;
         """
     )
@@ -67,8 +91,25 @@ def _run_migration_statements(cur, sql_text: str) -> None:
         cur.execute(stmt + ";")
 
 
+def _apply_file_if_exists(cur: PgConnection, path: Path) -> bool:
+    if not path.is_file():
+        logger.warning("Migration file missing: %s", path)
+        return False
+    _run_migration_statements(cur, path.read_text(encoding="utf-8"))
+    return True
+
+
+def _apply_file_whole(cur: PgConnection, path: Path) -> bool:
+    """Run migration as one script (required when file contains PL/pgSQL $$ blocks)."""
+    if not path.is_file():
+        logger.warning("Migration file missing: %s", path)
+        return False
+    cur.execute(path.read_text(encoding="utf-8"))
+    return True
+
+
 def ensure_subscription_intelligence_schema(conn: PgConnection) -> None:
-    """No-op when schema already matches migration 021; otherwise apply 021 DDL and commit."""
+    """Apply 021 + 022 + 023 when needed; commit once if any DDL ran."""
     global _SCHEMA_OK
     if _SCHEMA_OK:
         return
@@ -79,23 +120,53 @@ def ensure_subscription_intelligence_schema(conn: PgConnection) -> None:
 
         cur = conn.cursor()
         try:
-            if _intel_schema_ready(cur) and _device_links_table_ready(cur):
+            need_021 = not (_intel_schema_ready(cur) and _device_links_table_ready(cur))
+            need_022 = not _platform_022_ready(cur)
+            need_023 = not _platform_023_ready(cur)
+            if not need_021 and not need_022 and not need_023:
                 _SCHEMA_OK = True
                 return
 
-            if not _MIGRATION_PATH.is_file():
-                raise FileNotFoundError(
-                    f"Subscription intelligence migration missing at {_MIGRATION_PATH}. "
-                    "Run: cd backend && python -m scripts.apply_migrations"
-                )
+            if need_021:
+                if not _apply_file_if_exists(cur, _M021):
+                    raise FileNotFoundError(
+                        f"Missing {_M021.name}. Run: cd backend && python -m scripts.apply_migrations"
+                    )
+                logger.info("Applied subscription intelligence migration 021.")
 
-            sql_text = _MIGRATION_PATH.read_text(encoding="utf-8")
-            # psycopg2 does not reliably accept multi-statement strings; apply one statement at a time.
-            _run_migration_statements(cur, sql_text)
+            if need_022:
+                if not _apply_file_if_exists(cur, _M022):
+                    raise FileNotFoundError(
+                        f"Missing {_M022.name}. Run: cd backend && python -m scripts.apply_migrations"
+                    )
+                logger.info("Applied subscription intelligence migration 022.")
+
+            if need_023:
+                if not (_intel_schema_ready(cur) and _device_links_table_ready(cur) and _platform_022_ready(cur)):
+                    raise RuntimeError(
+                        "Migration 023 requires 021+022 to be applied first (app_usage_signals, reminder_outcomes)."
+                    )
+                if not _apply_file_whole(cur, _M023):
+                    raise FileNotFoundError(
+                        f"Missing {_M023.name}. Run: cd backend && python -m scripts.apply_migrations"
+                    )
+                logger.info("Applied subscription intelligence migration 023.")
 
             conn.commit()
-            _SCHEMA_OK = True
-            logger.info("Subscription intelligence schema (021) ensured on database.")
+
+            cur2 = conn.cursor()
+            try:
+                _SCHEMA_OK = (
+                    _intel_schema_ready(cur2)
+                    and _device_links_table_ready(cur2)
+                    and _platform_022_ready(cur2)
+                    and _platform_023_ready(cur2)
+                )
+            finally:
+                cur2.close()
+
+            if _SCHEMA_OK:
+                logger.info("Subscription intelligence schema (021+022+023) verified.")
         except Exception:
             conn.rollback()
             logger.exception("Failed to bootstrap subscription intelligence schema")

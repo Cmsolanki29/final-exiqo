@@ -78,5 +78,6 @@ if ($LASTEXITCODE -ne 0) {
 if (Test-Path $venvPy) {
     & $venvPy -m uvicorn main:app --host 127.0.0.1 --port $Port --reload
 } else {
-    uvicorn main:app --host 127.0.0.1 --port $Port --reload
+    # Bare `uvicorn` is often not on PATH; -m works when the package is installed for this Python.
+    & $py -m uvicorn main:app --host 127.0.0.1 --port $Port --reload
 }

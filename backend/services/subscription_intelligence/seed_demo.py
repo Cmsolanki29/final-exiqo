@@ -120,16 +120,17 @@ def run_seed_for_user(conn: PgConnection, user_id: int, *, wipe_device: bool = T
     rnd = random.Random(42 + user_id)
     cur = conn.cursor()
     try:
-        cur.execute(
-            "DELETE FROM reminder_outcomes WHERE reminder_id IN (SELECT id FROM scheduled_reminders WHERE user_id=%s);",
-            (user_id,),
-        )
+        cur.execute("DELETE FROM reminder_outcomes WHERE reminder_id IN (SELECT id FROM scheduled_reminders WHERE user_id=%s);", (user_id,))
         cur.execute("DELETE FROM scheduled_reminders WHERE user_id=%s;", (user_id,))
         cur.execute(
             "DELETE FROM verdict_history WHERE subscription_id IN (SELECT id FROM subscriptions WHERE user_id=%s);",
             (user_id,),
         )
         cur.execute("DELETE FROM app_usage_signals WHERE user_id=%s;", (user_id,))
+        cur.execute("DELETE FROM subscription_intelligence_insights WHERE user_id=%s;", (user_id,))
+        cur.execute("DELETE FROM subscription_events WHERE user_id=%s;", (user_id,))
+        cur.execute("DELETE FROM connected_apps WHERE user_id=%s;", (user_id,))
+        cur.execute("UPDATE subscriptions SET reminder_escalation_tier = 1 WHERE user_id=%s;", (user_id,))
         if wipe_device:
             cur.execute("DELETE FROM device_links WHERE user_id=%s;", (user_id,))
 
@@ -255,6 +256,6 @@ def run_seed_for_user(conn: PgConnection, user_id: int, *, wipe_device: bool = T
             vr = evaluate_subscription(conn, sid)
             if vr is not None:
                 persist_verdict(conn, sid, vr)
-                schedule_reminders_for_subscription(conn, sid, escalation_level=1)
+                schedule_reminders_for_subscription(conn, sid)
     finally:
         cur.close()

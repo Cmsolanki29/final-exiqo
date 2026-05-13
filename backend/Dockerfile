@@ -19,7 +19,7 @@ RUN apt-get update \
         curl \
  && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY requirements.txt requirements-base.txt requirements-ml-risk.txt requirements-torch.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
