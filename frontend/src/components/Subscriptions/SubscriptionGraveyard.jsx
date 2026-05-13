@@ -1,386 +1,613 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  AlertTriangle,
-  CheckCircle2,
-  LayoutGrid,
-  Lightbulb,
+  Bell,
+  ChevronDown,
+  ChevronUp,
+  Cpu,
+  Info,
+  Link2,
   RefreshCw,
-  TrendingDown,
-  Trash2,
-  XCircle,
+  Shield,
+  Sparkles,
+  X,
+  Zap,
 } from "lucide-react";
-import { apiUtils, getSubscriptions } from "../../services/api";
+import {
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
+  getSubscriptionIntelligenceHub,
+  getSubscriptionRecommendation,
+  getSubscriptionRemindersPending,
+  postSubscriptionDeviceLink,
+  postSubscriptionReminderAction,
+  postSubscriptionResetDemo,
+  postSubscriptionSimulateNextDay,
+} from "../../services/api";
 import { useToast } from "../common/Toast";
-import { EmptyState } from "../common/EmptyState";
 import { ErrorCard } from "../common/ErrorCard";
 import { PageHeader } from "../Dashboard/shared/PageHeader";
-import { HeroKpiTile } from "../Dashboard/shared/HeroKpiTile";
 import { inr } from "../../lib/format";
 
-const ACCENT = "#F59E0B";
+const DEMO_MODE =
+  process.env.REACT_APP_DEMO_MODE === "true" || process.env.REACT_APP_DEMO_MODE === "1";
 
-const tabs = ["ALL", "ACTIVE", "SUSPICIOUS", "DEAD"];
+const EMPTY_LIST = [];
 
-const statToneClass = {
-  total: "border-exiqo-purple/35 bg-exiqo-purple/[0.08]",
-  active: "border-emerald-500/35 bg-emerald-500/[0.08]",
-  suspicious: "border-amber-500/35 bg-amber-500/[0.08]",
-  dead: "border-rose-500/35 bg-rose-500/[0.08]",
+// SIMULATED: production version uses Android UsageStatsManager via companion mobile SDK
+const DEMO_APPS = [
+  { id: "com.netflix.mediaclient", label: "Netflix" },
+  { id: "com.spotify.music", label: "Spotify" },
+  { id: "com.google.android.youtube", label: "YouTube Premium" },
+  { id: "com.linkedin.android", label: "LinkedIn" },
+  { id: "in.startv.hotstar", label: "Hotstar" },
+  { id: "in.amazon.mShop.android.shopping", label: "Prime / Amazon" },
+  { id: "com.openai.chatgpt", label: "ChatGPT" },
+  { id: "com.notion.android", label: "Notion" },
+  { id: "com.canva.editor", label: "Canva Pro" },
+  { id: "com.adobe.reader", label: "Adobe Acrobat" },
+  { id: "com.gaana", label: "Gaana" },
+  { id: "com.apple.android.music", label: "Apple Music" },
+];
+
+const VERDICT_STYLES = {
+  thriving: { bg: "bg-emerald-500/15", ring: "ring-emerald-500/35", text: "text-emerald-200", dot: "bg-emerald-400" },
+  declining: { bg: "bg-amber-500/15", ring: "ring-amber-500/35", text: "text-amber-100", dot: "bg-amber-400" },
+  dormant: { bg: "bg-orange-500/15", ring: "ring-orange-500/35", text: "text-orange-100", dot: "bg-orange-400" },
+  dead: { bg: "bg-rose-500/15", ring: "ring-rose-500/35", text: "text-rose-100", dot: "bg-rose-400" },
+  upgrade: { bg: "bg-purple-500/15", ring: "ring-purple-500/40", text: "text-purple-100", dot: "bg-purple-400" },
 };
 
-const rowStyle = {
-  ACTIVE: {
-    border: "border-emerald-500/35 hover:border-emerald-500/50",
-    bg: "from-exiqo-dark/70 to-emerald-500/[0.06]",
-    icon: CheckCircle2,
-    iconClass: "text-emerald-400",
-    pill: "bg-emerald-500/15 text-emerald-300 border-emerald-500/25",
-  },
-  SUSPICIOUS: {
-    border: "border-amber-500/35 hover:border-amber-500/50",
-    bg: "from-exiqo-dark/70 to-amber-500/[0.06]",
-    icon: AlertTriangle,
-    iconClass: "text-amber-400",
-    pill: "bg-amber-500/15 text-amber-200 border-amber-500/25",
-  },
-  DEAD: {
-    border: "border-rose-500/35 hover:border-rose-500/50",
-    bg: "from-exiqo-dark/70 to-rose-500/[0.06]",
-    icon: XCircle,
-    iconClass: "text-rose-400",
-    pill: "bg-rose-500/15 text-rose-200 border-rose-500/25",
-  },
-};
-
-function lastUsedLabel(days) {
-  if (typeof days !== "number") return "—";
-  if (days >= 0) return `${days} days ago`;
-  return `Recent (${Math.abs(days)}d)`;
+function VerdictBadge({ verdict }) {
+  const v = (verdict || "").toLowerCase();
+  const s = VERDICT_STYLES[v] || VERDICT_STYLES.declining;
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ${s.bg} ${s.ring} ${s.text}`}
+    >
+      <span className={`relative flex h-2 w-2`}>
+        <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${s.dot}`} />
+        <span className={`relative h-2 w-2 rounded-full ${s.dot}`} />
+      </span>
+      {v || "—"}
+    </span>
+  );
 }
 
-const SubscriptionGraveyard = ({ userId }) => {
-  const { showToast } = useToast();
-  const [state, setState] = useState({ loading: true, error: "", data: null });
-  const [tab, setTab] = useState("ALL");
-  const [modalMerchant, setModalMerchant] = useState("");
+function WasteLedgerHero({ amount, loading }) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (loading) return;
+    const target = Math.round(Number(amount) || 0);
+    setN(0);
+    const start = performance.now();
+    const dur = 900;
+    let id;
+    const tick = (now) => {
+      const p = Math.min(1, (now - start) / dur);
+      const eased = 1 - (1 - p) ** 3;
+      setN(Math.round(target * eased));
+      if (p < 1) id = window.requestAnimationFrame(tick);
+    };
+    id = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(id);
+  }, [amount, loading]);
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-violet-600/25 via-[#0a0a22]/80 to-blue-900/20 p-6 shadow-[0_0_50px_-20px_rgba(124,58,237,0.45)] backdrop-blur-xl sm:p-8"
+    >
+      <div className="pointer-events-none absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_20%_20%,rgba(124,58,237,0.4),transparent_45%)]" />
+      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-200/80">Waste ledger</p>
+      <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-white sm:text-4xl">
+        You&apos;ve saved {inr(n)} this year with SmartSpend
+      </p>
+      <p className="mt-2 max-w-xl text-sm text-exiqo-glow/65">
+        Aggregated from verdict-classified monthly waste × 12 — same numbers your bank feed can&apos;t see without device context.
+      </p>
+    </motion.div>
+  );
+}
 
-  const load = async () => {
-    setState((p) => ({ ...p, loading: true, error: "" }));
+export default function SubscriptionGraveyard({ userId }) {
+  const { showToast } = useToast();
+  const [hub, setHub] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [modal, setModal] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [connectStep, setConnectStep] = useState(0);
+  const [perm, setPerm] = useState({ usage_access: true, notifications: true, session_duration: true });
+  const [selectedApps, setSelectedApps] = useState(() => new Set(DEMO_APPS.map((a) => a.id)));
+  const [expanded, setExpanded] = useState(null);
+  const [recoById, setRecoById] = useState({});
+  const [recoLoading, setRecoLoading] = useState(false);
+  const [banner, setBanner] = useState(null);
+
+  const loadHub = useCallback(async () => {
+    setLoading(true);
+    setError("");
     try {
-      const data = await getSubscriptions(userId);
-      setState({ loading: false, error: "", data });
-    } catch (err) {
-      setState({ loading: false, error: err.message || "Unable to load subscriptions", data: null });
+      const data = await getSubscriptionIntelligenceHub(userId);
+      setHub(data);
+    } catch (e) {
+      setError(e.message || "Failed to load subscription intelligence");
+      setHub(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [userId]);
+
+  const pollReminders = useCallback(async () => {
+    try {
+      const r = await getSubscriptionRemindersPending(userId);
+      const first = (r.reminders || [])[0];
+      setBanner(first || null);
+    } catch {
+      /* ignore */
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    loadHub();
+  }, [loadHub]);
+
+  useEffect(() => {
+    pollReminders();
+    const id = window.setInterval(pollReminders, 60000);
+    return () => clearInterval(id);
+  }, [pollReminders]);
+
+  const subs = useMemo(() => {
+    const list = hub?.subscriptions;
+    if (!Array.isArray(list) || list.length === 0) return EMPTY_LIST;
+    return list;
+  }, [hub]);
+
+  const substitutions = useMemo(() => {
+    const list = hub?.substitutions;
+    if (!Array.isArray(list) || list.length === 0) return EMPTY_LIST;
+    return list;
+  }, [hub]);
+  const deviceLinked = !!hub?.device_linked;
+  const discoveryMsg = hub?.discovery?.message || "";
+
+  const toggleApp = (id) => {
+    setSelectedApps((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  };
+
+  const runDeviceConnect = async () => {
+    setConnecting(true);
+    setConnectStep(0);
+    const steps = ["Scanning installed apps…", "Reading 30-day usage history…", "Building behavioral baseline…", "Done."];
+    const iv = window.setInterval(() => {
+      setConnectStep((s) => Math.min(s + 1, steps.length - 1));
+    }, 650);
+    const t0 = Date.now();
+    try {
+      await postSubscriptionDeviceLink(userId, {
+        device_type: "simulated",
+        permissions: perm,
+        apps_linked: Array.from(selectedApps),
+      });
+      const pad = Math.max(0, 2500 - (Date.now() - t0));
+      if (pad) await new Promise((r) => setTimeout(r, pad));
+      showToast("Device intelligence connected — Digital Wellbeing-style signals are now live.");
+      setModal(false);
+      await loadHub();
+      await pollReminders();
+    } catch (e) {
+      showToast(e.message || "Connect failed");
+    } finally {
+      clearInterval(iv);
+      setConnecting(false);
+      setConnectStep(0);
     }
   };
 
-  useEffect(() => {
-    load();
-  }, [userId]);
+  const loadReco = async (subId) => {
+    if (!subId || recoById[subId]) return;
+    setRecoLoading(true);
+    try {
+      const r = await getSubscriptionRecommendation(userId, subId);
+      setRecoById((m) => ({ ...m, [subId]: r.paragraph || "" }));
+    } catch {
+      setRecoById((m) => ({ ...m, [subId]: "Recommendation unavailable right now." }));
+    } finally {
+      setRecoLoading(false);
+    }
+  };
 
-  const subs = state.data?.subscriptions || [];
-  const visible = useMemo(() => {
-    if (tab === "ALL") return subs;
-    return subs.filter((s) => s.status === tab);
-  }, [subs, tab]);
+  const onExpand = (sid) => {
+    setExpanded((e) => (e === sid ? null : sid));
+    if (sid && expanded !== sid) loadReco(sid);
+  };
 
-  const modalGuide = modalMerchant ? state.data?.cancel_guide?.[modalMerchant] : "";
+  const reminderAction = async (id, action) => {
+    try {
+      await postSubscriptionReminderAction(userId, id, action);
+      showToast("Updated");
+      setBanner(null);
+      await pollReminders();
+    } catch (e) {
+      showToast(e.message || "Action failed");
+    }
+  };
 
-  const monthlyWaste = Number(state.data?.monthly_waste || 0);
-  const annualWaste = Number(state.data?.annual_waste || 0);
+  const simulateDay = async () => {
+    try {
+      await postSubscriptionSimulateNextDay(userId);
+      await pollReminders();
+      showToast("Demo clock advanced 24h");
+    } catch (e) {
+      showToast(e.message || "Simulate failed");
+    }
+  };
 
-  if (state.loading) {
+  const resetDemo = async () => {
+    try {
+      await postSubscriptionResetDemo(userId);
+      showToast("Demo reset — link device again to replay.");
+      await loadHub();
+      await pollReminders();
+    } catch (e) {
+      showToast(e.message || "Reset failed");
+    }
+  };
+
+  const chartData = useMemo(() => {
+    const s = subs.find((x) => x.subscription_id === expanded);
+    const series = s?.usage_series || [];
+    return series.map((p) => ({ d: p.d?.slice(5) || "", m: p.m }));
+  }, [expanded, subs]);
+
+  if (loading && !hub) {
     return (
-      <div className="space-y-8">
-        <div className="h-10 w-56 animate-pulse rounded-lg bg-exiqo-dark/50" />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-24 animate-pulse rounded-xl border border-exiqo-purple/10 bg-exiqo-dark/35" />
-          ))}
-        </div>
-        <div className="h-24 animate-pulse rounded-xl border border-exiqo-purple/10 bg-exiqo-dark/35" />
+      <div className="mx-auto max-w-5xl space-y-6 pb-8">
+        <div className="h-40 animate-pulse rounded-3xl bg-white/[0.04]" />
+        <div className="h-32 animate-pulse rounded-2xl bg-white/[0.04]" />
       </div>
     );
   }
 
-  if (state.error) {
+  if (error) {
     return (
-      <div className="rounded-2xl border border-exiqo-purple/25 bg-exiqo-dark/40 p-6">
-        <ErrorCard message={state.error} onRetry={load} />
+      <div className="mx-auto max-w-5xl">
+        <ErrorCard message={error} onRetry={loadHub} />
       </div>
     );
   }
-
-  const deadCount       = (state.data?.subscriptions || []).filter((s) => s.status === "DEAD").length;
-  const suspiciousCount = (state.data?.subscriptions || []).filter((s) => s.status === "SUSPICIOUS").length;
-  const activeCount     = (state.data?.subscriptions || []).filter((s) => s.status === "ACTIVE").length;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 pb-4">
+    <div className="mx-auto max-w-5xl space-y-8 pb-10">
       <PageHeader
         eyebrow="SUBSCRIPTIONS"
-        title="Kill the Waste"
-        subtitle="Find forgotten subscriptions and cancel them before they drain your wallet again next month."
-        accentHex={ACCENT}
+        title="Subscription Intelligence"
+        subtitle="We infer value from your device usage — like Digital Wellbeing or Apple Screen Time — mapped to every recurring debit."
+        accentHex="#a855f7"
         rightSlot={
-          <HeroKpiTile
-            label="₹ wasted / year"
-            value={inr(annualWaste)}
-            caption={`${deadCount} dead · ${suspiciousCount} suspicious · ${activeCount} active`}
-            accentHex={ACCENT}
-            loading={state.loading}
-          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => loadHub()}
+              className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/[0.06] px-3 py-2 text-xs font-semibold text-white hover:bg-white/10"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
+            </button>
+            {DEMO_MODE ? (
+              <>
+                <button
+                  type="button"
+                  onClick={simulateDay}
+                  className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-100"
+                >
+                  ⏭ Simulate next day
+                </button>
+                <button
+                  type="button"
+                  onClick={resetDemo}
+                  className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-100"
+                >
+                  🔄 Reset demo
+                </button>
+              </>
+            ) : null}
+          </div>
         }
       />
 
-      {/* Stats — one row on desktop, compact; color only */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
-        <div className={`rounded-xl border px-4 py-4 ${statToneClass.total}`}>
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/95">Total</p>
-            <LayoutGrid className="h-[18px] w-[18px] shrink-0 text-exiqo-glow" strokeWidth={2.25} aria-hidden />
-          </div>
-          <p className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-white">
-            {state.data?.total_subscriptions ?? 0}
-          </p>
-        </div>
-        <div className={`rounded-xl border px-4 py-4 ${statToneClass.active}`}>
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/95">Active</p>
-            <CheckCircle2 className="h-[18px] w-[18px] shrink-0 text-emerald-300" strokeWidth={2.25} aria-hidden />
-          </div>
-          <p className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-white">
-            {state.data?.active_count ?? 0}
-          </p>
-        </div>
-        <div className={`rounded-xl border px-4 py-4 ${statToneClass.suspicious}`}>
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/95">Suspicious</p>
-            <AlertTriangle className="h-[18px] w-[18px] shrink-0 text-amber-300" strokeWidth={2.25} aria-hidden />
-          </div>
-          <p className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-white">
-            {state.data?.suspicious_count ?? 0}
-          </p>
-        </div>
-        <div className={`rounded-xl border px-4 py-4 ${statToneClass.dead}`}>
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/95">Dead</p>
-            <XCircle className="h-[18px] w-[18px] shrink-0 text-rose-300" strokeWidth={2.25} aria-hidden />
-          </div>
-          <p className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-white">
-            {state.data?.dead_count ?? 0}
-          </p>
-        </div>
-      </div>
+      <WasteLedgerHero amount={hub?.waste_ledger_yearly_saved_inr} loading={loading} />
 
-      {/* Waste summary */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className={`rounded-xl border p-5 ${
-          monthlyWaste <= 0
-            ? "border-emerald-500/25 bg-gradient-to-r from-emerald-500/10 to-emerald-500/[0.02]"
-            : "border-amber-500/30 bg-gradient-to-r from-amber-500/10 to-transparent"
-        }`}
-      >
-        <div className="flex items-start gap-4 sm:items-center">
-          <div
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
-              monthlyWaste <= 0 ? "bg-emerald-500/20" : "bg-amber-500/20"
-            }`}
-          >
-            <TrendingDown className={`h-5 w-5 ${monthlyWaste <= 0 ? "text-emerald-400" : "text-amber-400"}`} />
-          </div>
-          <p className="text-sm font-medium leading-relaxed text-white/90 sm:text-[15px]">
-            {monthlyWaste <= 0 ? (
-              <>
-                <span className="text-emerald-300/95">No material waste</span>
-                <span className="text-exiqo-glow/55"> — recurring spend looks aligned with usage.</span>
-              </>
-            ) : (
-              <>
-                You are wasting{" "}
-                <span className="font-bold text-amber-300">{apiUtils.formatINR(monthlyWaste)}</span>
-                <span className="text-exiqo-glow/50">/month</span>
-                <span className="text-exiqo-glow/40"> = </span>
-                <span className="font-bold text-amber-300">{apiUtils.formatINR(annualWaste)}</span>
-                <span className="text-exiqo-glow/50">/year</span>
-                <span className="text-exiqo-glow/55"> on subscriptions you barely use.</span>
-              </>
-            )}
-          </p>
-        </div>
-      </motion.div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2">
-        {tabs.map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={`rounded-lg px-5 py-2.5 text-sm font-semibold uppercase tracking-wide transition ${
-              tab === t
-                ? "bg-exiqo-purple text-white shadow-md shadow-exiqo-purple/15"
-                : "bg-exiqo-dark/45 text-exiqo-glow/55 hover:bg-exiqo-dark/65 hover:text-exiqo-glow"
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-
-      {/* List */}
-      <div className="space-y-4">
-        {visible.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-exiqo-purple/25 bg-exiqo-dark/30 py-20">
-            <EmptyState
-              icon="📺"
-              title="Nothing in this view"
-              subtitle={
-                subs.length === 0
-                  ? "No subscriptions detected for this period."
-                  : "Try another filter — nothing matches this tab."
-              }
-            />
-          </div>
-        ) : (
-          visible.map((s, i) => {
-            const cfg = rowStyle[s.status] || rowStyle.ACTIVE;
-            const StatusIcon = cfg.icon;
-            return (
-              <motion.article
-                key={s.merchant}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: Math.min(i * 0.04, 0.2) }}
-                className={`rounded-2xl border bg-gradient-to-br p-6 transition ${cfg.border} ${cfg.bg}`}
-              >
-                <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-4 flex flex-wrap items-center gap-3">
-                      <StatusIcon className={`h-5 w-5 shrink-0 ${cfg.iconClass}`} />
-                      <h2 className="text-xl font-bold tracking-tight text-white">{s.merchant}</h2>
-                      <span
-                        className={`rounded-full border px-3 py-0.5 text-[11px] font-bold uppercase tracking-wide ${cfg.pill}`}
-                      >
-                        {s.status}
-                      </span>
-                    </div>
-
-                    <div className="mb-4 grid gap-4 sm:grid-cols-3">
-                      <div>
-                        <p className="mb-1 text-xs font-semibold text-exiqo-glow/50">Usage score</p>
-                        <p className="text-sm font-semibold tabular-nums text-white">
-                          {s.usage_score}
-                          <span className="font-normal text-exiqo-glow/45">/100</span>
-                        </p>
-                      </div>
-                      <div>
-                        <p className="mb-1 text-xs font-semibold text-exiqo-glow/50">Last used</p>
-                        <p className="text-sm font-semibold text-white">{lastUsedLabel(s.last_used_days)}</p>
-                      </div>
-                      <div>
-                        <p className="mb-1 text-xs font-semibold text-exiqo-glow/50">Monthly cost</p>
-                        <p className="text-sm font-semibold tabular-nums text-white">{apiUtils.formatINR(s.amount)}</p>
-                      </div>
-                    </div>
-
-                    {s.insight ? (
-                      <p className="max-w-2xl text-sm leading-relaxed text-exiqo-glow/65">{s.insight}</p>
-                    ) : null}
-                  </div>
-
-                  <div className="flex shrink-0 flex-col items-stretch gap-3 border-t border-white/[0.06] pt-4 lg:w-44 lg:border-0 lg:pt-0 lg:text-right">
-                    <div>
-                      <p className="text-2xl font-bold tabular-nums tracking-tight text-white">
-                        {apiUtils.formatINR(s.amount)}
-                      </p>
-                      <p className="text-xs text-exiqo-glow/45">per month</p>
-                    </div>
-                    {s.status === "DEAD" ? (
-                      <button
-                        type="button"
-                        onClick={() => setModalMerchant(s.merchant)}
-                        className="rounded-lg border border-rose-500/35 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/15"
-                      >
-                        Cancel guide
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          showToast("Marked for review — cancel from the app when you are ready.")
-                        }
-                        className="rounded-lg border border-exiqo-purple/40 bg-exiqo-purple/15 px-4 py-2 text-sm font-semibold text-exiqo-glow transition hover:bg-exiqo-purple/25"
-                      >
-                        Keep / review
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </motion.article>
-            );
-          })
-        )}
-      </div>
-
-      {/* AI */}
-      {state.data?.ai_advice ? (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-orange-500/30 bg-gradient-to-br from-orange-500/10 to-amber-500/[0.04] p-6"
+      {discoveryMsg ? (
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-exiqo-glow/80 backdrop-blur-md"
         >
-          <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 shadow-lg">
-              <Lightbulb className="h-6 w-6 text-white" />
-            </div>
+          <span className="font-semibold text-white">Discovery.</span> {discoveryMsg}
+        </motion.p>
+      ) : null}
+
+      {banner ? (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col gap-3 rounded-2xl border border-amber-500/35 bg-amber-500/10 p-4 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex items-start gap-3">
+            <Bell className="mt-0.5 h-5 w-5 shrink-0 text-amber-200" />
             <div>
-              <h3 className="mb-2 text-lg font-bold text-white">AI recommendation</h3>
-              <p className="text-sm leading-relaxed text-exiqo-glow/75">{state.data.ai_advice}</p>
+              <p className="text-sm font-semibold text-white">Renewal reminder — {banner.merchant}</p>
+              <p className="text-xs text-exiqo-glow/65">
+                {banner.reminder_type} · {inr(banner.monthly_cost)}/mo
+              </p>
             </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => reminderAction(banner.id, "cancel_now")}
+              className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-bold text-white"
+            >
+              Cancel now
+            </button>
+            <button
+              type="button"
+              onClick={() => reminderAction(banner.id, "remind_later")}
+              className="rounded-xl border border-white/20 px-3 py-2 text-xs font-semibold text-white"
+            >
+              Remind later
+            </button>
+            <button
+              type="button"
+              onClick={() => reminderAction(banner.id, "keep")}
+              className="rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-100"
+            >
+              Keep subscription
+            </button>
           </div>
         </motion.div>
       ) : null}
 
-      {modalMerchant ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-          onClick={() => setModalMerchant("")}
-          role="presentation"
+      {!deviceLinked ? (
+        <motion.button
+          type="button"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          whileHover={{ scale: 1.01 }}
+          onClick={() => setModal(true)}
+          className="group relative w-full overflow-hidden rounded-3xl border border-violet-500/30 bg-gradient-to-r from-violet-600/30 to-blue-600/20 p-6 text-left shadow-[0_0_40px_-18px_rgba(124,58,237,0.5)] backdrop-blur-xl sm:p-8"
         >
-          <div
-            className="w-full max-w-md rounded-2xl border border-exiqo-purple/30 bg-exiqo-navy p-6 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="cancel-guide-title"
-          >
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Trash2 className="h-5 w-5 text-exiqo-pink" />
-                <h3 id="cancel-guide-title" className="text-lg font-semibold text-white">
-                  Cancel: {modalMerchant}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setModalMerchant("")}
-                className="rounded-lg px-2 py-1 text-sm text-exiqo-glow/60 hover:bg-white/5 hover:text-white"
-              >
-                Close
-              </button>
+          <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-violet-500/20 blur-3xl transition group-hover:bg-violet-500/30" />
+          <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-200/90">Device link</p>
+              <h3 className="mt-1 text-xl font-bold text-white sm:text-2xl">Unlock 10× smarter detection — link your device.</h3>
+              <p className="mt-2 max-w-2xl text-sm text-exiqo-glow/70">
+                We infer subscription value from usage minutes, sessions, and peaks — bypassing streaming APIs. Same architectural pattern as Digital Wellbeing, tuned for your wallet.
+              </p>
             </div>
-            <p className="text-sm leading-relaxed text-exiqo-glow/70">
-              {modalGuide || "Open subscription settings in the provider app and turn off auto-renew."}
-            </p>
+            <span className="inline-flex items-center gap-2 rounded-2xl bg-white/10 px-5 py-3 text-sm font-bold text-white ring-1 ring-white/20">
+              <Link2 className="h-4 w-4" />
+              Connect
+            </span>
+          </div>
+        </motion.button>
+      ) : (
+        <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+          <span className="font-semibold">Device intelligence active.</span> Aggregated signals only — see privacy callout in the modal anytime.
+        </div>
+      )}
+
+      {substitutions.length ? (
+        <div>
+          <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-exiqo-glow/50">Cross-platform substitution</h3>
+          <div className="grid gap-4 md:grid-cols-2">
+            {substitutions.map((ins, i) => (
+              <motion.div
+                key={`${ins.subscription_id}-${i}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.06 }}
+                whileHover={{ y: -2 }}
+                className="rounded-2xl border border-cyan-500/25 bg-white/[0.03] p-5 backdrop-blur-xl"
+              >
+                <div className="flex items-center gap-2 text-cyan-200">
+                  <Zap className="h-4 w-4" />
+                  <span className="text-xs font-bold uppercase tracking-wide">Paired insight</span>
+                </div>
+                <p className="mt-2 text-sm font-semibold text-white">{ins.headline}</p>
+                <p className="mt-2 text-xs leading-relaxed text-exiqo-glow/70">{ins.body}</p>
+              </motion.div>
+            ))}
           </div>
         </div>
       ) : null}
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold uppercase tracking-wider text-exiqo-glow/50">Your subscriptions</h3>
+        <AnimatePresence>
+          {subs.map((s, i) => (
+            <motion.article
+              key={s.merchant}
+              layout
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: Math.min(i * 0.05, 0.35) }}
+              className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03] shadow-[0_0_32px_-22px_rgba(124,58,237,0.35)] backdrop-blur-xl"
+            >
+              <button
+                type="button"
+                onClick={() => s.subscription_id && onExpand(s.subscription_id)}
+                className="flex w-full items-start justify-between gap-3 p-5 text-left sm:items-center"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Cpu className="h-4 w-4 shrink-0 text-violet-300" />
+                    <span className="font-bold text-white">{s.merchant}</span>
+                    {s.current_verdict ? <VerdictBadge verdict={s.current_verdict} /> : null}
+                  </div>
+                  <p className="mt-1 text-xs text-exiqo-glow/55 tabular-nums">
+                    {inr(s.monthly_cost || s.amount)} / mo · {s.linked_app_package ? "Linked app" : "No app link"}
+                  </p>
+                  {s.verdict_reason ? <p className="mt-2 text-xs text-exiqo-glow/70">{s.verdict_reason}</p> : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {s.verdict_confidence != null ? (
+                    <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] tabular-nums text-exiqo-glow/60">
+                      {s.verdict_confidence}% conf
+                    </span>
+                  ) : null}
+                  {s.subscription_id ? expanded === s.subscription_id ? <ChevronUp className="h-5 w-5 text-exiqo-glow" /> : <ChevronDown className="h-5 w-5 text-exiqo-glow" /> : null}
+                </div>
+              </button>
+              <AnimatePresence>
+                {expanded === s.subscription_id && s.subscription_id ? (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="border-t border-white/[0.06] bg-black/20 px-5 pb-5"
+                  >
+                    <div className="mt-4 h-44 w-full">
+                      {chartData.length ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={chartData}>
+                            <XAxis dataKey="d" tick={{ fill: "rgba(226,232,240,0.45)", fontSize: 10 }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fill: "rgba(226,232,240,0.45)", fontSize: 10 }} axisLine={false} tickLine={false} width={32} />
+                            <Tooltip
+                              contentStyle={{ background: "#0f0f24", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
+                              labelStyle={{ color: "#e2e8f0" }}
+                            />
+                            <Line type="monotone" dataKey="m" stroke="#7c3aed" strokeWidth={2} dot={false} name="Minutes" />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <p className="text-xs text-exiqo-glow/50">No usage series yet — reset demo or link device.</p>
+                      )}
+                    </div>
+                    <div className="mt-4 rounded-xl border border-violet-500/20 bg-violet-500/10 p-4">
+                      <div className="flex items-center gap-2 text-violet-200">
+                        <Sparkles className="h-4 w-4" />
+                        <span className="text-xs font-bold uppercase">Advisor note</span>
+                      </div>
+                      <p className="mt-2 text-sm leading-relaxed text-exiqo-glow/80">
+                        {recoLoading && !recoById[s.subscription_id] ? "Loading…" : recoById[s.subscription_id] || "—"}
+                      </p>
+                    </div>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </motion.article>
+          ))}
+        </AnimatePresence>
+      </div>
+
+      {hub?.legacy?.ai_advice ? (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-sm text-exiqo-glow/75">{hub.legacy.ai_advice}</div>
+      ) : null}
+
+      <AnimatePresence>
+        {modal ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
+            onClick={() => !connecting && setModal(false)}
+            role="presentation"
+          >
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-white/10 bg-[#0b0b22] p-6 shadow-2xl"
+            >
+              <div className="mb-4 flex items-start justify-between gap-2">
+                <div>
+                  <h3 className="text-lg font-bold text-white">Connect SmartSpend Device Intelligence</h3>
+                  <p className="mt-1 text-xs text-exiqo-glow/65">
+                    We infer subscription value from your usage patterns — like Digital Wellbeing, but for your wallet.
+                  </p>
+                </div>
+                <button type="button" className="rounded-lg p-1 text-exiqo-glow/50 hover:text-white" onClick={() => !connecting && setModal(false)} aria-label="Close">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-exiqo-glow/45">Apps to correlate</p>
+              <div className="mb-4 grid max-h-48 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
+                {DEMO_APPS.map((a) => (
+                  <label key={a.id} className="flex cursor-pointer items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white">
+                    <input type="checkbox" checked={selectedApps.has(a.id)} onChange={() => toggleApp(a.id)} className="rounded border-white/30" />
+                    {a.label}
+                  </label>
+                ))}
+              </div>
+              <div className="mb-4 space-y-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                {[
+                  { k: "usage_access", label: "Usage Access", hint: "see app open/close events" },
+                  { k: "notifications", label: "Notification Metadata", hint: "count, not content" },
+                  { k: "session_duration", label: "Session Duration", hint: "how long, not what you watched" },
+                ].map((p) => (
+                  <label key={p.k} className="flex items-start gap-2 text-xs text-exiqo-glow/80">
+                    <input
+                      type="checkbox"
+                      checked={!!perm[p.k]}
+                      onChange={(e) => setPerm((x) => ({ ...x, [p.k]: e.target.checked }))}
+                      className="mt-0.5 rounded border-white/30"
+                    />
+                    <span>
+                      <span className="font-semibold text-white">{p.label}</span> — {p.hint}{" "}
+                      <Info className="inline h-3 w-3 text-exiqo-glow/40" aria-hidden />
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100/90">
+                <Shield className="h-4 w-4 shrink-0" />
+                Data stays on your device. Only aggregated signals leave.
+              </p>
+              {connecting ? (
+                <div className="space-y-3">
+                  <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                    <motion.div
+                      className="h-full bg-gradient-to-r from-violet-500 to-cyan-400"
+                      initial={{ width: "5%" }}
+                      animate={{ width: "100%" }}
+                      transition={{ duration: 2.4, ease: "easeInOut" }}
+                    />
+                  </div>
+                  <p className="text-center text-xs text-exiqo-glow/70">
+                    {["Scanning installed apps…", "Reading 30-day usage history…", "Building behavioral baseline…", "Done."][connectStep]}
+                  </p>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={runDeviceConnect}
+                  className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-blue-600 py-3 text-sm font-bold text-white shadow-lg shadow-violet-500/25"
+                >
+                  Grant Access &amp; Connect
+                </button>
+              )}
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
-};
-
-export default SubscriptionGraveyard;
+}

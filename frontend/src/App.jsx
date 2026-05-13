@@ -22,6 +22,7 @@ const InsightsTab = lazy(() => import("./components/app-tabs/InsightsTab"));
 /** Legacy `activeTab === "simulator"` only (sidebar tab removed); renders Insights. */
 const SimulatorTab = lazy(() => import("./components/app-tabs/SimulatorTab"));
 const SettingsTab = lazy(() => import("./components/app-tabs/SettingsTab"));
+const AdminDiagnostics = lazy(() => import("./pages/admin/AdminDiagnostics"));
 
 const App = () => {
   const { user, loading: authLoading, logout, isAuthenticated } = useAuth();
@@ -240,7 +241,12 @@ const App = () => {
                 )}
                 {activeTab === "settings" && (
                   <Suspense fallback={<SkeletonCard lines={2} height={72} />}>
-                    <SettingsTab />
+                    <SettingsTab onOpenAdmin={() => setActiveTab("admin")} />
+                  </Suspense>
+                )}
+                {activeTab === "admin" && (
+                  <Suspense fallback={<SkeletonCard lines={4} height={120} />}>
+                    <AdminDiagnostics onExit={() => setActiveTab("settings")} />
                   </Suspense>
                 )}
                 {activeTab === "emi" && <EMITrapDetector userId={selectedUserId} />}

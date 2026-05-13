@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import { Pause, Play, Radio } from "lucide-react";
-import { inr } from "../../lib/format";
+import LiveEventRow from "./LiveEventRow";
+import { MiniSparkline } from "./MiniSparkline";
 
 const MERCHANTS = [
   "Swiggy", "Zomato", "Amazon Pay UPI", "PhonePe", "Blinkit", "Uber India", "BookMyShow", "Nykaa",
@@ -21,9 +22,15 @@ function mockEvent(i) {
   };
 }
 
+function eventsPerMinute(list, windowMs = 60_000) {
+  const now = Date.now();
+  return list.filter((e) => now - e.ts.getTime() < windowMs).length;
+}
+
 export default function FraudShieldLiveEventsTab({ userId }) {
   const [paused, setPaused] = useState(false);
   const [events, setEvents] = useState(() => Array.from({ length: 6 }, (_, i) => mockEvent(i)));
+  const [epmHistory, setEpmHistory] = useState(() => [2, 3, 4, 3, 5, 4, 6, 5, 7, 6, 5, 6]);
 
   const pushEvent = useCallback(() => {
     setEvents((prev) => [mockEvent(prev.length), ...prev].slice(0, 24));
@@ -35,10 +42,17 @@ export default function FraudShieldLiveEventsTab({ userId }) {
     return () => clearInterval(id);
   }, [paused, pushEvent]);
 
-  const epm = useMemo(() => {
-    if (events.length < 2) return 0;
-    return Math.min(12, Math.round(events.length / 2));
-  }, [events.length]);
+  useEffect(() => {
+    const tick = () => {
+      const epm = eventsPerMinute(events);
+      setEpmHistory((h) => [...h.slice(-47), epm]);
+    };
+    tick();
+    const id = window.setInterval(tick, 2000);
+    return () => clearInterval(id);
+  }, [events]);
+
+  const epm = useMemo(() => eventsPerMinute(events), [events]);
 
   return (
     <div className="space-y-6">
@@ -56,9 +70,12 @@ export default function FraudShieldLiveEventsTab({ userId }) {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-center">
-            <p className="text-[10px] uppercase tracking-wider text-exiqo-glow/50">Events / min</p>
-            <p className="text-lg font-bold tabular-nums text-white">{epm}</p>
+          <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
+            <div className="text-center">
+              <p className="text-[10px] uppercase tracking-wider text-exiqo-glow/50">Events / min</p>
+              <p className="text-lg font-bold tabular-nums text-white">{epm}</p>
+            </div>
+            <MiniSparkline values={epmHistory} className="opacity-90" />
           </div>
           <button
             type="button"
@@ -71,40 +88,10 @@ export default function FraudShieldLiveEventsTab({ userId }) {
         </div>
       </div>
 
-      <ul className="space-y-2">
+      <ul className="space-y-2.5">
         <AnimatePresence initial={false}>
           {events.map((e) => (
-            <motion.li
-              key={e.id}
-              layout
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ type: "spring", stiffness: 420, damping: 32 }}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-3 backdrop-blur-md"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-white">{e.merchant}</p>
-                <p className="text-[11px] tabular-nums text-exiqo-glow/55">
-                  {e.ts.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-semibold tabular-nums text-white">{inr(e.amount)}</span>
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                    e.status === "BLOCKED"
-                      ? "bg-rose-500/25 text-rose-200 ring-1 ring-rose-500/40"
-                      : e.status === "REVIEW"
-                        ? "bg-amber-500/20 text-amber-100 ring-1 ring-amber-500/35"
-                        : "bg-emerald-500/20 text-emerald-100 ring-1 ring-emerald-500/30"
-                  }`}
-                >
-                  {e.status}
-                </span>
-                <span className="text-xs tabular-nums text-exiqo-glow/50">score {e.score}</span>
-              </div>
-            </motion.li>
+            <LiveEventRow key={e.id} event={e} />
           ))}
         </AnimatePresence>
       </ul>

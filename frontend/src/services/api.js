@@ -339,6 +339,31 @@ export const postponePurchaseGoalToDate = async (userId, goalId, body) => {
 export const getSubscriptions = async (userId) =>
   request(api.get(`/subscriptions/${userId}`));
 
+/** Subscription Intelligence hub (device usage, verdicts, substitutions, reminders). */
+export const getSubscriptionIntelligenceHub = async (userId) =>
+  request(api.get(`/subscription-intelligence/${userId}/hub`));
+
+export const postSubscriptionDeviceLink = async (userId, body) =>
+  request(api.post(`/subscription-intelligence/${userId}/device-link`, body));
+
+export const postSubscriptionEvaluate = async (userId, subscriptionId) =>
+  request(api.post(`/subscription-intelligence/${userId}/subscriptions/${subscriptionId}/evaluate`, {}));
+
+export const getSubscriptionRecommendation = async (userId, subscriptionId) =>
+  request(api.get(`/subscription-intelligence/${userId}/subscriptions/${subscriptionId}/recommendation`));
+
+export const getSubscriptionRemindersPending = async (userId) =>
+  request(api.get(`/subscription-intelligence/${userId}/reminders/pending`));
+
+export const postSubscriptionReminderAction = async (userId, reminderId, action) =>
+  request(api.post(`/subscription-intelligence/${userId}/reminders/${reminderId}/action`, { action }));
+
+export const postSubscriptionSimulateNextDay = async (userId) =>
+  request(api.post(`/subscription-intelligence/${userId}/reminders/simulate-next-day`, {}));
+
+export const postSubscriptionResetDemo = async (userId) =>
+  request(api.post(`/subscription-intelligence/${userId}/reset-demo`, {}));
+
 export const getDarkPatterns = async (userId) =>
   request(api.get(`/dark-patterns/${userId}`));
 

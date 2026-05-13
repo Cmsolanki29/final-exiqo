@@ -24,7 +24,7 @@ import { ErrorCard } from "../common/ErrorCard";
 import { SkeletonCard } from "../common/SkeletonCard";
 import { inr } from "../../lib/format";
 import { FRAUD_SHIELD_PHASES } from "./fraudshieldPhases";
-import FraudEducation from "./FraudEducation";
+import FraudEducationSwipe from "./FraudEducationSwipe";
 import FraudAlertsList from "./FraudAlertsList";
 import FraudStats from "./FraudStats";
 import TransactionChecker from "./TransactionChecker";
@@ -355,14 +355,20 @@ const FraudShieldPage = ({ userId, userName }) => {
                   <ShieldCheck className="h-5 w-5 text-emerald-300" aria-hidden />
                   <h2 className="text-lg font-bold text-white">Real-time transaction safety checker</h2>
                 </div>
-                <TransactionChecker userId={userId} userName={displayName} onReportSuccess={onAlertsChanged} />
+                <TransactionChecker
+                  userId={userId}
+                  userName={displayName}
+                  onReportSuccess={onAlertsChanged}
+                  protectionStats={{
+                    loading,
+                    safetyScore: stats?.safety_score ?? 0,
+                    threatsBlocked: stats?.threats_blocked ?? 0,
+                    moneySaved: stats?.money_saved_total ?? 0,
+                  }}
+                />
               </div>
               <div className="grid gap-4 lg:grid-cols-2">
-                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-                  <h3 className="text-sm font-bold text-white">Fraud awareness</h3>
-                  <p className="mb-3 text-xs text-exiqo-glow/65">Swipe cards — same education module as before, polished container.</p>
-                  <FraudEducation />
-                </div>
+                <FraudEducationSwipe />
                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
                   <h3 className="text-sm font-bold text-white">Your protection stats</h3>
                   <p className="mb-3 text-xs text-exiqo-glow/65">Detailed breakdown from FraudShield analytics.</p>
@@ -423,7 +429,7 @@ const FraudShieldPage = ({ userId, userName }) => {
               <h2 className="text-lg font-bold text-white">Behaviour profile</h2>
               <p className="text-sm text-exiqo-glow/65">Login cadence, geo signals, and anomaly list — ported from the old Behaviour Profile page.</p>
               <Suspense fallback={tabFallback}>
-                <BehaviorProfile userId={userId} onNavigate={onLegacyNav} />
+                <BehaviorProfile userId={userId} onNavigate={onLegacyNav} embedded />
               </Suspense>
             </div>
           )}

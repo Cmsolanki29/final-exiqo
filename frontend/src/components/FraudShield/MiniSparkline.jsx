@@ -1,10 +1,17 @@
 import React, { useMemo, useId } from "react";
 import { motion } from "framer-motion";
 
-/** Tiny sparkline from a seed number (deterministic fake history for demo). */
-export function MiniSparkline({ seed = 0, className = "" }) {
+/** Tiny sparkline from `values` (0–∞, normalized for display) or a deterministic `seed` series. */
+export function MiniSparkline({ seed = 0, values, className = "" }) {
   const gid = useId().replace(/:/g, "");
   const pts = useMemo(() => {
+    if (Array.isArray(values) && values.length > 1) {
+      const nums = values.map((v) => Number(v) || 0);
+      const lo = Math.min(...nums);
+      const hi = Math.max(...nums);
+      const span = hi - lo || 1;
+      return nums.map((v) => (v - lo) / span);
+    }
     const n = 12;
     const out = [];
     let v = 0.35 + ((seed * 9301 + 49297) % 2333) / 23330;
@@ -13,7 +20,7 @@ export function MiniSparkline({ seed = 0, className = "" }) {
       out.push(v);
     }
     return out;
-  }, [seed]);
+  }, [seed, values]);
 
   const w = 120;
   const h = 36;

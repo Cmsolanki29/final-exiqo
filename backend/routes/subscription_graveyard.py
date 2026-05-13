@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from db import get_db
 from services.openai_service import call_gpt
+from utils.user_profile import fetch_user_display_name_and_income
 
 router = APIRouter(prefix="/subscriptions", tags=["Subscriptions"])
 
@@ -214,19 +215,14 @@ def _cancel_steps(merchant: str) -> str:
     return "Open app settings > Subscription/Billing > Turn off auto-renew or cancel plan."
 
 
-@router.get("/{user_id}")
-def get_subscriptions(user_id: int, conn=Depends(get_db)):
+def build_subscription_dashboard(user_id: int, conn) -> dict:
+    """Bank-transaction subscription scan + persistence + AI blurb (shared with intelligence hub)."""
+    try:
+        user_name, _monthly_income = fetch_user_display_name_and_income(conn, user_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="User not found")
     cur = conn.cursor()
     try:
-        cur.execute(
-            "SELECT name, monthly_income::float FROM users WHERE id = %s;",
-            (user_id,),
-        )
-        user = cur.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        user_name = user[0]
-
         cur.execute(
             """
             SELECT merchant, amount::float, transaction_date, COALESCE(category, ''), COALESCE(description, '')
@@ -396,3 +392,8 @@ Provide concise, personalized cancellation guidance in 2-3 sentences.
         "ai_advice": ai_advice,
         "cancel_guide": cancel_guide,
     }
+
+
+@router.get("/{user_id}")
+def get_subscriptions(user_id: int, conn=Depends(get_db)):
+    return build_subscription_dashboard(user_id, conn)

@@ -40,6 +40,7 @@ from routes import (
     pattern_alerts,
     purchase_planner,
     subscription_graveyard,
+    subscription_intelligence,
     transactions,
 )
 from services.ml_model import ml_detector
@@ -207,6 +208,7 @@ app.include_router(insights.router, prefix="/api")
 app.include_router(emi_detector.router, prefix="/api")
 app.include_router(emi_affordability_check.router, prefix="/api")
 app.include_router(subscription_graveyard.router, prefix="/api")
+app.include_router(subscription_intelligence.router, prefix="/api")
 app.include_router(dark_patterns.router, prefix="/api")
 app.include_router(fraud_shield.router, prefix="/api")
 app.include_router(festival_important_days.router, prefix="/api")
