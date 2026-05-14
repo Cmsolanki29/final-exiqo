@@ -79,12 +79,12 @@ def build_context_packet(user_id: int, session_id: str | None = None) -> dict[st
             _log.warning("[ai_context] bank_connections fetch error: %s", e)
 
         # ── 3. Recent transactions (last 30 days, max 50) ─────────────────
-        # Schema: core columns only (is_emi / document_origin are not in all DBs).
         recent_txns: list[dict] = []
         try:
             cur.execute(
                 """
-                SELECT merchant, category, amount, transaction_date, type
+                SELECT merchant, category, amount, transaction_date, type,
+                       COALESCE(document_origin, 'linked_bank') AS data_source
                 FROM transactions
                 WHERE user_id = %s
                   AND transaction_date >= (CURRENT_TIMESTAMP - INTERVAL '30 days')
@@ -102,11 +102,37 @@ def build_context_packet(user_id: int, session_id: str | None = None) -> dict[st
                     "type": r[4],
                     "is_emi": False,
                     "is_recurring": False,
-                    "source": "linked_bank",
+                    "source": r[5] or "linked_bank",
                 })
         except Exception as e:
             _rollback_conn(conn)
             _log.warning("[ai_context] transactions fetch error: %s", e)
+            try:
+                cur.execute(
+                    """
+                    SELECT merchant, category, amount, transaction_date, type
+                    FROM transactions
+                    WHERE user_id = %s
+                      AND transaction_date >= (CURRENT_TIMESTAMP - INTERVAL '30 days')
+                    ORDER BY transaction_date DESC
+                    LIMIT 50
+                    """,
+                    (user_id,),
+                )
+                for r in cur.fetchall():
+                    recent_txns.append({
+                        "merchant": r[0],
+                        "category": r[1],
+                        "amount": float(r[2] or 0),
+                        "date": str(r[3]),
+                        "type": r[4],
+                        "is_emi": False,
+                        "is_recurring": False,
+                        "source": "linked_bank",
+                    })
+            except Exception as e2:
+                _rollback_conn(conn)
+                _log.warning("[ai_context] transactions fallback fetch error: %s", e2)
 
         # ── 4. EMI records (schema matches emi_detector inserts) ─────────
         active_emis: list[dict] = []

@@ -18,7 +18,7 @@ import os
 import traceback
 import uuid
 from pathlib import Path
-from typing import Generator, Optional
+from typing import Any, Generator, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
@@ -33,6 +33,8 @@ from services.ai_llm_provider import (
 )
 # `preferred_provider` is intentionally kept — used in the /chat route guard.
 from services.document_parser_service import classify_and_extract, extract_text_from_bytes
+from services.document_ledger_merge import merge_extracted_into_ledger
+from services.ml_model import ml_detector
 
 router = APIRouter(prefix="/ai", tags=["AI Chatbot"])
 _log = logging.getLogger(__name__)
@@ -359,7 +361,9 @@ async def upload_document(
 ):
     """
     Upload a financial document (PDF/CSV/TXT).
-    Returns extracted metadata so the frontend can trigger a follow-up chat message.
+    Parses with the document LLM, saves `document_uploads`, merges extracted rows
+    into `transactions` (multi-source ledger), then retrains anomaly detection when
+    new rows were inserted.
     """
     content = await file.read()
     text = extract_text_from_bytes(content, file.filename or "upload")
@@ -429,6 +433,33 @@ async def upload_document(
             pass
         conn.close()
 
+    ledger_counts = {"inserted": 0, "skipped_duplicates": 0, "skipped_invalid": 0}
+    ml_summary: dict[str, Any] = {}
+    merge_error: str | None = None
+    merge_conn = get_connection()
+    try:
+        ledger_counts = merge_extracted_into_ledger(merge_conn, user_id, doc_id, extracted)
+        merge_conn.commit()
+    except Exception as exc:
+        try:
+            merge_conn.rollback()
+        except Exception:
+            pass
+        merge_error = str(exc)[:500]
+        _log.exception("Ledger merge after document upload failed: %s", exc)
+    finally:
+        try:
+            merge_conn.close()
+        except Exception:
+            pass
+
+    if ledger_counts.get("inserted", 0) > 0:
+        try:
+            ml_detector.train(user_id)
+            ml_summary = ml_detector.detect_and_update(user_id, process_all=False)
+        except Exception as exc:
+            _log.warning("ML refresh after document merge skipped: %s", exc)
+
     return {
         "doc_id": doc_id,
         "institution": extracted.get("institution"),
@@ -438,6 +469,11 @@ async def upload_document(
         "transaction_count": len(extracted.get("transactions") or []),
         "date_range": extracted.get("date_range"),
         "account_masked": extracted.get("account_number_masked"),
+        "ledger_inserted": ledger_counts.get("inserted", 0),
+        "ledger_skipped_duplicates": ledger_counts.get("skipped_duplicates", 0),
+        "ledger_skipped_invalid": ledger_counts.get("skipped_invalid", 0),
+        "ledger_merge_error": merge_error,
+        "ml_after_merge": ml_summary or None,
     }
 
 

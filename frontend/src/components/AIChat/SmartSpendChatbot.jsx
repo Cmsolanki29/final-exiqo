@@ -406,9 +406,17 @@ export default function SmartSpendChatbot({ onNavigate }) {
       if (!res.ok) throw new Error(`Upload ${res.status}`);
       const result = await res.json();
       setUploadBanner({ state: "done", ...result });
+      const inserted = Number(result.ledger_inserted ?? 0);
+      const ledgerNote =
+        inserted > 0
+          ? `${inserted} line(s) were saved to my transaction history (dashboard / anomalies will use them). `
+          : result.ledger_merge_error
+            ? `Note: could not save all lines to history (${String(result.ledger_merge_error).slice(0, 120)}). `
+            : "";
       const prompt =
         `I uploaded a document from ${result.institution || "a financial institution"}: ${file.name}. ` +
-        `It appears to be a ${result.document_type || "financial document"} with ${result.transaction_count || 0} transactions. ` +
+        ledgerNote +
+        `It appears to be a ${result.document_type || "financial document"} with ${result.transaction_count || 0} transactions in the file. ` +
         `${result.date_range ? `Date range: ${result.date_range}. ` : ""}What should I review first?`;
       setMessages((prev) => [...prev, { id: `u-doc-${Date.now()}`, role: "user", content: prompt, timestamp: Date.now() }]);
       await doSend(prompt, sessionId);
