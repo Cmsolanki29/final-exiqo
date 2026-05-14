@@ -136,15 +136,19 @@ const TransactionTable = ({ userId, month, year, presentation = "default" }) => 
           ))}
         </div>
 
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
-          className="min-h-[48px] rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white md:min-h-0"
-        >
-          <option value="date">Date</option>
-          <option value="amount">Amount</option>
-          <option value="risk">Risk Score</option>
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-exiqo-glow/55">Sort by</span>
+          <select
+            aria-label="Sort transactions"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="min-h-[48px] min-w-[10.5rem] cursor-pointer rounded-xl border border-white/10 bg-[#0b1224] px-3 py-2 text-sm text-white shadow-inner shadow-black/20 md:min-h-0 [&>option]:bg-[#0b1224] [&>option]:text-white"
+          >
+            <option value="date">Newest date first</option>
+            <option value="amount">Highest amount</option>
+            <option value="risk">Highest risk score</option>
+          </select>
+        </div>
       </div>
 
       {loading ? (

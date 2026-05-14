@@ -26,8 +26,13 @@ export default function TransactionsTab({ userId, month, year }) {
     return () => { cancelled = true; };
   }, [userId, month, year]);
 
-  const count      = summary?.total_count ?? summary?.count ?? 0;
-  const anomCount  = anomalies?.total_anomalies ?? anomalies?.flagged_count ?? 0;
+  const count = summary?.transaction_count ?? summary?.total_count ?? summary?.count ?? 0;
+  const anomCount =
+    summary?.anomalies_flagged ??
+    summary?.flagged_count ??
+    anomalies?.total_anomalies ??
+    anomalies?.flagged_count ??
+    0;
   const fraudCount = summary?.fraud_blocked ?? 0;
 
   return (

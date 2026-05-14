@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import calendar
+import json
+import logging
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from db import get_db
+from db import get_connection, get_db
 from services.openai_service import (
     explain_anomaly_transaction,
     generate_health_narrative,
@@ -26,6 +31,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 load_dotenv(dotenv_path=_PROJECT_ROOT / ".env")
 
 router = APIRouter(prefix="/insights", tags=["AI Insights"])
+_log = logging.getLogger(__name__)
 
 
 def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
@@ -227,6 +233,131 @@ def _health_details_for_narrative(hs: Any) -> dict[str, Any]:
 
 
 # --- Static paths must be registered before /{user_id} ---
+
+
+def _insights_payload(conn, user_id: int, month: int, year: int) -> dict[str, Any]:
+    user_data = build_user_data(conn, user_id, month, year)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fi = pool.submit(generate_monthly_insights, user_data)
+        fr = pool.submit(get_personalized_recommendations, user_data)
+        insights = fi.result(timeout=40)
+        recommendations = fr.result(timeout=40)
+    return {
+        "user": {"name": user_data["name"], "email": user_data["email"]},
+        "period": user_data["current_month"],
+        "insights": insights,
+        "recommendations": recommendations,
+        "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }
+
+
+def _sse_line(obj: dict[str, Any]) -> str:
+    return f"data: {json.dumps(obj, default=str)}\n\n"
+
+
+@router.get("/{user_id}/insights-stream")
+def insights_stream(
+    user_id: int,
+    month: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2000, le=2100),
+):
+    """SSE: progress pulses while the insights LLM runs; `done` fires as soon as insights return (no second LLM wait)."""
+
+    today = date.today()
+    m = month if month is not None else today.month
+    y = year if year is not None else today.year
+
+    def event_gen() -> Generator[str, None, None]:
+        # Own DB connection for the whole stream — `Depends(get_db)` is torn down as soon as this
+        # route returns StreamingResponse, which closes psycopg2 before the generator runs further.
+        conn = get_connection()
+        try:
+            yield _sse_line({"status": "analyzing"})
+            # DB work can take several seconds; keep sending pulses so the client/proxy
+            # does not treat the SSE as stalled. Same executor runs tasks sequentially.
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                f_ud = pool.submit(build_user_data, conn, user_id, m, y)
+                deadline_ud = time.time() + 45
+                while not f_ud.done():
+                    if time.time() > deadline_ud:
+                        yield _sse_line(
+                            {
+                                "error": "insights_unavailable",
+                                "message": "Loading your profile is taking too long. Please try again.",
+                            }
+                        )
+                        return
+                    yield _sse_line({"pulse": True})
+                    time.sleep(0.22)
+                try:
+                    user_data = f_ud.result(timeout=0)
+                except HTTPException as exc:
+                    yield _sse_line(
+                        {
+                            "error": "insights_unavailable",
+                            "message": str(exc.detail)
+                            if not isinstance(exc.detail, dict)
+                            else exc.detail.get("message", "Insights unavailable."),
+                        }
+                    )
+                    return
+                except Exception:
+                    _log.exception("insights-stream build_user_data failed user_id=%s", user_id)
+                    yield _sse_line(
+                        {
+                            "error": "insights_unavailable",
+                            "message": "AI insights are temporarily unavailable. Please try again in a moment.",
+                        }
+                    )
+                    return
+
+                fi = pool.submit(generate_monthly_insights, user_data)
+                deadline = time.time() + 40
+                while not fi.done():
+                    if time.time() > deadline:
+                        yield _sse_line(
+                            {
+                                "error": "insights_unavailable",
+                                "message": "AI insights are temporarily unavailable. Please try again in a moment.",
+                            }
+                        )
+                        return
+                    yield _sse_line({"pulse": True})
+                    time.sleep(0.22)
+                try:
+                    insights = fi.result(timeout=0)
+                except Exception:
+                    _log.exception("insights-stream generate_monthly_insights failed user_id=%s", user_id)
+                    yield _sse_line(
+                        {
+                            "error": "insights_unavailable",
+                            "message": "AI insights are temporarily unavailable. Please try again in a moment.",
+                        }
+                    )
+                    return
+
+            payload = {
+                "user": {"name": user_data["name"], "email": user_data["email"]},
+                "period": user_data["current_month"],
+                "insights": insights,
+                "recommendations": {},
+                "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            }
+            yield _sse_line({"done": True, "data": payload})
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/{user_id}/quick-summary")
@@ -661,17 +792,22 @@ def get_insights(
     m = month if month is not None else today.month
     y = year if year is not None else today.year
     try:
-        user_data = build_user_data(conn, user_id, m, y)
-        insights = generate_monthly_insights(user_data)
-        recommendations = get_personalized_recommendations(user_data)
-        return {
-            "user": {"name": user_data["name"], "email": user_data["email"]},
-            "period": user_data["current_month"],
-            "insights": insights,
-            "recommendations": recommendations,
-            "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
-        }
+        return _insights_payload(conn, user_id, m, y)
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI service error: {e}") from e
+    except FuturesTimeout:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "insights_unavailable",
+                "message": "AI insights are temporarily unavailable. Please try again in a moment.",
+            },
+        ) from None
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "insights_unavailable",
+                "message": "AI insights are temporarily unavailable. Please try again in a moment.",
+            },
+        ) from None

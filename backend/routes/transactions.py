@@ -19,14 +19,23 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 # Register static sub-paths before `/{user_id}` so they are not captured as user ids.
 
 # UI filter chips → values persisted on `transactions.category` (see services/categorizer.py).
+# Include legacy seed labels (Food, Groceries, Recharge, …) so older rows still filter correctly.
 _CATEGORY_FILTER_BUCKETS: dict[str, tuple[str, ...]] = {
-    "Food & Dining": ("Food & Dining",),
-    "Food": ("Food & Dining",),  # alias for older clients / bookmarks
+    "Food & Dining": ("Food & Dining", "Food", "Groceries"),
+    "Food": ("Food & Dining", "Food", "Groceries"),
     "Entertainment": ("Entertainment",),
     "Shopping": ("Shopping",),
-    "Travel": ("Transportation",),  # flights, ride-hail, metro, etc.
-    "Bills": ("Bills & Utilities",),
-    "Other": ("Healthcare", "Finance & Investment", "Transfer", "Others"),
+    "Travel": ("Transportation", "Transport"),
+    "Bills": ("Bills & Utilities", "Utilities", "Recharge"),
+    "Other": (
+        "Healthcare",
+        "Health",
+        "Finance & Investment",
+        "Finance",
+        "Transfer",
+        "Others",
+        "Salary",
+    ),
 }
 
 
@@ -62,9 +71,18 @@ def _row_to_tx(row) -> TransactionResponse:
 
 
 @router.get("/{user_id}/summary")
-def transaction_month_summary(user_id: int, conn=Depends(get_db)):
+def transaction_month_summary(
+    user_id: int,
+    month: Optional[int] = Query(None, ge=1, le=12),
+    year: Optional[int] = Query(None, ge=2000, le=2100),
+    conn=Depends(get_db),
+):
+    """Month-scoped totals for the Transactions KPI. Defaults to current calendar month."""
     today = date.today()
-    m, y = today.month, today.year
+    if month is None or year is None:
+        m, y = today.month, today.year
+    else:
+        m, y = month, year
     cur = None
     try:
         cur = conn.cursor()
@@ -73,7 +91,8 @@ def transaction_month_summary(user_id: int, conn=Depends(get_db)):
             SELECT
                 COALESCE(SUM(CASE WHEN type = 'CREDIT' THEN amount ELSE 0 END), 0)::float,
                 COALESCE(SUM(CASE WHEN type = 'DEBIT' THEN amount ELSE 0 END), 0)::float,
-                COUNT(*)
+                COUNT(*)::bigint,
+                COUNT(*) FILTER (WHERE COALESCE(anomaly_flag, FALSE))::bigint
             FROM transactions
             WHERE user_id = %s
               AND EXTRACT(MONTH FROM transaction_date)::int = %s
@@ -81,8 +100,26 @@ def transaction_month_summary(user_id: int, conn=Depends(get_db)):
             """,
             (user_id, m, y),
         )
-        inc, exp, cnt = cur.fetchone()
+        row = cur.fetchone()
+        inc, exp, cnt, anom = row[0], row[1], row[2], row[3]
         saved = float(inc or 0) - float(exp or 0)
+        cnt_i = int(cnt or 0)
+        anom_i = int(anom or 0)
+        fraud_blocked = 0
+        try:
+            cur.execute(
+                """
+                SELECT COUNT(*)::bigint FROM fraud_alerts
+                WHERE user_id = %s
+                  AND user_action = 'BLOCKED'
+                  AND EXTRACT(MONTH FROM created_at)::int = %s
+                  AND EXTRACT(YEAR FROM created_at)::int = %s;
+                """,
+                (user_id, m, y),
+            )
+            fraud_blocked = int(cur.fetchone()[0] or 0)
+        except Exception:
+            fraud_blocked = 0
         return {
             "user_id": user_id,
             "year": y,
@@ -90,7 +127,12 @@ def transaction_month_summary(user_id: int, conn=Depends(get_db)):
             "total_income": float(inc or 0),
             "total_expense": float(exp or 0),
             "saved": round(saved, 2),
-            "transaction_count": int(cnt or 0),
+            "transaction_count": cnt_i,
+            "total_count": cnt_i,
+            "count": cnt_i,
+            "anomalies_flagged": anom_i,
+            "flagged_count": anom_i,
+            "fraud_blocked": fraud_blocked,
         }
     except Exception as e:
         raise HTTPException(500, f"Database error: {e}") from e

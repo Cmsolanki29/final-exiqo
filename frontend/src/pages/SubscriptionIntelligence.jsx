@@ -425,7 +425,10 @@ export default function SubscriptionIntelligence({ onOpenReminders }) {
           </ul>
         ) : (
           <GlassCard surface="panel" padding="md" className="border-white/10">
-            <p className="text-sm text-white/60">No insights in the feed yet. Run persist on migrations or open the hub below to sync verdicts.</p>
+            <p className="text-sm text-white/60">
+              No insights in the feed yet. Run persist on migrations, or go back to the hub and use Connect / Add apps,
+              then <strong className="text-white/80">Refresh analysis</strong> here.
+            </p>
           </GlassCard>
         )}
       </section>
@@ -464,7 +467,7 @@ export default function SubscriptionIntelligence({ onOpenReminders }) {
           </button>
           <span className="flex items-center gap-1 text-sm text-white/45">
             <ArrowRight className="h-4 w-4" aria-hidden />
-            Scroll down for devices & subscription list
+            Use the hub (Back) for Connect or Add apps — this page refreshes live API data.
           </span>
         </div>
       </div>

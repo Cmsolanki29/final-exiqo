@@ -8,11 +8,19 @@ from psycopg2.extensions import connection as PgConnection
 
 
 def validate_snooze_reason(reason: str | None, *, min_len: int = 10) -> bool:
-    """True if accountability text meets API rules for remind_later."""
+    """True if accountability text meets API rules for escalated remind_later."""
     if not reason:
         return False
     cleaned = str(reason).strip()
     return len(cleaned) >= min_len
+
+
+def snooze_requires_accountability_reason(subscription_escalation_tier: int | None) -> bool:
+    """
+    Tier 1 = first-cycle renewal nudges (T-10 / T-3 / T-1): snooze without a reason.
+    Tier 2+ = denser cadence after prior-cycle ignore/keep escalation: mandatory accountability text.
+    """
+    return int(subscription_escalation_tier or 1) >= 2
 
 
 def schedule_reminders_for_subscription(conn: PgConnection, subscription_id: int, escalation_level: int | None = None) -> int:
@@ -110,17 +118,21 @@ def apply_reminder_action(
     try:
         cur.execute(
             """
-            SELECT id, subscription_id, state, reminder_type FROM scheduled_reminders
-            WHERE id = %s AND user_id = %s;
+            SELECT r.id, r.subscription_id, r.state, r.reminder_type,
+                   COALESCE(s.reminder_escalation_tier, 1)
+            FROM scheduled_reminders r
+            JOIN subscriptions s ON s.id = r.subscription_id
+            WHERE r.id = %s AND r.user_id = %s;
             """,
             (reminder_id, user_id),
         )
         row = cur.fetchone()
         if not row:
             return {"ok": False, "error": "Reminder not found"}
-        _rid, sub_id, state, reminder_type = row
+        _rid, sub_id, state, reminder_type, sub_escalation_tier = row
         now = datetime.utcnow()
         reason = (accountability_reason or "").strip()
+        require_snooze_accountability = snooze_requires_accountability_reason(sub_escalation_tier)
 
         if action == "cancel_now":
             cur.execute(
@@ -143,16 +155,17 @@ def apply_reminder_action(
                 (reminder_id, sub_id, user_id, reason or None),
             )
         elif action == "remind_later":
-            if not validate_snooze_reason(reason):
+            if require_snooze_accountability and not validate_snooze_reason(reason):
                 return {
                     "ok": False,
                     "error": "accountability_reason_required",
-                    "detail": "Why are you keeping this subscription despite low usage? (min 10 characters)",
+                    "detail": "Escalated renewal cycle: explain why you are keeping this subscription (min 10 characters).",
                 }
+            reason_for_outcome = reason if require_snooze_accountability else (reason or None)
             cur.execute(
                 """
                 UPDATE scheduled_reminders
-                SET state = 'pending', fire_at = %s, user_action = 'remind_later',
+                SET state = 'snoozed', fire_at = %s, user_action = 'remind_later',
                     escalation_level = escalation_level + 1
                 WHERE id = %s;
                 """,
@@ -163,7 +176,7 @@ def apply_reminder_action(
                 INSERT INTO reminder_outcomes (reminder_id, subscription_id, user_id, user_action, cancelled_within_7d, effectiveness_score, accountability_reason)
                 VALUES (%s, %s, %s, 'remind_later', FALSE, 40, %s);
                 """,
-                (reminder_id, sub_id, user_id, reason),
+                (reminder_id, sub_id, user_id, reason_for_outcome),
             )
         elif action == "keep":
             cur.execute(
@@ -258,7 +271,9 @@ def fetch_pending_reminders(conn: PgConnection, user_id: int) -> list[dict[str, 
         cur.execute(
             """
             SELECT r.id, r.subscription_id, r.reminder_type, r.fire_at, r.state, r.escalation_level,
-                   s.merchant, s.monthly_cost
+                   s.merchant, s.monthly_cost, s.next_billing_date, s.current_verdict, s.verdict_reason,
+                   s.verdict_monthly_waste, s.intelligence_category, s.linked_app_package,
+                   COALESCE(s.reminder_escalation_tier, 1)
             FROM scheduled_reminders r
             JOIN subscriptions s ON s.id = r.subscription_id
             WHERE r.user_id = %s AND r.state = 'shown'
@@ -278,6 +293,57 @@ def fetch_pending_reminders(conn: PgConnection, user_id: int) -> list[dict[str, 
                 "escalation_level": r[5],
                 "merchant": r[6],
                 "monthly_cost": float(r[7] or 0),
+                "next_billing_date": r[8].isoformat() if r[8] else None,
+                "current_verdict": r[9],
+                "verdict_reason": r[10],
+                "verdict_monthly_waste": float(r[11] or 0),
+                "intelligence_category": r[12],
+                "linked_app_package": r[13],
+                "reminder_escalation_tier": int(r[14] or 1),
+            }
+            for r in rows
+        ]
+    finally:
+        cur.close()
+
+
+def fetch_reminders_feed(conn: PgConnection, user_id: int, *, limit: int = 50) -> list[dict[str, Any]]:
+    """Shown + pending + snoozed (excludes dismissed/acted) for full renewal list UI."""
+    tick_due_reminders(conn, user_id)
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT r.id, r.subscription_id, r.reminder_type, r.fire_at, r.state, r.escalation_level,
+                   s.merchant, s.monthly_cost, s.next_billing_date, s.current_verdict, s.verdict_reason,
+                   s.verdict_monthly_waste, s.intelligence_category, s.linked_app_package,
+                   COALESCE(s.reminder_escalation_tier, 1)
+            FROM scheduled_reminders r
+            JOIN subscriptions s ON s.id = r.subscription_id
+            WHERE r.user_id = %s AND r.state IN ('pending', 'shown', 'snoozed')
+            ORDER BY r.fire_at ASC
+            LIMIT %s;
+            """,
+            (user_id, int(limit)),
+        )
+        rows = cur.fetchall()
+        return [
+            {
+                "id": r[0],
+                "subscription_id": r[1],
+                "reminder_type": r[2],
+                "fire_at": r[3].isoformat() if r[3] else None,
+                "state": r[4],
+                "escalation_level": r[5],
+                "merchant": r[6],
+                "monthly_cost": float(r[7] or 0),
+                "next_billing_date": r[8].isoformat() if r[8] else None,
+                "current_verdict": r[9],
+                "verdict_reason": r[10],
+                "verdict_monthly_waste": float(r[11] or 0),
+                "intelligence_category": r[12],
+                "linked_app_package": r[13],
+                "reminder_escalation_tier": int(r[14] or 1),
             }
             for r in rows
         ]

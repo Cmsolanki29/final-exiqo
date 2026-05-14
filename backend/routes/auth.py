@@ -36,6 +36,37 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
+_LEGACY_JUDGE_EMAIL_SUFFIX = "@demo.smartspend.local"
+_CANONICAL_JUDGE_EMAIL_SUFFIX = "@judge.smartspend.example.com"
+
+
+def _signin_lookup_emails(raw_email: str) -> list[str]:
+    """
+    Emails to try when looking up users.signin.
+
+    Judge demo seed rewrites legacy ``@demo.smartspend.local`` to
+    ``@judge.smartspend.example.com``; users may still type the old domain.
+    """
+    raw = (raw_email or "").strip()
+    if not raw:
+        return [raw]
+    out: list[str] = []
+    seen_lower: set[str] = set()
+
+    def _add(e: str) -> None:
+        lo = e.lower()
+        if lo not in seen_lower:
+            seen_lower.add(lo)
+            out.append(e)
+
+    _add(raw)
+    if raw.lower().endswith(_LEGACY_JUDGE_EMAIL_SUFFIX):
+        at = raw.lower().rfind("@")
+        local = raw[:at] if at > 0 else raw
+        _add(f"{local}{_CANONICAL_JUDGE_EMAIL_SUFFIX}")
+    return out
+
+
 def _dev_auth_detail(exc: Exception, fallback: str) -> str:
     """When SMARTSPEND_DEBUG_AUTH=1, include the real error in API detail (local debugging only)."""
     if os.getenv("SMARTSPEND_DEBUG_AUTH", "").lower() not in ("1", "true", "yes"):
@@ -151,15 +182,19 @@ def signin(credentials: UserSignIn, request: Request, conn: PgConnection = Depen
     check_login_rate_limit(str(credentials.email))
     cur = conn.cursor()
     try:
-        cur.execute(
-            """
-            SELECT id, name, email, password_hash, onboarding_completed
-            FROM users
-            WHERE lower(email) = lower(%s)
-            """,
-            (str(credentials.email),),
-        )
-        row = cur.fetchone()
+        row = None
+        for email_try in _signin_lookup_emails(str(credentials.email)):
+            cur.execute(
+                """
+                SELECT id, name, email, password_hash, onboarding_completed
+                FROM users
+                WHERE lower(email) = lower(%s)
+                """,
+                (email_try,),
+            )
+            row = cur.fetchone()
+            if row:
+                break
         if not row:
             record_failed_login(str(credentials.email))
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")

@@ -10,7 +10,7 @@ import {
   Sparkles,
   ThumbsUp,
 } from "lucide-react";
-import { getInsights } from "../../services/api";
+import { fetchInsightsSse } from "../../services/api";
 import { ErrorCard } from "../common/ErrorCard";
 import { GlassCard } from "../intro/GlassCard";
 import { SkeletonCard } from "../common/SkeletonCard";
@@ -94,24 +94,66 @@ function ChatBubble({ title, body, icon: Icon, tone = "neutral", expanded, onTog
 
 const AIInsightsPanel = ({ userId, month, year, presentation = "default" }) => {
   const reduce = useReducedMotion();
-  const [state, setState] = useState({ data: null, loading: true, error: "", refreshedAt: null });
+  const [state, setState] = useState({
+    data: null,
+    loading: true,
+    error: "",
+    refreshedAt: null,
+    streamingPulse: false,
+  });
   const [typedDone, setTypedDone] = useState(false);
   const [whyOpen, setWhyOpen] = useState(false);
 
   const fetchInsights = useCallback(async () => {
-    setState((prev) => ({ ...prev, loading: true, error: "" }));
+    setState((prev) => ({
+      ...prev,
+      loading: true,
+      error: "",
+      streamingPulse: false,
+    }));
+    const onEvent = (evt) => {
+      if (evt && (evt.pulse === true || evt.status === "analyzing")) {
+        setState((prev) => ({ ...prev, streamingPulse: true }));
+      }
+    };
+    const runOnce = async () =>
+      fetchInsightsSse(userId, month, year, (e) => {
+        onEvent(e);
+      });
+
     try {
-      const data = await getInsights(userId, month, year);
-      setState({ data, loading: false, error: "", refreshedAt: new Date() });
+      const data = await runOnce();
+      setState({
+        data,
+        loading: false,
+        error: "",
+        refreshedAt: new Date(),
+        streamingPulse: false,
+      });
       setTypedDone(false);
       setWhyOpen(false);
-    } catch (error) {
-      setState((prev) => ({
-        data: prev.data,
-        loading: false,
-        error: error.message || "AI insights temporarily unavailable",
-        refreshedAt: prev.refreshedAt,
-      }));
+    } catch {
+      try {
+        await new Promise((r) => setTimeout(r, 8000));
+        const data = await runOnce();
+        setState({
+          data,
+          loading: false,
+          error: "",
+          refreshedAt: new Date(),
+          streamingPulse: false,
+        });
+        setTypedDone(false);
+        setWhyOpen(false);
+      } catch {
+        setState((prev) => ({
+          data: prev.data,
+          loading: false,
+          error: "Insights are taking longer than usual.",
+          refreshedAt: prev.refreshedAt,
+          streamingPulse: false,
+        }));
+      }
     }
   }, [userId, month, year]);
 
@@ -137,14 +179,26 @@ const AIInsightsPanel = ({ userId, month, year, presentation = "default" }) => {
   if (state.loading) {
     return (
       <div>
-        <p className="mb-2 text-xs text-exiqo-glow/60">AI is analysing your finances…</p>
+        <div className="mb-2 flex items-center gap-2 text-xs text-exiqo-glow/65">
+          <span
+            className={`inline-block h-2 w-2 rounded-full bg-violet-400 ${state.streamingPulse ? "animate-pulse" : ""}`}
+            aria-hidden
+          />
+          <span className={state.streamingPulse ? "animate-pulse" : ""}>Analyzing your transactions…</span>
+        </div>
         <SkeletonCard lines={5} height={220} />
       </div>
     );
   }
 
   if (!state.data) {
-    return <ErrorCard message={state.error || "Unable to load insights."} onRetry={fetchInsights} />;
+    return (
+      <ErrorCard
+        variant="warning"
+        message={state.error || "Unable to load insights."}
+        onRetry={fetchInsights}
+      />
+    );
   }
 
   if (presentation === "chat") {
@@ -152,7 +206,7 @@ const AIInsightsPanel = ({ userId, month, year, presentation = "default" }) => {
       <div className="space-y-3">
         {state.error ? (
           <div className="mb-2">
-            <ErrorCard message={state.error} onRetry={fetchInsights} />
+            <ErrorCard variant="warning" message={state.error} onRetry={fetchInsights} />
           </div>
         ) : null}
         <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${verdict.cls}`}>
@@ -197,7 +251,7 @@ const AIInsightsPanel = ({ userId, month, year, presentation = "default" }) => {
             className="inline-flex min-h-[48px] items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 md:min-h-0"
           >
             <RefreshCcw className="h-3.5 w-3.5" aria-hidden />
-            Refresh
+            Refresh Insights
           </button>
         </div>
       </div>
@@ -205,83 +259,151 @@ const AIInsightsPanel = ({ userId, month, year, presentation = "default" }) => {
   }
 
   return (
-    <section className="glass-card ai-panel border-white/[0.08]">
-      <div className="panel-head">
-        <h3>AI Insights</h3>
+    <GlassCard padding="md" surface="panel" className="border-white/[0.08]">
+      {/* ── Header ── */}
+      <div className="mb-4 flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-300/80">AI Insights</p>
+          <h3 className="mt-0.5 font-heading text-base font-semibold text-white">Your Financial Overview</h3>
+        </div>
         <button
           type="button"
-          className="ghost-btn inline-flex min-h-[48px] items-center gap-2 focus-visible:ring-2 focus-visible:ring-cyan-400/60 md:min-h-0"
           onClick={fetchInsights}
+          disabled={state.loading}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-50"
         >
-          <RefreshCcw size={14} aria-hidden /> Regenerate
+          <RefreshCcw
+            className={`h-3 w-3 ${state.loading ? "animate-spin" : ""}`}
+            aria-hidden
+          />
+          Refresh
         </button>
       </div>
 
       {state.error ? (
         <div className="mb-3">
-          <ErrorCard message={state.error} onRetry={fetchInsights} />
+          <ErrorCard variant="warning" message={state.error} onRetry={fetchInsights} />
         </div>
       ) : null}
-      <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${verdict.cls}`}>
-        <VerdictIcon className="h-4 w-4" aria-hidden />
+
+      {/* ── Verdict pill ── */}
+      <div className={`mb-4 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${verdict.cls}`}>
+        <VerdictIcon className="h-3.5 w-3.5" aria-hidden />
         {verdict.label}
       </div>
-      <p className="insight-summary mt-3 text-sm text-white/90">{insight.summary || "AI insights temporarily unavailable"}</p>
 
-      <div className="insight-section mt-4">
-        <h4 className="flex items-center gap-2 text-sm font-semibold text-white">
-          <ListChecks className="h-4 w-4 text-exiqo-glow" aria-hidden />
-          Key insights
-        </h4>
-        <ul className="mt-2 space-y-1 text-sm text-exiqo-glow/80">
-          {keyInsights.map((item, i) => (
-            <li key={i}>{item}</li>
-          ))}
-        </ul>
+      {/* ── Summary — highlighted AI box ── */}
+      <div
+        className="mb-4 rounded-xl px-4 py-3 text-sm leading-relaxed text-white/90"
+        style={{
+          background: "rgba(109,40,217,0.09)",
+          border: "1px solid rgba(139,92,246,0.2)",
+        }}
+      >
+        {insight.summary || "AI insights temporarily unavailable."}
       </div>
 
-      {warnings.length > 0 ? (
-        <div className="insight-section warnings mt-4">
-          <h4 className="flex items-center gap-2 text-sm font-semibold text-rose-200">
-            <AlertTriangle className="h-4 w-4" aria-hidden />
-            Warnings
-          </h4>
-          <ul className="mt-2 space-y-1 text-sm text-exiqo-glow/80">
+      {/* ── Key insights ── */}
+      {keyInsights.length > 0 && (
+        <div className="mb-4">
+          <div className="mb-2 flex items-center gap-2 border-l-2 border-violet-500/60 pl-2.5">
+            <ListChecks className="h-3.5 w-3.5 text-violet-400" aria-hidden />
+            <span className="text-xs font-bold uppercase tracking-[0.1em] text-violet-300">Key Insights</span>
+          </div>
+          <ul className="space-y-1">
+            {keyInsights.map((item, i) => (
+              <motion.li
+                key={i}
+                className="flex items-start gap-2 rounded-lg px-2 py-1 text-sm text-white/80 hover:bg-white/[0.03] transition-colors cursor-default"
+                initial={reduce ? false : { opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.05 * i, duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400/80" aria-hidden />
+                {item}
+              </motion.li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* ── Warnings ── */}
+      {warnings.length > 0 && (
+        <div className="mb-4">
+          <div className="mb-2 flex items-center gap-2 border-l-2 border-rose-500/60 pl-2.5">
+            <AlertTriangle className="h-3.5 w-3.5 text-rose-400" aria-hidden />
+            <span className="text-xs font-bold uppercase tracking-[0.1em] text-rose-300">Warnings</span>
+          </div>
+          <ul className="space-y-1">
             {warnings.map((item, i) => (
-              <li key={i}>{item}</li>
+              <motion.li
+                key={i}
+                className="flex items-start gap-2 rounded-lg px-2 py-1 text-sm text-white/80 hover:bg-rose-500/[0.05] transition-colors cursor-default"
+                initial={reduce ? false : { opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.05 * i, duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-rose-400/80" aria-hidden />
+                {item}
+              </motion.li>
             ))}
           </ul>
         </div>
-      ) : null}
+      )}
 
-      <div className="insight-section mt-4">
-        <h4 className="flex items-center gap-2 text-sm font-semibold text-white">
-          <Lightbulb className="h-4 w-4 text-amber-200" aria-hidden />
-          Recommendations
-        </h4>
-        <ul className="mt-2 space-y-1 text-sm text-exiqo-glow/80">
-          {recommendations.map((item, i) => (
-            <li key={i}>{item}</li>
-          ))}
-        </ul>
-      </div>
+      {/* ── Recommendations ── */}
+      {recommendations.length > 0 && (
+        <div className="mb-4">
+          <div className="mb-2 flex items-center gap-2 border-l-2 border-amber-400/60 pl-2.5">
+            <Lightbulb className="h-3.5 w-3.5 text-amber-400" aria-hidden />
+            <span className="text-xs font-bold uppercase tracking-[0.1em] text-amber-300">Recommendations</span>
+          </div>
+          <ul className="space-y-1">
+            {recommendations.map((item, i) => (
+              <motion.li
+                key={i}
+                className="flex items-start gap-2 rounded-lg px-2 py-1 text-sm text-white/80 hover:bg-amber-500/[0.05] transition-colors cursor-default"
+                initial={reduce ? false : { opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.05 * i, duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400/80" aria-hidden />
+                {item}
+              </motion.li>
+            ))}
+          </ul>
+        </div>
+      )}
 
-      {positives.length > 0 ? (
-        <div className="insight-section mt-4">
-          <h4 className="flex items-center gap-2 text-sm font-semibold text-white">
-            <ThumbsUp className="h-4 w-4 text-emerald-300" aria-hidden />
-            Positive highlights
-          </h4>
-          <ul className="mt-2 space-y-1 text-sm text-exiqo-glow/80">
+      {/* ── Positives ── */}
+      {positives.length > 0 && (
+        <div className="mb-4">
+          <div className="mb-2 flex items-center gap-2 border-l-2 border-emerald-500/60 pl-2.5">
+            <ThumbsUp className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
+            <span className="text-xs font-bold uppercase tracking-[0.1em] text-emerald-300">Positive Highlights</span>
+          </div>
+          <ul className="space-y-1">
             {positives.map((item, i) => (
-              <li key={i}>{item}</li>
+              <motion.li
+                key={i}
+                className="flex items-start gap-2 rounded-lg px-2 py-1 text-sm text-white/80 hover:bg-emerald-500/[0.05] transition-colors cursor-default"
+                initial={reduce ? false : { opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.05 * i, duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400/80" aria-hidden />
+                {item}
+              </motion.li>
             ))}
           </ul>
         </div>
-      ) : null}
+      )}
 
-      <p className="muted-text mt-3 text-xs text-exiqo-glow/50">Last updated: {updatedAgo}</p>
-    </section>
+      {/* ── Footer ── */}
+      <div className="mt-2 border-t border-white/[0.06] pt-3">
+        <p className="text-[11px] text-white/35">Last updated: {updatedAgo}</p>
+      </div>
+    </GlassCard>
   );
 };
 

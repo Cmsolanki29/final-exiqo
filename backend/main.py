@@ -2,6 +2,36 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load `.env` before any other local imports read os.environ (API keys, DB, etc.).
+# Use override=True so empty/missing keys in the shell do not mask values from the file.
+_env_loaded = False
+for _env_path in (
+    Path(r"C:\Users\Chirag\Downloads\SMARTSPENDAPP\exiqo\.env"),  # absolute — most reliable on Windows
+    Path(__file__).resolve().parent.parent / ".env",  # repo root (exiqo/.env)
+    Path(__file__).resolve().parent / ".env",  # backend/.env
+    Path.cwd() / ".env",
+    Path.cwd().parent / ".env",
+):
+    try:
+        if _env_path.is_file():
+            load_dotenv(_env_path, override=True)
+            print(f"[smartspend] Loaded .env from {_env_path}", flush=True)
+            _env_loaded = True
+            break
+    except OSError:
+        continue
+if not _env_loaded:
+    load_dotenv(override=True)
+    print("[smartspend] No .env file in known paths; using load_dotenv() discovery + existing env", flush=True)
+
+import os as _os
+print(f"[smartspend] OPENAI_API_KEY: {'SET (len=' + str(len(_os.getenv('OPENAI_API_KEY', ''))) + ')' if _os.getenv('OPENAI_API_KEY') else '*** MISSING ***'}", flush=True)
+print(f"[smartspend] GROQ_API_KEY:   {'SET (len=' + str(len(_os.getenv('GROQ_API_KEY', ''))) + ')' if _os.getenv('GROQ_API_KEY') else '*** MISSING ***'}", flush=True)
+
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import date
@@ -23,6 +53,7 @@ from models.schemas import (
     UserResponse,
 )
 from routes import (
+    ai_chat,
     analysis,
     anomaly,
     auth,
@@ -197,6 +228,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": f"Internal server error: {type(exc).__name__}. Check backend logs."},
     )
 
+app.include_router(ai_chat.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(onboarding.router, prefix="/api")
 app.include_router(otp.router, prefix="/api")

@@ -1,6 +1,9 @@
 import axios from "axios";
 import { getApiBaseUrl } from "./apiBaseUrl";
 
+/** Long-running AI insight bundle (parallel Groq/OpenAI calls). */
+export const INSIGHTS_FETCH_MS = 42000;
+
 /** Dev: `/api` → CRA proxy → backend :8001. Prod: `REACT_APP_API_URL` or localhost default. */
 const BASE_URL = getApiBaseUrl();
 
@@ -218,11 +221,23 @@ export async function authRefresh(refreshToken) {
 const handle = (response) => response.data;
 const throwFriendly = (error) => {
   if (error.response?.data?.detail) {
-    throw new Error(
-      typeof error.response.data.detail === "string"
-        ? error.response.data.detail
-        : JSON.stringify(error.response.data.detail)
-    );
+    const d = error.response.data.detail;
+    if (typeof d === "string") {
+      throw new Error(d);
+    }
+    if (d && typeof d === "object") {
+      if (typeof d.message === "string") {
+        throw new Error(d.message);
+      }
+      if (d.error === "insights_unavailable") {
+        throw new Error(
+          typeof d.message === "string"
+            ? d.message
+            : "AI insights are temporarily unavailable. Please try again in a moment."
+        );
+      }
+      throw new Error(JSON.stringify(d));
+    }
   }
   throw new Error(error.message || "Request failed");
 };
@@ -242,8 +257,18 @@ export const getUser = async (userId) => request(api.get(`/users/${userId}`));
 export const getTransactions = async (userId, params = {}) =>
   request(api.get(`/transactions/${userId}`, { params }));
 
-export const getTransactionSummary = async (userId, month, year) =>
-  request(api.get(`/transactions/${userId}/summary`, { params: { month, year } }));
+export const getTransactionSummary = async (userId, monthOrOpts, yearMaybe) => {
+  const params = {};
+  if (monthOrOpts != null && typeof monthOrOpts === "object" && !Array.isArray(monthOrOpts)) {
+    const o = monthOrOpts;
+    if (o.month != null) params.month = o.month;
+    if (o.year != null) params.year = o.year;
+  } else {
+    if (monthOrOpts != null) params.month = monthOrOpts;
+    if (yearMaybe != null) params.year = yearMaybe;
+  }
+  return request(api.get(`/transactions/${userId}/summary`, { params }));
+};
 
 export const getSpendingAnalysis = async (userId, month, year) =>
   request(api.get(`/analysis/${userId}/spending`, { params: { month, year } }));
@@ -264,13 +289,89 @@ export const runMLDetection = async (userId) =>
   request(api.post(`/anomalies/${userId}/run-detection`));
 
 export const getHealthScore = async (userId, month, year) =>
-  request(api.get(`/health-score/${userId}`, { params: { month, year } }));
+  request(api.get(`/health-score/${userId}`, { params: { month, year }, timeout: 25000 }));
 
 export const getHealthHistory = async (userId) =>
   request(api.get(`/health-score/${userId}/history`));
 
 export const getInsights = async (userId, month, year) =>
-  request(api.get(`/insights/${userId}`, { params: { month, year } }));
+  request(
+    api.get(`/insights/${userId}`, { params: { month, year }, timeout: INSIGHTS_FETCH_MS })
+  );
+
+/**
+ * Streams GET /insights/{userId}/insights-stream (SSE). Invokes onEvent for each parsed JSON object.
+ * Resolves with final payload `{ user, period, insights, recommendations, generated_at }` or rejects.
+ */
+export async function fetchInsightsSse(userId, month, year, onEvent) {
+  const base = getApiBaseUrl();
+  const params = new URLSearchParams();
+  if (month != null) params.set("month", String(month));
+  if (year != null) params.set("year", String(year));
+  const qs = params.toString();
+  const url = `${base}/insights/${userId}/insights-stream${qs ? `?${qs}` : ""}`;
+  const token = getAccessToken();
+  const ctrl = new AbortController();
+  const tid = window.setTimeout(() => ctrl.abort(), INSIGHTS_FETCH_MS);
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: ctrl.signal,
+    });
+    if (!res.ok) {
+      throw new Error("Insights are taking longer than usual.");
+    }
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("Unable to read insight stream.");
+    const dec = new TextDecoder();
+    let buf = "";
+    let finalPayload = null;
+    outer: while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let sep;
+      while ((sep = buf.indexOf("\n\n")) >= 0) {
+        const block = buf.slice(0, sep).trim();
+        buf = buf.slice(sep + 2);
+        if (!block.startsWith("data:")) continue;
+        const raw = block.replace(/^data:\s*/, "");
+        let evt;
+        try {
+          evt = JSON.parse(raw);
+        } catch {
+          continue;
+        }
+        if (typeof onEvent === "function") onEvent(evt);
+        if (evt.error) {
+          throw new Error(evt.message || "AI insights are temporarily unavailable.");
+        }
+        if (evt.done && evt.data) {
+          finalPayload = evt.data;
+          try {
+            await reader.cancel();
+          } catch {
+            /* ignore */
+          }
+          break outer;
+        }
+      }
+    }
+    if (!finalPayload) {
+      throw new Error("AI insights are temporarily unavailable. Please try again in a moment.");
+    }
+    return finalPayload;
+  } catch (e) {
+    const aborted = e?.name === "AbortError" || /aborted/i.test(String(e?.message || ""));
+    if (aborted) {
+      throw new Error("Insights are taking longer than usual.");
+    }
+    throw e;
+  } finally {
+    window.clearTimeout(tid);
+  }
+}
 
 export const getQuickSummary = async (userId, opts = {}) => {
   const params = {};
@@ -352,13 +453,15 @@ export const postSubscriptionEvaluate = async (userId, subscriptionId) =>
 export const getSubscriptionRecommendation = async (userId, subscriptionId) =>
   request(api.get(`/subscription-intelligence/${userId}/subscriptions/${subscriptionId}/recommendation`));
 
-export const getSubscriptionRemindersPending = async (userId) =>
-  request(api.get(`/subscription-intelligence/${userId}/reminders/pending`));
+export const getSubscriptionRemindersPending = async (userId, params = {}) =>
+  request(api.get(`/subscription-intelligence/${userId}/reminders/pending`, { params }));
 
-/** payload: { action } or { action, accountability_reason } for remind_later */
+/** payload: { action } or { action, accountability_reason } — reason required for remind_later only when subscription escalation tier >= 2 */
 export const postSubscriptionReminderAction = async (userId, reminderId, payload) => {
   const body = typeof payload === "string" ? { action: payload } : payload;
-  return request(api.post(`/subscription-intelligence/${userId}/reminders/${reminderId}/action`, body));
+  const uid = Number(userId);
+  const rid = Number(reminderId);
+  return request(api.post(`/subscription-intelligence/${uid}/reminders/${rid}/action`, body));
 };
 
 export const patchSubscriptionInsightRead = async (userId, insightId) =>

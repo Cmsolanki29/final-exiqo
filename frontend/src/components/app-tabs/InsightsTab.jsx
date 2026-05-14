@@ -1,37 +1,90 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { getHealthScore, getQuickSummary } from "../../services/api";
 import { PageHeader } from "../Dashboard/shared/PageHeader";
 import { HeroKpiTile } from "../Dashboard/shared/HeroKpiTile";
 import AIInsightsPanel from "../Insights/AIInsightsPanel";
 import HealthScoreGauge from "../Charts/HealthScoreGauge";
-import ScenarioSimulator from "../Simulator/ScenarioSimulator";
 import { GlassCard } from "../intro/GlassCard";
-import { SkeletonCard } from "../common/SkeletonCard";
+import SmartSpendChatbot from "../AIChat/SmartSpendChatbot";
 
 const ACCENT = "#A78BFA";
 
-export default function InsightsTab({ userId, month, year }) {
+/** `setActiveTab` — same tab switcher as Sidebar (CRA has no react-router-dom). */
+export default function InsightsTab({ userId, month, year, setActiveTab }) {
   const [health, setHealth] = useState(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+  const [healthError, setHealthError] = useState(false);
   const [summary, setSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+
+  const handleChatNavigate = useCallback(
+    (path) => {
+      const base = String(path || "").split("?")[0].toLowerCase();
+      const tabByPath = {
+        // explicit paths from backend system prompt
+        "/emi-tracker": "emi",
+        "/emi": "emi",
+        "/subscriptions": "subscriptions",
+        "/subscriptions-ai": "subscriptions",
+        "/fraud-shield": "fraud",
+        "/fraud": "fraud",
+        "/transactions": "transactions",
+        "/dashboard": "dashboard",
+        "/festivals": "festival",
+        "/festival": "festival",
+        "/dark-patterns": "dark-patterns",
+        "/purchases": "purchase",
+        "/purchase": "purchase",
+        "/insights": "insights",
+        "/health": "insights",
+      };
+      const tab = tabByPath[base];
+      if (tab && typeof setActiveTab === "function") setActiveTab(tab);
+    },
+    [setActiveTab]
+  );
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    Promise.allSettled([
-      getHealthScore(userId, month, year),
-      getQuickSummary(userId, { month, year }),
-    ]).then(([hRes, sRes]) => {
-      if (cancelled) return;
-      setHealth(hRes.status === "fulfilled" ? hRes.value : null);
-      setSummary(sRes.status === "fulfilled" ? sRes.value : null);
-      setLoading(false);
-    });
-    return () => { cancelled = true; };
+    setHealthLoading(true);
+    setHealthError(false);
+    getHealthScore(userId, month, year)
+      .then((h) => {
+        if (!cancelled) setHealth(h);
+      })
+      .catch(() => {
+        if (!cancelled) setHealthError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setHealthLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [userId, month, year]);
 
-  const savingsRate = summary?.savings_rate ?? health?.savings_rate ?? null;
-  const score       = health?.score ?? health?.health_score ?? 0;
+  useEffect(() => {
+    let cancelled = false;
+    setSummaryLoading(true);
+    getQuickSummary(userId, { month, year })
+      .then((s) => {
+        if (!cancelled) setSummary(s);
+      })
+      .catch(() => {
+        if (!cancelled) setSummary(null);
+      })
+      .finally(() => {
+        if (!cancelled) setSummaryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, month, year]);
+
+  const savingsRate =
+    summary?.savings_rate ?? health?.savings_rate ?? health?.components?.savings_rate_pct ?? null;
+  const scoreReady = !healthLoading && !healthError && health != null;
+  const scoreDisplay = scoreReady && health.score != null ? `${health.score}/100` : "—";
 
   return (
     <div>
@@ -43,28 +96,49 @@ export default function InsightsTab({ userId, month, year }) {
         rightSlot={
           <HeroKpiTile
             label="Health score"
-            value={score ? `${score}/100` : "—"}
-            caption={savingsRate != null ? `${savingsRate.toFixed(1)}% savings rate this month` : "Loading..."}
+            value={scoreDisplay}
+            caption={
+              summaryLoading || healthLoading
+                ? undefined
+                : savingsRate != null
+                  ? `${savingsRate.toFixed(1)}% savings rate this month`
+                  : undefined
+            }
+            captionLoading={summaryLoading || healthLoading}
             delta={savingsRate != null ? savingsRate - 10 : null}
             accentHex={ACCENT}
-            loading={loading}
+            loading={healthLoading}
           />
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[55%_minmax(0,1fr)]">
         <AIInsightsPanel userId={userId} month={month} year={year} presentation="default" />
-        <GlassCard padding="md" className="border-white/[0.08]">
-          {loading ? (
-            <SkeletonCard lines={4} height={200} />
-          ) : (
-            <HealthScoreGauge healthData={health || {}} variant="default" />
-          )}
-        </GlassCard>
+        <HealthScoreGauge
+          healthData={health || {}}
+          variant="default"
+          loading={healthLoading}
+          loadError={healthError}
+          onRetry={() => {
+            setHealthLoading(true);
+            setHealthError(false);
+            getHealthScore(userId, month, year)
+              .then(setHealth)
+              .catch(() => setHealthError(true))
+              .finally(() => setHealthLoading(false));
+          }}
+        />
       </div>
 
-      <div className="mt-4">
-        <ScenarioSimulator userId={userId} month={month} year={year} presentation="compact" />
+      <div className="mt-8">
+        <div className="mb-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-300/80">AI Financial Partner</p>
+          <h3 className="mt-0.5 font-heading text-base font-semibold text-white">Ask your Financial Partner</h3>
+          <p className="mt-1 text-sm text-white/50">
+            Grounded in your real transaction data. Ask in any language.
+          </p>
+        </div>
+        <SmartSpendChatbot onNavigate={handleChatNavigate} />
       </div>
     </div>
   );

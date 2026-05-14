@@ -10,6 +10,8 @@ from typing import Any
 
 from psycopg2.extras import execute_values
 
+from services.categorizer import categorize_merchant
+
 logger = logging.getLogger(__name__)
 
 MERCHANTS = [
@@ -39,13 +41,82 @@ MERCHANTS = [
     "Apollo Pharmacy",
 ]
 
-CATEGORIES = ["Shopping", "Food", "Transport", "Entertainment", "Recharge", "Health", "Utilities", "Groceries"]
 LOCATIONS = ["Mumbai", "Delhi", "Bangalore", "Chennai", "Hyderabad", "Pune", "Kolkata", "Ahmedabad"]
 
-# At least 1000 rows spanning 2 years (730 days). ~45% in the anchor month so MTD KPIs are populated.
+# At least 1000 rows spanning 2 years (730 days). Part of rows in anchor month (MTD) — dates never after anchor_date.
 DEFAULT_COUNT = 1100
 DEFAULT_SPAN_DAYS = 730
-FRACTION_IN_ANCHOR_MONTH = 0.45
+FRACTION_IN_ANCHOR_MONTH = 0.32
+
+
+def _realistic_debit_amount(merchant: str, rnd: random.Random) -> float:
+    """Rough INR ranges so totals feel plausible (not random 10k on Spotify)."""
+    m = (merchant or "").lower()
+
+    def r(lo: float, hi: float) -> float:
+        return round(rnd.uniform(lo, hi), 2)
+
+    if any(x in m for x in ("spotify", "netflix", "hotstar", "prime video")):
+        return r(149, 799)
+    if "bookmyshow" in m or "pvr" in m:
+        return r(180, 1400)
+    if any(x in m for x in ("zomato", "swiggy", "dunzo")):
+        return r(89, 920)
+    if any(x in m for x in ("bigbasket", "blinkit", "zepto", "instamart", "reliance smart")):
+        return r(190, 3850)
+    if any(x in m for x in ("mcdonald", "domino", "starbucks", "haldiram", "mtr")):
+        return r(120, 780)
+    if any(x in m for x in ("uber", "ola", "rapido")):
+        return r(65, 720)
+    if any(x in m for x in ("irctc", "makemytrip", "indigo", "redbus")):
+        return r(120, 7200)
+    if "metro" in m or "bmtc" in m:
+        return r(15, 110)
+    if "amazon" in m or "flipkart" in m:
+        return r(199, 9200)
+    if any(x in m for x in ("myntra", "nykaa", "meesho", "croma")):
+        return r(179, 6200)
+    if any(x in m for x in ("jio", "airtel", "bsnl")) or "recharge" in m:
+        return r(19, 719)
+    if "phonepe" in m or "paytm" in m:
+        return r(45, 3200)
+    if "apollo" in m or "pharmacy" in m or "1mg" in m or "netmeds" in m or "medplus" in m:
+        return r(65, 1680)
+    if any(x in m for x in ("zerodha", "groww", "lic", "cred", "upstox")):
+        return r(500, 12500)
+    return r(75, 2600)
+
+
+def _realistic_credit_amount(rnd: random.Random) -> float:
+    return round(rnd.uniform(18_000, 165_000), 2)
+
+
+# Credits: avoid random consumer merchants with salary-sized amounts (looked like "Spotify ₹1L").
+_CREDIT_TEMPLATES: tuple[tuple[str, str], ...] = (
+    ("NEFT — Employer Salary", "Salary"),
+    ("Salary credit — SMARTSPEND DEMO", "Salary"),
+    ("UPI — Refund Amazon India", "Shopping"),
+    ("Cashback — PhonePe", "Transfer"),
+    ("Interest payout — Savings", "Finance & Investment"),
+)
+
+
+def _anchor_dates_for_month(anchor: date, n: int, rnd: random.Random) -> list[date]:
+    """Spread synthetic rows across days 1..min(last_dom, anchor.day) so nothing is 'in the future' this month."""
+    yr, mo = anchor.year, anchor.month
+    _, dim = calendar.monthrange(yr, mo)
+    last_ok = min(dim, max(1, anchor.day))
+    if n <= 0:
+        return []
+    # Round-robin across days then shuffle so SQL ORDER BY date still looks natural.
+    days = list(range(1, last_ok + 1))
+    rnd.shuffle(days)
+    out: list[date] = []
+    for i in range(n):
+        dom = days[i % len(days)]
+        out.append(date(yr, mo, dom))
+    rnd.shuffle(out)
+    return out
 
 
 def _fetch_transaction_columns(cur: Any) -> set[str]:
@@ -156,12 +227,12 @@ def seed_transactions_for_new_user(
     n_anchor = max(1, min(count - 1, int(round(count * FRACTION_IN_ANCHOR_MONTH))))
     n_rest = count - n_anchor
     yr, mo = anchor.year, anchor.month
-    _, dim = calendar.monthrange(yr, mo)
 
     rows_dicts: list[dict[str, Any]] = []
+    anchor_days = _anchor_dates_for_month(anchor, n_anchor, rnd)
 
-    for _ in range(n_anchor):
-        d = date(yr, mo, rnd.randint(1, dim))
+    for i in range(n_anchor):
+        d = anchor_days[i]
         txn_dt = datetime.combine(
             d,
             time(
@@ -171,12 +242,15 @@ def seed_transactions_for_new_user(
             ),
         )
         merchant = rnd.choice(MERCHANTS)
-        category = rnd.choice(CATEGORIES)
-        is_credit = rnd.random() < 0.08
-        txn_type = "CREDIT" if is_credit else "DEBIT"
-        amount = (
-            round(rnd.uniform(500, 45000), 2) if is_credit else round(rnd.uniform(29, 12000), 2)
-        )
+        is_credit = rnd.random() < 0.055
+        if is_credit:
+            merchant, category = rnd.choice(_CREDIT_TEMPLATES)
+            txn_type = "CREDIT"
+            amount = _realistic_credit_amount(rnd)
+        else:
+            category = categorize_merchant(merchant)
+            txn_type = "DEBIT"
+            amount = _realistic_debit_amount(merchant, rnd)
         rows_dicts.append(
             _build_row(
                 cols,
@@ -193,6 +267,8 @@ def seed_transactions_for_new_user(
     for _ in range(n_rest):
         offset_days = rnd.randint(0, span_days)
         d = start + timedelta(days=offset_days)
+        if d > anchor:
+            d = anchor
         txn_dt = datetime.combine(
             d,
             time(
@@ -202,12 +278,15 @@ def seed_transactions_for_new_user(
             ),
         )
         merchant = rnd.choice(MERCHANTS)
-        category = rnd.choice(CATEGORIES)
-        is_credit = rnd.random() < 0.08
-        txn_type = "CREDIT" if is_credit else "DEBIT"
-        amount = (
-            round(rnd.uniform(500, 45000), 2) if is_credit else round(rnd.uniform(29, 12000), 2)
-        )
+        is_credit = rnd.random() < 0.055
+        if is_credit:
+            merchant, category = rnd.choice(_CREDIT_TEMPLATES)
+            txn_type = "CREDIT"
+            amount = _realistic_credit_amount(rnd)
+        else:
+            category = categorize_merchant(merchant)
+            txn_type = "DEBIT"
+            amount = _realistic_debit_amount(merchant, rnd)
         rows_dicts.append(
             _build_row(
                 cols,

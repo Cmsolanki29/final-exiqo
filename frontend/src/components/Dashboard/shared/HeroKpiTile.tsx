@@ -7,13 +7,23 @@ export type HeroKpiTileProps = {
   /** Formatted string (inr / count / pct) already formatted by caller. */
   value: string;
   caption?: string;
+  /** When true, show a skeleton bar instead of the caption line. */
+  captionLoading?: boolean;
   delta?: number | null;
   /** Accent hex colour — used for the value gradient. Must match FEATURE_ACCENTS. */
   accentHex: string;
   loading?: boolean;
 };
 
-export function HeroKpiTile({ label, value, caption, delta, accentHex, loading }: HeroKpiTileProps) {
+export function HeroKpiTile({
+  label,
+  value,
+  caption,
+  captionLoading,
+  delta,
+  accentHex,
+  loading,
+}: HeroKpiTileProps) {
   return (
     <GlassCard
       elevation="raised"
@@ -39,7 +49,11 @@ export function HeroKpiTile({ label, value, caption, delta, accentHex, loading }
         )}
         {!loading && delta != null && <DeltaChip delta={delta} />}
       </div>
-      {caption && <p className="mt-1 text-xs leading-snug text-white/50">{caption}</p>}
+      {captionLoading ? (
+        <span className="mt-2 block h-3 w-44 max-w-full animate-pulse rounded bg-white/[0.08]" aria-hidden />
+      ) : caption ? (
+        <p className="mt-1 text-xs leading-snug text-white/50">{caption}</p>
+      ) : null}
       {/* Subtle accent glow behind the tile */}
       <div
         className="pointer-events-none absolute inset-0 rounded-2xl opacity-10"

@@ -6,7 +6,6 @@ import {
   ChevronUp,
   Cpu,
   Info,
-  Link2,
   RefreshCw,
   Shield,
   Sparkles,
@@ -282,10 +281,13 @@ export default function SubscriptionGraveyard({ userId }) {
 
   const reminderAction = async (id, action, accountabilityReason) => {
     try {
-      const payload =
-        action === "remind_later"
-          ? { action, accountability_reason: (accountabilityReason || "").trim() }
-          : { action };
+      let payload;
+      if (action === "remind_later") {
+        const r = (accountabilityReason || "").trim();
+        payload = r.length > 0 ? { action, accountability_reason: r } : { action: "remind_later" };
+      } else {
+        payload = { action };
+      }
       await postSubscriptionReminderAction(userId, id, payload);
       showToast("Updated");
       setBanner(null);
@@ -299,7 +301,7 @@ export default function SubscriptionGraveyard({ userId }) {
   const submitSnooze = async () => {
     const text = snoozeReason.trim();
     if (text.length < 10) {
-      showToast("Please explain why you are keeping this subscription (min 10 characters).");
+      showToast("Escalation snooze needs at least 10 characters explaining why you are keeping this subscription.");
       return;
     }
     if (!snoozeModal.id) return;
@@ -366,7 +368,7 @@ export default function SubscriptionGraveyard({ userId }) {
       <PageHeader
         eyebrow="SUBSCRIPTIONS"
         title="Subscription Intelligence"
-        subtitle="Device usage + bank debits → verdicts, substitution insights, and a renewal engine with accountability (snooze requires a reason). Same idea as Digital Wellbeing / Screen Time, tuned for spend."
+        subtitle="Device usage + bank debits → verdicts, substitution insights, and a renewal engine: tier-1 snooze is one tap; after escalation, “Remind later” asks for a short reason (same as Digital Wellbeing / Screen Time, tuned for spend)."
         accentHex="#a855f7"
         rightSlot={
           <div className="flex flex-wrap gap-2">
@@ -436,7 +438,9 @@ export default function SubscriptionGraveyard({ userId }) {
                 {banner.reminder_type} · {inr(banner.monthly_cost)}/mo
               </p>
               <p className="mt-2 text-[11px] text-amber-200/80">
-                “Remind later” opens an accountability prompt — your reason is stored with the snooze.
+                {Number(banner.reminder_escalation_tier ?? 1) >= 2
+                  ? "“Remind later” opens an accountability prompt — required on escalation tier 2+."
+                  : "Tier 1 cycle: “Remind later” snoozes ~24h without a written reason."}
               </p>
             </div>
           </div>
@@ -451,8 +455,13 @@ export default function SubscriptionGraveyard({ userId }) {
             <button
               type="button"
               onClick={() => {
-                setSnoozeReason("");
-                setSnoozeModal({ open: true, id: banner.id });
+                const tier = Number(banner.reminder_escalation_tier ?? 1);
+                if (tier >= 2) {
+                  setSnoozeReason("");
+                  setSnoozeModal({ open: true, id: banner.id });
+                } else {
+                  void reminderAction(banner.id, "remind_later", "");
+                }
               }}
               className="rounded-xl border border-white/20 px-3 py-2 text-xs font-semibold text-white"
             >
@@ -470,29 +479,20 @@ export default function SubscriptionGraveyard({ userId }) {
       ) : null}
 
       {!deviceLinked ? (
-        <motion.button
-          type="button"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          whileHover={{ scale: 1.01 }}
-          onClick={() => setModal(true)}
-          className="group relative w-full overflow-hidden rounded-3xl border border-violet-500/30 bg-gradient-to-r from-violet-600/30 to-blue-600/20 p-6 text-left shadow-[0_0_40px_-18px_rgba(124,58,237,0.5)] backdrop-blur-xl sm:p-8"
-        >
-          <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-violet-500/20 blur-3xl transition group-hover:bg-violet-500/30" />
-          <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-200/90">Device link</p>
-              <h3 className="mt-1 text-xl font-bold text-white sm:text-2xl">Unlock 10× smarter detection — link your device.</h3>
-              <p className="mt-2 max-w-2xl text-sm text-exiqo-glow/70">
-                We infer subscription value from usage minutes, sessions, and peaks — bypassing streaming APIs. Same architectural pattern as Digital Wellbeing, tuned for your wallet.
-              </p>
-            </div>
-            <span className="inline-flex items-center gap-2 rounded-2xl bg-white/10 px-5 py-3 text-sm font-bold text-white ring-1 ring-white/20">
-              <Link2 className="h-4 w-4" />
-              Connect
-            </span>
-          </div>
-        </motion.button>
+        <div className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-exiqo-glow/75 sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            No device link on this account yet. Use <span className="font-semibold text-white">Connect</span> in the intelligence hub first — this list stays in sync with the same backend seed.
+          </p>
+          {DEMO_MODE ? (
+            <button
+              type="button"
+              onClick={() => setModal(true)}
+              className="shrink-0 rounded-lg border border-violet-500/35 bg-violet-500/15 px-3 py-1.5 text-[11px] font-semibold text-violet-100 hover:bg-violet-500/25"
+            >
+              Open simulator
+            </button>
+          ) : null}
+        </div>
       ) : (
         <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
           <span className="font-semibold">Device intelligence active.</span> Aggregated signals only — see privacy callout in the modal anytime.
@@ -805,7 +805,7 @@ export default function SubscriptionGraveyard({ userId }) {
               className="w-full max-w-md rounded-3xl border border-white/10 bg-[#0b0b22] p-6 shadow-2xl"
             >
               <div className="mb-3 flex items-start justify-between gap-2">
-                <h3 className="text-lg font-bold text-white">Accountability check</h3>
+                <h3 className="text-lg font-bold text-white">Escalation accountability</h3>
                 <button
                   type="button"
                   className="rounded-lg p-1 text-exiqo-glow/50 hover:text-white"
@@ -816,7 +816,8 @@ export default function SubscriptionGraveyard({ userId }) {
                 </button>
               </div>
               <p className="text-sm text-exiqo-glow/75">
-                Why are you keeping this subscription despite low usage? We log this with your snooze so SmartSpend can tune future nudges.
+                This subscription is on renewal escalation tier 2+. Why are you keeping it despite low usage? We log
+                this with your snooze so SmartSpend can tune future nudges.
               </p>
               <textarea
                 value={snoozeReason}

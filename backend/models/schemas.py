@@ -60,6 +60,7 @@ class HealthScoreResponse(BaseModel):
     components: dict[str, Any]
     trend: str
     recommendations: list[str]
+    savings_rate: Optional[float] = None
 
 
 class InsightResponse(BaseModel):

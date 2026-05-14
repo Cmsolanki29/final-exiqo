@@ -20,6 +20,8 @@ import {
   type IntelligenceInsight,
   type SavingsPayload,
 } from "../services/subscriptionIntelligence";
+import { getSubscriptionFlowState } from "../utils/subscriptionFlowStorage";
+import { syncLinkedAppsToBackend } from "../services/subscriptionDeviceSync";
 
 export type SubscriptionIntelligenceContextValue = {
   userId: number | null;
@@ -45,6 +47,13 @@ const SubscriptionIntelligenceContext = createContext<
   SubscriptionIntelligenceContextValue | undefined
 >(undefined);
 
+const EMPTY_VERDICTS = {
+  thriving: [],
+  declining: [],
+  dormant: [],
+  upgrade_recommended: [],
+} as const;
+
 export function SubscriptionIntelligenceProvider({
   children,
 }: {
@@ -69,13 +78,11 @@ export function SubscriptionIntelligenceProvider({
     setSummaryLoading(true);
     try {
       const data = await getAISummary(userId);
-      if (data.success) {
-        setSummary({
-          verdicts: data.verdicts,
-          migrations: data.migrations,
-          summary: data.summary,
-        });
-      }
+      setSummary({
+        verdicts: { ...EMPTY_VERDICTS, ...(data?.verdicts || {}) },
+        migrations: data?.migrations ?? [],
+        summary: data?.summary ?? null,
+      });
     } catch (e) {
       console.error("[SubscriptionIntelligence] refreshSummary", e);
     } finally {
@@ -88,7 +95,7 @@ export function SubscriptionIntelligenceProvider({
     setMigrationsLoading(true);
     try {
       const data = await getCategoryMigrations(userId);
-      if (data.success) setMigrations(data.migrations || []);
+      setMigrations(data?.migrations || []);
     } catch (e) {
       console.error("[SubscriptionIntelligence] refreshMigrations", e);
     } finally {
@@ -101,7 +108,7 @@ export function SubscriptionIntelligenceProvider({
     setInsightsLoading(true);
     try {
       const data = await getInsightsFeed(userId, true, 40);
-      if (data.success) setInsights(data.insights || []);
+      setInsights(data?.insights || []);
     } catch (e) {
       console.error("[SubscriptionIntelligence] refreshInsights", e);
     } finally {
@@ -114,7 +121,7 @@ export function SubscriptionIntelligenceProvider({
     setSavingsLoading(true);
     try {
       const data = await getSavings(userId);
-      if (data.success) setSavings(data);
+      setSavings(data ?? null);
     } catch (e) {
       console.error("[SubscriptionIntelligence] refreshSavings", e);
     } finally {
@@ -139,6 +146,31 @@ export function SubscriptionIntelligenceProvider({
         refreshInsights(),
         refreshSavings(),
       ]);
+
+      /**
+       * If the hub marked apps as connected in localStorage but Postgres still has no rows
+       * (failed sync, stale tab, first load after fix), push device-link once and reload intel.
+       */
+      const flow = getSubscriptionFlowState(userId);
+      if (flow.connected && Array.isArray(flow.apps) && flow.apps.length > 0) {
+        try {
+          const snap = await getAISummary(userId);
+          const tracked = snap?.summary?.subscriptions_tracked ?? 0;
+          if (tracked === 0) {
+            const res = await syncLinkedAppsToBackend(userId);
+            if (res?.ok) {
+              await Promise.all([
+                refreshSummary(),
+                refreshMigrations(),
+                refreshInsights(),
+                refreshSavings(),
+              ]);
+            }
+          }
+        } catch (e) {
+          console.error("[SubscriptionIntelligence] auto device-link reconcile", e);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -171,6 +203,14 @@ export function SubscriptionIntelligenceProvider({
 
   useEffect(() => {
     void refreshAll();
+  }, [refreshAll]);
+
+  useEffect(() => {
+    const onRefresh = () => {
+      void refreshAll();
+    };
+    window.addEventListener("ss-subscription-intel-refresh", onRefresh);
+    return () => window.removeEventListener("ss-subscription-intel-refresh", onRefresh);
   }, [refreshAll]);
 
   const value = useMemo<SubscriptionIntelligenceContextValue>(

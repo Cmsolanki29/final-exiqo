@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import React, { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import OnboardingPage from "./app/onboarding/page";
 import Dashboard from "./components/Dashboard/Dashboard";
 import { AuroraBackground } from "./components/intro/AuroraBackground";
@@ -10,9 +10,11 @@ import EMITrapDetector from "./components/EMI/EMITrapDetector";
 import FamilyEventsPage from "./components/FamilyEvents/FamilyEventsPage";
 import Sidebar from "./components/Layout/Sidebar";
 import TopBar from "./components/Layout/TopBar";
-import SubscriptionGraveyard from "./components/Subscriptions/SubscriptionGraveyard";
-import SubscriptionIntelligence from "./pages/SubscriptionIntelligence";
-import SmartReminders from "./pages/SmartReminders";
+import SmartReminderEngine from "./pages/SmartReminderEngine";
+import SubscriptionConnect from "./pages/SubscriptionConnect";
+import SubscriptionHub from "./pages/SubscriptionHub";
+import AIAnalysisEngine from "./pages/AIAnalysisEngine";
+import { isSubscriptionFlowConnected } from "./utils/subscriptionFlowStorage";
 import IntroFlow from "./components/intro/IntroFlow";
 import { ToastProvider } from "./components/common/Toast";
 import { SkeletonCard } from "./components/common/SkeletonCard";
@@ -30,20 +32,30 @@ const App = () => {
   const { user, loading: authLoading, logout, isAuthenticated } = useAuth();
   const [users, setUsers] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState(1);
+  /** Logged-in user only — subscription intelligence + device-link must match JWT (no workspace fallback). */
+  const subscriptionOwnerId = useMemo(() => Number(user?.id) || 0, [user?.id]);
   const [darkMode, setDarkMode] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
-  /** Subscriptions tab: hub vs smart-reminders (no React Router in CRA shell). */
-  const [subscriptionsSubView, setSubscriptionsSubView] = useState("hub");
+  /**
+   * Subscriptions tab (no React Router in CRA shell):
+   * connect → first-time device link | hub → two engines | ai-analysis | reminders
+   */
+  const [subscriptionsSubView, setSubscriptionsSubView] = useState("connect");
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [userError, setUserError] = useState("");
   /** After sign-in, show cinematic intro once per tab session before OTP / bank onboarding. */
   const [preOnboardIntroDone, setPreOnboardIntroDone] = useState(false);
 
-  /** Reset subscriptions sub-view when leaving that tab. */
-  useEffect(() => {
-    if (activeTab !== "subscriptions") setSubscriptionsSubView("hub");
-  }, [activeTab]);
+  /** When opening Subscriptions, land on connect vs hub (local flow state is keyed by JWT user id). */
+  useLayoutEffect(() => {
+    if (activeTab !== "subscriptions") return;
+    if (!subscriptionOwnerId) {
+      setSubscriptionsSubView("connect");
+      return;
+    }
+    setSubscriptionsSubView(isSubscriptionFlowConnected(subscriptionOwnerId) ? "hub" : "connect");
+  }, [activeTab, subscriptionOwnerId]);
 
   /** Remove stale `fraudTab` from URL when viewing other tabs (avoids confusion + stale deep-links). */
   useEffect(() => {
@@ -255,12 +267,22 @@ const App = () => {
                 )}
                 {activeTab === "insights" && (
                   <Suspense fallback={<SkeletonCard lines={4} height={88} />}>
-                    <InsightsTab userId={selectedUserId} month={month} year={year} />
+                    <InsightsTab
+                      userId={selectedUserId}
+                      month={month}
+                      year={year}
+                      setActiveTab={setActiveTab}
+                    />
                   </Suspense>
                 )}
                 {activeTab === "simulator" && (
                   <Suspense fallback={<SkeletonCard lines={4} height={88} />}>
-                    <SimulatorTab userId={selectedUserId} month={month} year={year} />
+                    <SimulatorTab
+                      userId={selectedUserId}
+                      month={month}
+                      year={year}
+                      setActiveTab={setActiveTab}
+                    />
                   </Suspense>
                 )}
                 {activeTab === "settings" && (
@@ -274,22 +296,35 @@ const App = () => {
                   </Suspense>
                 )}
                 {activeTab === "emi" && <EMITrapDetector userId={selectedUserId} />}
-                {activeTab === "subscriptions" && subscriptionsSubView === "reminders" && (
-                  <SmartReminders onBack={() => setSubscriptionsSubView("hub")} />
+                {activeTab === "subscriptions" && subscriptionOwnerId > 0 && subscriptionsSubView === "connect" && (
+                  <SubscriptionConnect
+                    ownerId={subscriptionOwnerId}
+                    onComplete={() => setSubscriptionsSubView("hub")}
+                  />
                 )}
-                {activeTab === "subscriptions" && subscriptionsSubView === "hub" && (
-                  <div className="mx-auto max-w-6xl space-y-10">
-                    <SubscriptionIntelligence
-                      onOpenReminders={() => setSubscriptionsSubView("reminders")}
-                    />
-                    <section className="border-t border-white/10 pt-8">
-                      <h2 className="mb-4 font-heading text-lg font-semibold text-white">
-                        Devices, renewals & subscription list
-                      </h2>
-                      <SubscriptionGraveyard key={`subscriptions-${selectedUserId}`} userId={selectedUserId} />
-                    </section>
+                {activeTab === "subscriptions" && subscriptionOwnerId > 0 && subscriptionsSubView === "hub" && (
+                  <SubscriptionHub
+                    ownerId={subscriptionOwnerId}
+                    onOpenAI={() => setSubscriptionsSubView("ai-analysis")}
+                    onOpenReminders={() => setSubscriptionsSubView("reminders")}
+                    onDisconnected={() => setSubscriptionsSubView("connect")}
+                  />
+                )}
+                {activeTab === "subscriptions" && subscriptionOwnerId > 0 && subscriptionsSubView === "ai-analysis" && (
+                  <AIAnalysisEngine
+                    onBack={() => setSubscriptionsSubView("hub")}
+                    onOpenReminders={() => setSubscriptionsSubView("reminders")}
+                  />
+                )}
+                {activeTab === "subscriptions" && subscriptionOwnerId > 0 && subscriptionsSubView === "reminders" && (
+                  <SmartReminderEngine onBack={() => setSubscriptionsSubView("hub")} />
+                )}
+                {activeTab === "subscriptions" && !subscriptionOwnerId ? (
+                  <div className="mx-auto max-w-lg rounded-2xl border border-white/10 bg-white/[0.04] p-6 text-center text-sm text-white/75">
+                    Your account id is not available yet. Refresh the page or sign in again to use Subscription
+                    intelligence.
                   </div>
-                )}
+                ) : null}
                 {activeTab === "dark-patterns" && <DarkPatternDetector userId={selectedUserId} />}
                 {activeTab === "fraud" && (
                   <FraudShieldPage userId={selectedUserId} userName={selectedUser?.name} />

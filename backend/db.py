@@ -10,7 +10,7 @@ import psycopg2
 from dotenv import load_dotenv
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(dotenv_path=_PROJECT_ROOT / ".env")
+load_dotenv(dotenv_path=_PROJECT_ROOT / ".env", override=True)
 
 
 def get_db_config() -> dict[str, str | int]:

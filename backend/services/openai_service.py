@@ -39,7 +39,7 @@ def _get_client() -> OpenAI | None:
         return None
     if _client is None:
         try:
-            _client = OpenAI(api_key=key)
+            _client = OpenAI(api_key=key, timeout=40.0)
         except Exception:
             _client_init_failed = True
             return None
@@ -56,19 +56,21 @@ def _call_groq_sync(
     user_prompt: str,
     max_tokens: int = 1000,
     json_mode: bool = True,
+    *,
+    temperature: float = 0.7,
 ) -> dict[str, Any] | str:
-    """Synchronous Groq fallback using the OpenAI-compatible SDK."""
+    """Synchronous Groq using the OpenAI-compatible SDK."""
     groq_key = os.getenv("GROQ_API_KEY", "").strip()
     if not groq_key:
         return {} if json_mode else ""
     try:
         from openai import OpenAI as _OAI  # Groq uses the same SDK
-        _gc = _OAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
-        model = os.getenv("PHASE_9_DEFAULT_MODEL", "llama-3.3-70b-versatile")
+        _gc = _OAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1", timeout=40.0)
+        model = os.getenv("GROQ_CHAT_MODEL", os.getenv("PHASE_9_DEFAULT_MODEL", "llama-3.3-70b-versatile")).strip()
         kwargs: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
-            "temperature": 0.7,
+            "temperature": temperature,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -86,23 +88,31 @@ def _call_groq_sync(
         return {} if json_mode else ""
 
 
+def _openai_insights_model() -> str:
+    """Model for dashboard insights, health narrative, recommendations (cost vs quality)."""
+    return os.getenv("OPENAI_INSIGHTS_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+
+
 def call_gpt(
     system_prompt: str,
     user_prompt: str,
     max_tokens: int = 1000,
     json_mode: bool = True,
+    *,
+    model: str | None = None,
 ) -> dict[str, Any] | str:
     client = _get_client()
     if client is None:
-        # OpenAI key not configured — fall back to Groq transparently
         return _call_groq_sync(system_prompt, user_prompt, max_tokens, json_mode)
+
+    mdl = (model or _openai_insights_model()).strip() or "gpt-4o-mini"
 
     for attempt in range(2):
         try:
             kwargs: dict[str, Any] = {
-                "model": "gpt-4o-mini",
+                "model": mdl,
                 "max_tokens": max_tokens,
-                "temperature": 0.7,
+                "temperature": 0.45,
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
@@ -126,8 +136,58 @@ def call_gpt(
                 time.sleep(1)
                 continue
             print(f"[call_gpt] OpenAI error after retry: {exc}")
-            # Final fallback: try Groq before giving up
             return _call_groq_sync(system_prompt, user_prompt, max_tokens, json_mode)
+
+
+def _call_openai_json_only(
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int = 800,
+    temperature: float = 0.45,
+) -> dict[str, Any]:
+    """OpenAI-only JSON completion (primary path for dashboard insights)."""
+    client = _get_client()
+    if client is None:
+        return {}
+    try:
+        kwargs: dict[str, Any] = {
+            "model": _openai_insights_model(),
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "response_format": {"type": "json_object"},
+        }
+        response = client.chat.completions.create(**kwargs)
+        content = (response.choices[0].message.content or "").strip()
+        return json.loads(content) if content else {}
+    except Exception as exc:
+        print(f"[_call_openai_json_only] {exc}")
+        return {}
+
+
+def call_dashboard_json_openai_then_groq(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    max_tokens: int = 800,
+    temperature: float = 0.35,
+) -> dict[str, Any]:
+    """Dashboard JSON: OpenAI (gpt-4o-mini) first; Groq only if OpenAI returns empty or errors."""
+    o = _call_openai_json_only(system_prompt, user_prompt, max_tokens=max_tokens, temperature=temperature)
+    if isinstance(o, dict) and o:
+        return o
+    try:
+        g = _call_groq_sync(
+            system_prompt, user_prompt, max_tokens, True, temperature=temperature
+        )
+        if isinstance(g, dict) and g:
+            return g
+    except Exception as exc:
+        print(f"[call_dashboard_json_openai_then_groq] Groq: {exc}")
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -153,57 +213,134 @@ def set_cached(key: str, data: Any, ttl_seconds: int = 3600) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _coerce_insight_card(raw: dict[str, Any], user_data: dict[str, Any]) -> dict[str, Any]:
+    """Clamp list sizes and string lengths so the UI card stays compact."""
+
+    def clip(s: object, max_len: int) -> str:
+        t = str(s or "").strip()
+        if len(t) <= max_len:
+            return t
+        return t[: max(0, max_len - 1)] + "…"
+
+    verdict = str(raw.get("spending_verdict") or "AVERAGE").strip().upper()
+    if verdict not in ("GOOD", "AVERAGE", "NEEDS_IMPROVEMENT", "CRITICAL"):
+        verdict = "AVERAGE"
+
+    ki = raw.get("key_insights")
+    ki_list = [clip(x, 95) for x in ki] if isinstance(ki, list) else []
+    ki_list = [x for x in ki_list if x][:3]
+    while len(ki_list) < 3:
+        ki_list.append(f"Health score {user_data.get('health_score', 0)}/100")
+
+    warn = raw.get("warnings")
+    w_list = [clip(x, 95) for x in warn] if isinstance(warn, list) else []
+    w_list = [x for x in w_list if x][:2]
+
+    rec = raw.get("recommendations")
+    r_list = [clip(x, 105) for x in rec] if isinstance(rec, list) else []
+    r_list = [x for x in r_list if x][:3]
+    while len(r_list) < 3:
+        r_list.append("Set a monthly budget for your top spending categories.")
+
+    pos = raw.get("positive_highlights")
+    p_list = [clip(x, 95) for x in pos] if isinstance(pos, list) else []
+    p_list = [x for x in p_list if x][:2]
+    if not p_list:
+        p_list.append("You are actively tracking spend in SmartSpend.")
+
+    summ = clip(raw.get("summary"), 240)
+    if not summ:
+        summ = clip(
+            f"{user_data.get('name') or 'User'}, you saved ₹{user_data.get('total_saved', 0):,.0f} "
+            f"this month ({user_data.get('savings_rate', 0)}% savings rate).",
+            240,
+        )
+
+    return {
+        "summary": summ,
+        "key_insights": ki_list[:3],
+        "warnings": w_list,
+        "recommendations": r_list[:3],
+        "positive_highlights": p_list[:2],
+        "spending_verdict": verdict,
+    }
+
+
+def _normalize_llm_insight_minimal(raw: dict[str, Any]) -> dict[str, Any]:
+    """Ensure keys expected by _coerce_insight_card exist (minimal analyst JSON omits some)."""
+    if not isinstance(raw, dict):
+        return {}
+    out = dict(raw)
+    if not isinstance(out.get("warnings"), list):
+        out["warnings"] = []
+    if not out.get("spending_verdict"):
+        out["spending_verdict"] = "AVERAGE"
+    return out
+
+
 def generate_monthly_insights(user_data: dict[str, Any]) -> dict[str, Any]:
-    cache_key = f"insights_{user_data.get('user_id')}_{user_data.get('current_month')}"
+    cache_key = (
+        f"insights_card_v5_openai_primary_{user_data.get('user_id')}_"
+        f"{user_data.get('current_month')}"
+    )
     cached = get_cached(cache_key)
     if cached is not None:
         return cached
 
-    system_prompt = """You are SmartSpend AI, a personal financial advisor for Indian users.
-Analyze financial data and provide personalized insights in JSON format.
-Be specific with rupee amounts. Use friendly, conversational tone.
-Reference the user by name. Always respond with valid JSON only."""
+    system_prompt = """You are a financial analyst. Given transaction data, return a JSON object with these exact keys:
+{
+  "summary": "2 sentence overview of the user's financial month",
+  "key_insights": ["insight 1", "insight 2", "insight 3"],
+  "recommendations": ["action 1", "action 2", "action 3"],
+  "positive_highlights": ["highlight 1"]
+}
+All text must be in plain English. Be specific with numbers. Return only valid JSON, no markdown."""
 
-    user_prompt = f"""Analyze this Indian user's financial data for {user_data.get('current_month')}:
+    snap = {
+        "month": user_data.get("current_month"),
+        "name": user_data.get("name"),
+        "monthly_income_profile_inr": user_data.get("monthly_income"),
+        "savings_goal_inr": user_data.get("savings_goal"),
+        "income_inr": user_data.get("total_income"),
+        "expense_inr": user_data.get("total_expense"),
+        "saved_inr": user_data.get("total_saved"),
+        "savings_rate_pct": user_data.get("savings_rate"),
+        "health_score": user_data.get("health_score"),
+        "anomaly_count": user_data.get("anomaly_count"),
+        "category_breakdown": user_data.get("category_breakdown") or [],
+        "top_merchants": user_data.get("top_merchants") or [],
+        "last_month_expense_inr": user_data.get("last_month_expense"),
+        "last_month_saved_inr": user_data.get("last_month_saved"),
+    }
+    user_prompt = "Use only these facts (do not invent). Data:\n" + json.dumps(snap, indent=2)
 
-Name: {user_data.get('name')}
-Monthly Income: ₹{user_data.get('monthly_income', 0):,.0f}
-Savings Goal: ₹{user_data.get('savings_goal', 0):,.0f}
-This Month Income: ₹{user_data.get('total_income', 0):,.0f}
-This Month Expense: ₹{user_data.get('total_expense', 0):,.0f}
-Amount Saved: ₹{user_data.get('total_saved', 0):,.0f}
-Savings Rate: {user_data.get('savings_rate', 0)}%
-Health Score: {user_data.get('health_score', 0)}/100
-Suspicious Transactions: {user_data.get('anomaly_count', 0)}
-
-Spending Breakdown:
-{json.dumps(user_data.get('category_breakdown', []), indent=2)}
-
-Top Merchants this month: {', '.join(user_data.get('top_merchants', []))}
-Last Month Expense: ₹{user_data.get('last_month_expense', 0):,.0f}
-Last Month Saved: ₹{user_data.get('last_month_saved', 0):,.0f}
-
-Respond with JSON containing:
-- summary (2-3 sentences)
-- key_insights (list of 4 specific observations with rupee amounts)
-- warnings (list of 2-3 risks)
-- recommendations (list of 4 actionable tips with specific amounts)
-- positive_highlights (list of 1-2 things done well)
-- spending_verdict: one of GOOD/AVERAGE/NEEDS_IMPROVEMENT/CRITICAL"""
-
-    result = call_gpt(system_prompt, user_prompt, max_tokens=1200, json_mode=True)
+    result = call_dashboard_json_openai_then_groq(
+        system_prompt, user_prompt, max_tokens=800, temperature=0.25
+    )
     if not isinstance(result, dict) or not result:
+        nm = user_data.get("name") or "User"
         result = {
             "summary": (
-                f"{user_data.get('name')} saved Rs.{user_data.get('total_saved', 0):,.0f} this month "
-                f"with a {user_data.get('savings_rate', 0)}% savings rate."
-            ),
-            "key_insights": [f"Health score is {user_data.get('health_score', 0)}/100"],
+                f"{nm}, you saved ₹{user_data.get('total_saved', 0):,.0f} this month "
+                f"({user_data.get('savings_rate', 0)}% savings rate) — here is your financial overview."
+            )[:240],
+            "key_insights": [
+                f"Health score {user_data.get('health_score', 0)}/100",
+                "Review your top spending categories",
+                f"Flagged transactions this month: {user_data.get('anomaly_count', 0)}",
+            ],
             "warnings": [],
-            "recommendations": ["Review your top spending categories", "Set a weekly UPI limit"],
-            "positive_highlights": ["You are tracking spend in SmartSpend"],
+            "recommendations": [
+                "Set weekly caps on your top 2 spending categories",
+                "Reconcile your EMIs and subscriptions",
+                "Enable UPI spend alerts for the next 7 days",
+            ],
+            "positive_highlights": ["Your transactions are being tracked — great habit!"],
             "spending_verdict": "AVERAGE",
         }
+    else:
+        merged = _normalize_llm_insight_minimal(result)
+        result = _coerce_insight_card(merged, user_data)
 
     set_cached(cache_key, result, ttl_seconds=3600)
     return result
@@ -335,7 +472,9 @@ Provide specific, actionable recommendations in JSON:
 - budget_suggestion (object: category string keys to INR monthly numbers)
 - monthly_challenge (one string)"""
 
-    result = call_gpt(system_prompt, user_prompt, max_tokens=1200, json_mode=True)
+    result = call_dashboard_json_openai_then_groq(
+        system_prompt, user_prompt, max_tokens=1200, temperature=0.35
+    )
     if not isinstance(result, dict) or not result:
         return {
             "priority_actions": [],

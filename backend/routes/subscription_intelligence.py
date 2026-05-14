@@ -42,7 +42,7 @@ from services.subscription_intelligence.insight_feed import (
 from services.subscription_intelligence.reminder_scheduler import (
     create_reminders_with_escalation,
     fetch_pending_reminders,
-    validate_snooze_reason,
+    fetch_reminders_feed,
 )
 
 router = APIRouter(prefix="/subscription-intelligence", tags=["Subscription Intelligence"])
@@ -74,7 +74,7 @@ class ReminderActionBody(BaseModel):
     accountability_reason: str | None = Field(
         default=None,
         max_length=4000,
-        description="Required for remind_later (min 10 chars): why keep despite low usage.",
+        description="Required for remind_later only when subscription reminder_escalation_tier >= 2 (min 10 chars).",
     )
 
 
@@ -560,7 +560,14 @@ def intelligence_hub(user_id: int, conn=Depends(subscription_intel_connection)):
 
 
 @router.post("/{user_id}/device-link")
-def post_device_link(user_id: int, body: DeviceLinkBody, conn=Depends(subscription_intel_connection)):
+def post_device_link(
+    user_id: int,
+    body: DeviceLinkBody,
+    conn=Depends(subscription_intel_connection),
+    auth_user_id: int = Depends(get_current_user_id),
+) -> dict[str, Any]:
+    """Upsert device link, seed usage + subscriptions for **this JWT user only** (path id must match)."""
+    _require_self(user_id, auth_user_id)
     cur = conn.cursor()
     try:
         cur.execute(
@@ -695,19 +702,30 @@ def get_substitutions(user_id: int, conn=Depends(subscription_intel_connection))
 
 
 @router.get("/{user_id}/reminders/pending")
-def get_reminders(user_id: int, conn=Depends(subscription_intel_connection)):
+def get_reminders(
+    user_id: int,
+    include_upcoming: bool = Query(
+        False,
+        description="If true, return pending/shown/snoozed reminders (T-10, T-3, …), not only due/shown.",
+    ),
+    conn=Depends(subscription_intel_connection),
+    auth_user_id: int = Depends(get_current_user_id),
+) -> dict[str, Any]:
+    _require_self(user_id, auth_user_id)
+    if include_upcoming:
+        return {"reminders": fetch_reminders_feed(conn, user_id)}
     return {"reminders": fetch_pending_reminders(conn, user_id)}
 
 
 @router.post("/{user_id}/reminders/{reminder_id}/action")
-def post_reminder_action(user_id: int, reminder_id: int, body: ReminderActionBody, conn=Depends(subscription_intel_connection)):
-    if body.action == "remind_later":
-        reason = (body.accountability_reason or "").strip()
-        if len(reason) < 10:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Why are you keeping this subscription despite low usage? Enter at least 10 characters.",
-            )
+def post_reminder_action(
+    user_id: int,
+    reminder_id: int,
+    body: ReminderActionBody,
+    conn=Depends(subscription_intel_connection),
+    auth_user_id: int = Depends(get_current_user_id),
+):
+    _require_self(user_id, auth_user_id)
     res = apply_reminder_action(
         conn,
         reminder_id,
