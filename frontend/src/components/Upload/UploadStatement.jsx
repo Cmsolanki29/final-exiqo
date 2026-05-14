@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
-
-const API = "http://localhost:8001/api";
+import { getApiBaseUrl } from "../../services/apiBaseUrl";
 
 const SOURCE_TYPES = [
   { id: "credit_card", label: "Credit Card", icon: "💳" },
-  { id: "bank",        label: "Bank Statement", icon: "🏦" },
-  { id: "upi",         label: "UPI / GPay", icon: "📱" },
-  { id: "other",       label: "Other", icon: "📄" },
+  { id: "bank_statement_pdf", label: "Bank statement (PDF/CSV)", icon: "🏦" },
+  { id: "upi", label: "UPI / GPay", icon: "📱" },
+  { id: "other", label: "Other", icon: "📄" },
 ];
 
 function Badge({ status }) {
@@ -23,8 +22,9 @@ function Badge({ status }) {
   );
 }
 
-export default function UploadStatement({ userId }) {
-  const [sourceType, setSourceType]   = useState("credit_card");
+export default function UploadStatement({ userId, initialSourceType }) {
+  const API = getApiBaseUrl();
+  const [sourceType, setSourceType]   = useState(initialSourceType || "credit_card");
   const [bankName, setBankName]       = useState("");
   const [accountNo, setAccountNo]     = useState("");
   const [file, setFile]               = useState(null);
@@ -53,6 +53,10 @@ export default function UploadStatement({ userId }) {
     loadHistory();
     loadSources();
   }, [userId]);
+
+  useEffect(() => {
+    if (initialSourceType) setSourceType(initialSourceType);
+  }, [initialSourceType]);
 
   const handleUpload = async () => {
     if (!file || !bankName.trim()) return;
@@ -135,7 +139,11 @@ export default function UploadStatement({ userId }) {
           {/* Institution name */}
           <div>
             <label className="mb-1 block text-sm text-white/60">
-              {sourceType === "credit_card" ? "Credit Card Name" : sourceType === "upi" ? "UPI App" : "Bank Name"}
+              {sourceType === "credit_card"
+                ? "Credit Card Name"
+                : sourceType === "upi"
+                  ? "UPI App"
+                  : "Institution name"}
             </label>
             <input
               value={bankName}
@@ -144,8 +152,10 @@ export default function UploadStatement({ userId }) {
                 sourceType === "credit_card"
                   ? "e.g. HDFC Regalia Credit Card"
                   : sourceType === "upi"
-                  ? "e.g. Google Pay / PhonePe"
-                  : "e.g. HDFC Bank"
+                    ? "e.g. Google Pay / PhonePe"
+                    : sourceType === "bank_statement_pdf"
+                      ? "e.g. HDFC Bank savings"
+                      : "e.g. HDFC Bank"
               }
               className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm text-white placeholder-white/30 focus:border-violet-500/50 focus:outline-none"
             />
@@ -287,7 +297,7 @@ export default function UploadStatement({ userId }) {
               {sources.map((s) => {
                 const icon =
                   s.source_type === "credit_card" ? "💳"
-                  : s.source_type === "bank" ? "🏦"
+                  : s.source_type === "bank" || s.source_type === "bank_statement_pdf" ? "🏦"
                   : s.source_type === "upi" ? "📱"
                   : "📄";
                 return (
@@ -296,7 +306,7 @@ export default function UploadStatement({ userId }) {
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-white truncate">{s.institution_name}</p>
                       <p className="text-xs text-white/40">
-                        {s.source_type.replace("_", " ")}
+                        {String(s.source_type || "").replace(/_/g, " ")}
                         {s.account_number_masked ? ` · ••${s.account_number_masked}` : ""}
                         {s.is_primary ? " · Primary" : ""}
                       </p>

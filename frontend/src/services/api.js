@@ -157,6 +157,30 @@ export async function authGetMe() {
   }
 }
 
+/** Connected financial sources + dashboard scope */
+export async function getConnectedSources(userId) {
+  const { data } = await api.get(`/sources/connected?user_id=${userId}`, { timeout: 20000 });
+  return data;
+}
+
+export async function updateDashboardMode({ userId, mode, visibleSourceIds }) {
+  const body = new URLSearchParams();
+  body.append("user_id", String(userId));
+  body.append("mode", mode);
+  body.append("visible_source_ids", (visibleSourceIds || []).join(","));
+  const { data } = await api.post("/user/update-dashboard-mode", body, { timeout: 20000 });
+  return data;
+}
+
+export async function toggleSourceVisibility({ userId, sourceId, visible }) {
+  const body = new URLSearchParams();
+  body.append("user_id", String(userId));
+  body.append("source_id", String(sourceId));
+  body.append("visible", visible ? "true" : "false");
+  const { data } = await api.post("/sources/toggle-visibility", body, { timeout: 20000 });
+  return data;
+}
+
 /** Mock Account Aggregator — public bank list */
 export async function onboardingGetBanks() {
   try {

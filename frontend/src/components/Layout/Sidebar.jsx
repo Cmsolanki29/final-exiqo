@@ -14,7 +14,7 @@ import {
   Shield,
   ShoppingBag,
   Sparkles,
-  Upload,
+  Settings,
   X,
   Zap,
 } from "lucide-react";
@@ -45,10 +45,7 @@ const NAV_SECTIONS = [
   {
     id: "financial",
     label: "Financial OS",
-    items: [
-      { id: "emi", label: "EMI Tracker", icon: Activity },
-      { id: "settings", label: "Upload Statements", icon: Upload },
-    ],
+    items: [{ id: "emi", label: "EMI Tracker", icon: Activity }],
   },
   {
     id: "planning",
@@ -58,6 +55,11 @@ const NAV_SECTIONS = [
       { id: "purchase", label: "Purchase Planner", icon: ShoppingBag },
       { id: "family-events", label: "Trips & Events", icon: CalendarDays },
     ],
+  },
+  {
+    id: "system",
+    label: "Settings",
+    items: [{ id: "settings", label: "Connected accounts", icon: Settings }],
   },
 ];
 

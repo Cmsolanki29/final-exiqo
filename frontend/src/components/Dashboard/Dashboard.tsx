@@ -531,6 +531,27 @@ export default function Dashboard({
           {loadWarnings.join(" · ")}
         </div>
       ) : null}
+      {canLiveIntel && authUser?.dashboard_mode === "credit_card_only" ? (
+        <div
+          role="status"
+          className="mb-4 flex flex-col gap-3 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-50 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <p className="font-semibold text-amber-100">Card-only dashboard</p>
+            <p className="mt-0.5 text-amber-50/90">
+              Income and bank-only KPIs are hidden. Add a bank or switch to merged view in Settings → Connected
+              accounts.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab?.("settings")}
+            className="shrink-0 rounded-lg border border-amber-300/40 bg-amber-500/20 px-4 py-2 text-xs font-semibold text-amber-50 hover:bg-amber-500/30"
+          >
+            Open Settings
+          </button>
+        </div>
+      ) : null}
       <p className="mb-4 text-sm leading-relaxed text-white/60">
         <span className="font-semibold text-white">{greeting}, {displayName}</span>
         <span className="text-white/35"> · </span>

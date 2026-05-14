@@ -1,30 +1,62 @@
-import React from "react";
+import React, { useState } from "react";
 import { Lock, Settings } from "lucide-react";
 import { GlassCard } from "../intro/GlassCard";
 import UploadStatement from "../Upload/UploadStatement";
+import ConnectedAccountsSettings from "../Settings/ConnectedAccountsSettings";
 
 export default function SettingsTab({ onOpenAdmin, userId }) {
+  const [panel, setPanel] = useState("accounts"); // accounts | upload
+  const [uploadSourceType, setUploadSourceType] = useState("credit_card");
+
   return (
-    <div className="space-y-6 pb-10">
-      {/* Upload Statement */}
+    <div className="mx-auto max-w-3xl space-y-6 pb-10">
+      <div className="flex gap-2 rounded-xl border border-white/10 bg-white/[0.04] p-1">
+        <button
+          type="button"
+          onClick={() => setPanel("accounts")}
+          className={`flex-1 rounded-lg py-2.5 text-sm font-semibold transition ${
+            panel === "accounts" ? "bg-violet-600 text-white" : "text-white/50 hover:text-white/80"
+          }`}
+        >
+          Connected accounts
+        </button>
+        <button
+          type="button"
+          onClick={() => setPanel("upload")}
+          className={`flex-1 rounded-lg py-2.5 text-sm font-semibold transition ${
+            panel === "upload" ? "bg-violet-600 text-white" : "text-white/50 hover:text-white/80"
+          }`}
+        >
+          Uploads &amp; history
+        </button>
+      </div>
+
       {userId ? (
-        <UploadStatement userId={userId} />
+        panel === "accounts" ? (
+          <ConnectedAccountsSettings
+            userId={userId}
+            onGoUpload={(kind) => {
+              setUploadSourceType(kind || "credit_card");
+              setPanel("upload");
+            }}
+          />
+        ) : (
+          <UploadStatement userId={userId} initialSourceType={uploadSourceType} />
+        )
       ) : (
-        <GlassCard padding="lg" className="mx-auto max-w-lg border-dashed border-white/15">
-          <p className="text-sm text-white/50">Select a user to upload statements.</p>
+        <GlassCard padding="lg" className="border-dashed border-white/15">
+          <p className="text-sm text-white/50">Select a user to manage connected accounts.</p>
         </GlassCard>
       )}
 
-      {/* Admin / engine diagnostics */}
-      {typeof onOpenAdmin === "function" && (
-        <GlassCard padding="lg" className="mx-auto max-w-lg border-dashed border-white/15">
+      {typeof onOpenAdmin === "function" ? (
+        <GlassCard padding="lg" className="border-dashed border-white/15">
           <div className="flex items-start gap-3">
             <Settings className="mt-0.5 h-6 w-6 text-exiqo-glow shrink-0" aria-hidden />
             <div className="min-w-0 flex-1">
-              <h2 className="font-heading text-lg font-semibold text-white">Engine Diagnostics</h2>
+              <h2 className="font-heading text-lg font-semibold text-white">Engine diagnostics</h2>
               <p className="mt-2 text-sm text-exiqo-glow/70">
-                ML ops consoles (AI performance, GNN, DNN shadow, orchestrator) are not listed in the workspace
-                sidebar. Unlock with your admin passphrase.
+                ML ops consoles are not listed in the workspace sidebar. Unlock with your admin passphrase.
               </p>
               <button
                 type="button"
@@ -37,7 +69,7 @@ export default function SettingsTab({ onOpenAdmin, userId }) {
             </div>
           </div>
         </GlassCard>
-      )}
+      ) : null}
     </div>
   );
 }

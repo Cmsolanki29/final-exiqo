@@ -2,14 +2,15 @@
 Document upload & connected-sources API.
 
 Endpoints:
-  POST /documents/upload       — upload PDF/CSV/XLSX, extract transactions
-  GET  /documents/history      — list past uploads for a user
-  GET  /sources/connected      — list connected_sources for a user
-  POST /sources/connected      — add a connected source manually
+  POST /documents/upload           — upload PDF/CSV/XLSX, extract transactions
+  GET  /documents/history          — list past uploads for a user
+  GET  /sources/connected           — list connected_sources for a user
+  POST /sources/connected         — add a connected source manually
+  POST /sources/toggle-visibility  — show/hide a source on the dashboard
+  POST /user/update-dashboard-mode — set bank_only | credit_card_only | merged
 """
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -31,14 +32,20 @@ _MAX_FILE_MB = 20
 async def upload_statement(
     file: UploadFile = File(...),
     user_id: int = Form(...),
-    source_type: str = Form(...),          # 'bank' | 'credit_card' | 'upi' | 'other'
+    source_type: str = Form(...),
     institution_name: str = Form(...),
     account_number_masked: Optional[str] = Form(None),
     conn=Depends(get_db),
 ):
     """Upload bank/credit-card statement PDF or CSV and extract transactions."""
 
-    # --- validate file type
+    raw = (source_type or "").strip().lower()
+    syn = {"bank_statement": "bank_statement_pdf", "bank_stmt": "bank_statement_pdf", "statement": "bank_statement_pdf"}
+    raw = syn.get(raw, raw)
+    allowed = {"bank", "credit_card", "upi", "other", "bank_statement_pdf"}
+    if raw not in allowed:
+        raise HTTPException(status_code=400, detail="Invalid source_type")
+
     ext = (file.filename or "").rsplit(".", 1)[-1].lower()
     if ext not in _ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -48,21 +55,18 @@ async def upload_statement(
 
     file_bytes = await file.read()
 
-    # --- guard file size
     size_kb = len(file_bytes) // 1024
     if size_kb > _MAX_FILE_MB * 1024:
         raise HTTPException(status_code=413, detail=f"File too large (max {_MAX_FILE_MB} MB).")
 
-    # --- upsert connected_source
     source_id = _upsert_source(
         conn,
         user_id=user_id,
-        source_type=source_type,
-        institution_name=institution_name,
+        source_type=raw,
+        institution_name=institution_name.strip()[:100],
         account_number_masked=account_number_masked,
     )
 
-    # --- create uploaded_documents record
     doc_id = _create_document_record(
         conn,
         user_id=user_id,
@@ -73,7 +77,6 @@ async def upload_statement(
     )
     conn.commit()
 
-    # --- run AI extraction (parser handles its own commits)
     result = _parser.extract_transactions(
         file_bytes=file_bytes,
         filename=file.filename or "upload",
@@ -139,6 +142,8 @@ def get_connected_sources(user_id: int = Query(...), conn=Depends(get_db)):
               cs.is_primary,
               cs.status,
               cs.connected_at,
+              cs.is_visible_on_dashboard,
+              cs.added_via,
               COUNT(DISTINCT ud.id)    AS uploads_count,
               COUNT(DISTINCT t.id)     AS transactions_count,
               MAX(ud.uploaded_at)      AS last_upload
@@ -164,7 +169,7 @@ def get_connected_sources(user_id: int = Query(...), conn=Depends(get_db)):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# POST /sources/connected  (manual add without upload)
+# POST /sources/connected
 # ──────────────────────────────────────────────────────────────────────────────
 @router.post("/sources/connected")
 def add_connected_source(
@@ -179,12 +184,98 @@ def add_connected_source(
         conn,
         user_id=user_id,
         source_type=source_type,
-        institution_name=institution_name,
+        institution_name=institution_name.strip()[:100],
         account_number_masked=account_number_masked,
         is_primary=is_primary,
     )
     conn.commit()
     return {"success": True, "source_id": source_id}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# POST /sources/toggle-visibility
+# ──────────────────────────────────────────────────────────────────────────────
+@router.post("/sources/toggle-visibility")
+def toggle_source_visibility(
+    user_id: int = Form(...),
+    source_id: int = Form(...),
+    visible: bool = Form(...),
+    conn=Depends(get_db),
+):
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE connected_sources
+            SET is_visible_on_dashboard = %s
+            WHERE id = %s AND user_id = %s
+            RETURNING id
+            """,
+            (visible, source_id, user_id),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Source not found")
+    conn.commit()
+    return {"success": True, "source_id": source_id, "is_visible_on_dashboard": visible}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# POST /user/update-dashboard-mode
+# ──────────────────────────────────────────────────────────────────────────────
+@router.post("/user/update-dashboard-mode")
+def update_dashboard_mode(
+    user_id: int = Form(...),
+    mode: str = Form(...),
+    visible_source_ids: str = Form(""),  # comma-separated, empty = all active sources visible
+    conn=Depends(get_db),
+):
+    raw = (mode or "").strip().lower()
+    if raw not in ("bank_only", "credit_card_only", "merged"):
+        raise HTTPException(status_code=400, detail="Invalid dashboard mode")
+    mode_n = raw
+
+    ids: list[int] = []
+    for part in (visible_source_ids or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            ids.append(int(part))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="visible_source_ids must be comma-separated integers") from exc
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE users SET dashboard_mode = %s WHERE id = %s RETURNING id",
+            (mode_n, user_id),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if ids:
+            cur.execute(
+                "UPDATE connected_sources SET is_visible_on_dashboard = FALSE WHERE user_id = %s",
+                (user_id,),
+            )
+            cur.execute(
+                """
+                UPDATE connected_sources
+                SET is_visible_on_dashboard = TRUE
+                WHERE user_id = %s AND id = ANY(%s::int[])
+                """,
+                (user_id, ids),
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE connected_sources
+                SET is_visible_on_dashboard = TRUE
+                WHERE user_id = %s AND status = 'active'
+                """,
+                (user_id,),
+            )
+
+    conn.commit()
+    return {"success": True, "mode": mode_n, "visible_source_ids": ids}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -204,9 +295,10 @@ def _upsert_source(
         cur.execute(
             """
             INSERT INTO connected_sources
-              (user_id, source_type, institution_name, account_number_masked, is_primary)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (user_id, LOWER(institution_name)) DO UPDATE
+              (user_id, source_type, institution_name, account_number_masked, is_primary,
+               is_visible_on_dashboard, added_via, status)
+            VALUES (%s, %s, %s, %s, %s, TRUE, 'settings_upload', 'active')
+            ON CONFLICT ON CONSTRAINT connected_sources_user_inst_type_key DO UPDATE
               SET account_number_masked = COALESCE(EXCLUDED.account_number_masked, connected_sources.account_number_masked),
                   status = 'active'
             RETURNING id

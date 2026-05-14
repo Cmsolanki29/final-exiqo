@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from db import get_db
 from models.schemas import TransactionResponse
+from services.dashboard_scope import fetch_dashboard_mode, transaction_scope_sql
 from services.ml_model import ml_detector
 from services.categorizer import categorize_merchant
 
@@ -86,8 +87,10 @@ def transaction_month_summary(
     cur = None
     try:
         cur = conn.cursor()
+        mode = fetch_dashboard_mode(cur, user_id)
+        scope = transaction_scope_sql("transactions", mode)
         cur.execute(
-            """
+            f"""
             SELECT
                 COALESCE(SUM(CASE WHEN type = 'CREDIT' THEN amount ELSE 0 END), 0)::float,
                 COALESCE(SUM(CASE WHEN type = 'DEBIT' THEN amount ELSE 0 END), 0)::float,
@@ -96,7 +99,8 @@ def transaction_month_summary(
             FROM transactions
             WHERE user_id = %s
               AND EXTRACT(MONTH FROM transaction_date)::int = %s
-              AND EXTRACT(YEAR FROM transaction_date)::int = %s;
+              AND EXTRACT(YEAR FROM transaction_date)::int = %s
+              AND ({scope});
             """,
             (user_id, m, y),
         )
@@ -154,10 +158,12 @@ def list_transactions(
     cur = None
     try:
         cur = conn.cursor()
-        q = """
+        mode = fetch_dashboard_mode(cur, user_id)
+        scope = transaction_scope_sql("transactions", mode)
+        q = f"""
             SELECT id, user_id, transaction_date, transaction_time, amount, type, description,
                    merchant, category, payment_method, anomaly_flag, risk_score, risk_level, anomaly_reason
-            FROM transactions WHERE user_id = %s
+            FROM transactions WHERE user_id = %s AND ({scope})
         """
         params: list = [user_id]
         if month is not None and year is not None:
