@@ -58,6 +58,7 @@ from routes import (
     anomaly,
     auth,
     dark_patterns,
+    documents,
     emi_affordability_check,
     emi_detector,
     festival_important_days,
@@ -248,6 +249,7 @@ app.include_router(festival_predictor.router, prefix="/api")
 app.include_router(purchase_planner.router, prefix="/api")
 app.include_router(financial_state.router, prefix="/api")
 app.include_router(pattern_alerts.router, prefix="/api")
+app.include_router(documents.router, prefix="/api")
 
 # ── Phase 1-8 routers ──────────────────────────────────────────────────────
 if _RISK_ENGINE_OK:

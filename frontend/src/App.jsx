@@ -287,7 +287,7 @@ const App = () => {
                 )}
                 {activeTab === "settings" && (
                   <Suspense fallback={<SkeletonCard lines={2} height={72} />}>
-                    <SettingsTab onOpenAdmin={() => setActiveTab("admin")} />
+                    <SettingsTab onOpenAdmin={() => setActiveTab("admin")} userId={selectedUserId} />
                   </Suspense>
                 )}
                 {activeTab === "admin" && (
