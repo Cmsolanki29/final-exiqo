@@ -18,6 +18,7 @@ from models.auth_schemas import (
     UserSignIn,
     UserSignUp,
 )
+from services.dashboard_scope import normalize_dashboard_mode
 from utils.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     check_login_rate_limit,
@@ -292,7 +293,7 @@ def get_me(user_id: int = Depends(get_current_user_id), conn: PgConnection = Dep
             onboarding_completed=bool(row[4]),
             created_at=row[5],
             bank=row[6],
-            dashboard_mode=str(row[7] or "merged"),
+            dashboard_mode=normalize_dashboard_mode(str(row[7] or "merged")),
         )
     finally:
         cur.close()

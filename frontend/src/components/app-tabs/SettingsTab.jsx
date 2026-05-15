@@ -1,16 +1,29 @@
 import React, { useState } from "react";
-import { Lock, Settings } from "lucide-react";
+import { ArrowLeft, Lock, Settings } from "lucide-react";
 import { GlassCard } from "../intro/GlassCard";
 import UploadStatement from "../Upload/UploadStatement";
 import ConnectedAccountsSettings from "../Settings/ConnectedAccountsSettings";
 
-export default function SettingsTab({ onOpenAdmin, userId }) {
+export default function SettingsTab({ onOpenAdmin, userId, onLeave }) {
   const [panel, setPanel] = useState("accounts"); // accounts | upload
   const [uploadSourceType, setUploadSourceType] = useState("credit_card");
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 pb-10">
-      <div className="flex gap-2 rounded-xl border border-white/10 bg-white/[0.04] p-1">
+      {typeof onLeave === "function" ? (
+        <div className="flex items-center gap-2 border-b border-white/10 pb-3 md:hidden">
+          <button
+            type="button"
+            onClick={() => onLeave()}
+            className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/[0.06] px-3 py-2 text-sm font-semibold text-white/90 hover:bg-white/[0.1]"
+          >
+            <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
+            Back to dashboard
+          </button>
+        </div>
+      ) : null}
+
+      <div className="flex max-md:flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.04] p-1">
         <button
           type="button"
           onClick={() => setPanel("accounts")}

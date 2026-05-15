@@ -8,6 +8,34 @@ function iconForType(t) {
   return Landmark;
 }
 
+/** Map API / DB dashboard_mode string to radio id used in this screen. */
+function mapDashboardModeString(raw) {
+  const s = String(raw || "merged").trim().toLowerCase();
+  const map = {
+    card_only: "credit_card_only",
+    cards_only: "credit_card_only",
+    cc_only: "credit_card_only",
+    bank: "bank_only",
+    merged_view: "merged",
+    both: "merged",
+  };
+  return (
+    map[s] ||
+    (s.includes("card") ? "credit_card_only" : s.includes("bank") ? "bank_only" : s) ||
+    "merged"
+  );
+}
+
+function normalizeModeId(id) {
+  const map = {
+    card_only: "credit_card_only",
+    bank_only: "bank_only",
+    credit_card_only: "credit_card_only",
+    merged: "merged",
+  };
+  return map[id] || id;
+}
+
 export default function ConnectedAccountsSettings({ userId, onGoUpload }) {
   const { reloadUser, user } = useAuth();
   const [sources, setSources] = useState([]);
@@ -15,6 +43,7 @@ export default function ConnectedAccountsSettings({ userId, onGoUpload }) {
   const [err, setErr] = useState("");
   const [mode, setMode] = useState("merged");
   const [savingMode, setSavingMode] = useState(false);
+  const [saveOk, setSaveOk] = useState(false);
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -23,6 +52,9 @@ export default function ConnectedAccountsSettings({ userId, onGoUpload }) {
     try {
       const data = await getConnectedSources(userId);
       setSources(data.sources || []);
+      if (data.dashboard_mode != null && String(data.dashboard_mode).trim() !== "") {
+        setMode(normalizeModeId(mapDashboardModeString(data.dashboard_mode)));
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not load accounts");
     } finally {
@@ -34,16 +66,26 @@ export default function ConnectedAccountsSettings({ userId, onGoUpload }) {
     load();
   }, [load]);
 
+  /* JWT /auth/me only describes the logged-in user. Workspace `userId` can be another demo user — do not overwrite mode from the wrong profile. */
   useEffect(() => {
-    if (user?.dashboard_mode) setMode(user.dashboard_mode);
-  }, [user?.dashboard_mode]);
+    if (userId == null || user?.id == null || Number(userId) !== Number(user.id)) return;
+    const m = user?.dashboard_mode;
+    if (!m) return;
+    setMode(normalizeModeId(mapDashboardModeString(m)));
+  }, [user?.dashboard_mode, user?.id, userId]);
 
   const onToggleVisible = async (sourceId, next) => {
+    const snapshot = sources.map((s) => ({ ...s }));
+    setSources((rows) =>
+      rows.map((s) => (s.id === sourceId ? { ...s, is_visible_on_dashboard: next } : s))
+    );
+    setErr("");
     try {
       await toggleSourceVisibility({ userId, sourceId, visible: next });
       await load();
       await reloadUser();
     } catch (e) {
+      setSources(snapshot);
       setErr(e instanceof Error ? e.message : "Update failed");
     }
   };
@@ -51,20 +93,28 @@ export default function ConnectedAccountsSettings({ userId, onGoUpload }) {
   const applyMode = async () => {
     setSavingMode(true);
     setErr("");
+    setSaveOk(false);
     try {
       const visibleIds = sources.filter((s) => s.is_visible_on_dashboard).map((s) => s.id);
-      await updateDashboardMode({ userId, mode, visibleSourceIds: visibleIds });
+      const resp = await updateDashboardMode({ userId, mode, visibleSourceIds: visibleIds });
+      const savedMode = resp?.mode ? normalizeModeId(mapDashboardModeString(resp.mode)) : mode;
+      if (resp?.mode) setMode(savedMode);
       await reloadUser();
       await load();
+      setSaveOk(true);
+      window.setTimeout(() => setSaveOk(false), 3200);
+      // Notify Dashboard + TransactionTable to re-fetch with the new mode
+      try {
+        window.dispatchEvent(new CustomEvent("dashboardModeChanged", { detail: { mode: savedMode } }));
+      } catch {
+        /* ignore */
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not save dashboard mode");
     } finally {
       setSavingMode(false);
     }
   };
-
-  const bankCount = sources.filter((s) => s.source_type === "bank" || s.source_type === "bank_statement_pdf").length;
-  const cardCount = sources.filter((s) => s.source_type === "credit_card").length;
 
   return (
     <div className="rounded-2xl border border-white/10 bg-[#0c1022]/90 p-5 md:p-6">
@@ -97,6 +147,11 @@ export default function ConnectedAccountsSettings({ userId, onGoUpload }) {
 
       {err ? (
         <p className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{err}</p>
+      ) : null}
+      {saveOk ? (
+        <p className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+          Dashboard view saved. Open Dashboard to see bank-only / card-only / merged data.
+        </p>
       ) : null}
 
       {loading ? (
@@ -150,10 +205,10 @@ export default function ConnectedAccountsSettings({ userId, onGoUpload }) {
         </ul>
       )}
 
-      {(bankCount >= 1 && cardCount >= 1) || sources.length >= 2 ? (
+      {!loading && sources.length > 0 ? (
         <div className="mt-8 border-t border-white/10 pt-6">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-white/50">Dashboard view</h3>
-          <p className="mt-1 text-xs text-white/40">Currently: {mode.replace(/_/g, " ")}</p>
+          <p className="mt-1 text-xs text-white/40">Currently: {String(mode || "merged").replace(/_/g, " ")}</p>
           <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             {[
               { id: "bank_only", label: "Bank only" },
@@ -173,7 +228,7 @@ export default function ConnectedAccountsSettings({ userId, onGoUpload }) {
                   name="dash-mode"
                   className="accent-violet-500"
                   checked={mode === o.id}
-                  onChange={() => setMode(o.id)}
+                  onChange={() => setMode(normalizeModeId(o.id))}
                 />
                 {o.label}
               </label>

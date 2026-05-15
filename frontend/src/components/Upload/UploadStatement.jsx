@@ -73,15 +73,24 @@ export default function UploadStatement({ userId, initialSourceType }) {
 
     try {
       const res = await fetch(`${API}/documents/upload`, { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Upload failed");
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error("Server returned a non-JSON response. Is the API running on the proxy port?");
+      }
+      if (!res.ok) throw new Error(data.detail || data.message || "Upload failed");
+      if (data && data.success === false) {
+        const msg = data.error || data.detail || "Upload saved but extraction failed.";
+        throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+      }
       setResult(data);
       setFile(null);
       if (fileRef.current) fileRef.current.value = "";
       loadHistory();
       loadSources();
     } catch (e) {
-      setError(e.message);
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setUploading(false);
     }
@@ -98,6 +107,7 @@ export default function UploadStatement({ userId, initialSourceType }) {
         ].map((t) => (
           <button
             key={t.id}
+            type="button"
             onClick={() => setTab(t.id)}
             className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
               tab === t.id
@@ -122,6 +132,7 @@ export default function UploadStatement({ userId, initialSourceType }) {
               {SOURCE_TYPES.map((s) => (
                 <button
                   key={s.id}
+                  type="button"
                   onClick={() => setSourceType(s.id)}
                   className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition ${
                     sourceType === s.id
@@ -195,6 +206,7 @@ export default function UploadStatement({ userId, initialSourceType }) {
 
           {/* Upload button */}
           <button
+            type="button"
             onClick={handleUpload}
             disabled={uploading || !file || !bankName.trim()}
             className="w-full rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 py-3 text-sm font-bold text-white transition hover:from-violet-700 hover:to-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
@@ -211,8 +223,13 @@ export default function UploadStatement({ userId, initialSourceType }) {
               "Upload & Extract Transactions"
             )}
           </button>
-
-          {/* Error */}
+          {!file || !bankName.trim() ? (
+            <p className="text-center text-xs text-white/35">
+              {!bankName.trim()
+                ? "Enter a card or bank name, then choose a PDF/CSV file to enable upload."
+                : "Choose a file (PDF, CSV, or Excel) to enable upload — max 20 MB."}
+            </p>
+          ) : null}
           {error && (
             <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
               ✗ {error}

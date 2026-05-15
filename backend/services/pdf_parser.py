@@ -93,7 +93,7 @@ class PDFParserAgent:
                 cur.execute(
                     """
                     INSERT INTO transactions
-                      (user_id, amount, type, category, merchant_name,
+                      (user_id, amount, type, category, merchant,
                        transaction_date, description,
                        uploaded_document_id, connected_source_id, data_origin)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'pdf_upload')
@@ -155,7 +155,7 @@ class PDFParserAgent:
                 SELECT COUNT(*) FROM transactions
                 WHERE user_id = %s
                   AND transaction_date::date = %s
-                  AND LOWER(merchant_name) = LOWER(%s)
+                  AND LOWER(merchant) = LOWER(%s)
                   AND ABS(amount - %s) < 5
                 """,
                 (user_id, date, merchant, amount),

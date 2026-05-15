@@ -47,6 +47,134 @@ import LiveInsightsFeed, { type FeedItem } from "./LiveInsightsFeed";
 
 const monthKey = (y: number, m: number) => `${y}-${String(m).padStart(2, "0")}`;
 
+// ── Source Breakdown Card ─────────────────────────────────────────────────────
+
+type BreakdownSource = { type: string; name: string; spend: number };
+type BreakdownData = {
+  mode: string;
+  sources: BreakdownSource[];
+  total_spend: number;
+  has_duplicates: boolean;
+};
+
+async function runDeduplication(userId: number): Promise<void> {
+  try {
+    const res = await fetch(`/api/dashboard/deduplicate?user_id=${userId}`, { method: "POST" });
+    const data = await res.json();
+    if (data.success) {
+      window.alert(`✅ Fixed ${data.marked_as_internal} duplicate transaction(s)`);
+      window.dispatchEvent(new CustomEvent("dashboardModeChanged"));
+    }
+  } catch {
+    window.alert("Deduplication failed. Please try again.");
+  }
+}
+
+function SourceBreakdownCard({ userId }: { userId: number }) {
+  const [breakdown, setBreakdown] = useState<BreakdownData | null>(null);
+  const [loadingBd, setLoadingBd] = useState(true);
+
+  const fetchBreakdown = useCallback(async () => {
+    setLoadingBd(true);
+    try {
+      const res = await fetch(`/api/dashboard/source-breakdown?user_id=${userId}`);
+      if (!res.ok) return;
+      const data: BreakdownData = await res.json();
+      setBreakdown(data);
+    } catch {
+      /* non-critical — silently ignore */
+    } finally {
+      setLoadingBd(false);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    fetchBreakdown();
+    const handler = () => fetchBreakdown();
+    window.addEventListener("dashboardModeChanged", handler);
+    return () => window.removeEventListener("dashboardModeChanged", handler);
+  }, [fetchBreakdown]);
+
+  if (loadingBd || !breakdown || breakdown.sources.length === 0) return null;
+
+  const { sources, total_spend, has_duplicates } = breakdown;
+  const fmt = (n: number) =>
+    new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+
+  return (
+    <div className="mt-4 rounded-2xl border border-white/[0.08] bg-[#0c1022]/80 p-5">
+      <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-white/50">
+        📊 Spending Breakdown
+      </h3>
+
+      {sources.length === 1 ? (
+        /* Single source — simple summary */
+        <div className="flex items-end gap-4">
+          <div>
+            <p className="font-heading text-3xl font-bold text-white">{fmt(sources[0].spend)}</p>
+            <p className="mt-1 text-sm text-white/45">
+              {sources[0].type === "credit_card" ? "💳" : "🏦"} {sources[0].name} — this month
+            </p>
+          </div>
+        </div>
+      ) : (
+        /* Multi source — bar breakdown */
+        <div className="space-y-3">
+          {sources.map((src) => {
+            const pct = total_spend > 0 ? Math.round((src.spend / total_spend) * 100) : 0;
+            const isCard = src.type === "credit_card";
+            return (
+              <div key={src.type} className="grid items-center gap-3" style={{ gridTemplateColumns: "140px 1fr 90px" }}>
+                <div className="flex items-center gap-2 text-sm text-white/70">
+                  <span
+                    className={`grid h-6 w-6 shrink-0 place-items-center rounded-md text-sm ${
+                      isCard ? "bg-violet-500/20" : "bg-cyan-500/20"
+                    }`}
+                  >
+                    {isCard ? "💳" : "🏦"}
+                  </span>
+                  <span className="truncate">{src.name}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      isCard
+                        ? "bg-gradient-to-r from-violet-500 to-purple-600"
+                        : "bg-gradient-to-r from-cyan-500 to-sky-600"
+                    }`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <p className="text-right font-heading text-sm font-semibold tabular-nums text-white">
+                  {fmt(src.spend)}
+                </p>
+              </div>
+            );
+          })}
+
+          <div className="mt-2 flex items-center justify-between border-t border-white/[0.06] pt-3">
+            <span className="text-sm font-semibold text-white/60">Combined total</span>
+            <span className="font-heading text-base font-bold text-emerald-300">{fmt(total_spend)}</span>
+          </div>
+        </div>
+      )}
+
+      {has_duplicates && (
+        <div className="mt-4 flex flex-col gap-2 rounded-xl border border-rose-500/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-200 sm:flex-row sm:items-center sm:justify-between">
+          <span>⚠️ Possible CC bill payment double-count detected.</span>
+          <button
+            type="button"
+            onClick={() => void runDeduplication(userId)}
+            className="shrink-0 rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-600"
+          >
+            Fix duplicates
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return "Recently";
   const t = new Date(iso).getTime();
@@ -602,6 +730,7 @@ export default function Dashboard({
               />
             </div>
           </div>
+          <SourceBreakdownCard userId={userId} />
         </div>
 
         <div className="relative space-y-4 xl:col-span-5">

@@ -193,7 +193,9 @@ const Sidebar = ({ collapsed, onToggle, activeTab, onTabChange, onLogout, fraudB
       </motion.aside>
 
       <nav
-        className="fixed bottom-0 left-0 right-0 z-50 flex items-stretch justify-around border-t border-white/10 bg-[#070418]/95 px-1 pt-1 backdrop-blur-2xl md:hidden pb-[max(0.5rem,env(safe-area-inset-bottom))]"
+        className={`fixed bottom-0 left-0 right-0 z-50 flex items-stretch justify-around border-t border-white/10 bg-[#070418]/95 px-1 pt-1 backdrop-blur-2xl md:hidden pb-[max(0.5rem,env(safe-area-inset-bottom))] ${
+          activeTab === "settings" ? "max-md:hidden" : ""
+        }`}
         aria-label="Primary"
       >
         {MOBILE_SHORTCUTS.map((id) => {
