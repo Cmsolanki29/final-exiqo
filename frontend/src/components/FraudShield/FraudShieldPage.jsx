@@ -107,7 +107,7 @@ function PhaseShowcase() {
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-violet-300/80">12-Phase AI protection stack</p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-white md:text-3xl">FraudShield control room</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-exiqo-glow/70">
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-gray-300">
             Twelve independent layers score, explain, and escalate risk before money moves. One surface — the same bar as
             enterprise fraud stacks, tuned for clarity.
           </p>
@@ -169,7 +169,7 @@ function StatStrip({ safetyScore, blocked, saved, loading, error, onRetry }) {
       body: (
         <div className="mt-1 flex flex-wrap items-center gap-4">
           <TrustRing score={safetyAnim} max={100} size={100} stroke={7} label="Score" />
-          <p className="max-w-[10rem] text-xs leading-relaxed text-exiqo-glow/60">
+          <p className="max-w-[10rem] text-xs leading-relaxed text-gray-400">
             Blended model + rules confidence on your last 30 days of activity.
           </p>
         </div>
@@ -183,7 +183,7 @@ function StatStrip({ safetyScore, blocked, saved, loading, error, onRetry }) {
         <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
           <p className="text-3xl font-bold tabular-nums tracking-tight text-white">{Math.round(blockedAnim)}</p>
           <MiniSparkline seed={blocked} className="opacity-90" />
-          <p className="w-full text-xs text-exiqo-glow/60">This month · FraudShield + bank rules</p>
+          <p className="w-full text-xs text-gray-400">This month · FraudShield + bank rules</p>
         </div>
       ),
     },
@@ -202,7 +202,7 @@ function StatStrip({ safetyScore, blocked, saved, loading, error, onRetry }) {
               Trend
             </span>
           </div>
-          <p className="mt-1 text-xs text-exiqo-glow/60">Disputes + prevented loss (rolling)</p>
+          <p className="mt-1 text-xs text-gray-400">Disputes + prevented loss (rolling)</p>
         </div>
       ),
     },
@@ -329,7 +329,7 @@ const FraudShieldPage = ({ userId, userName }) => {
               className={`inline-flex min-h-[44px] items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50 ${
                 active
                   ? "bg-gradient-to-r from-violet-600 to-blue-600 text-white shadow-[0_0_28px_-8px_rgba(124,58,237,0.55)]"
-                  : "text-exiqo-glow/75 hover:bg-white/[0.06] hover:text-white"
+                  : "text-gray-400 hover:bg-white/[0.06] hover:text-white"
               }`}
             >
               <I className="h-4 w-4 shrink-0 opacity-90" aria-hidden />
@@ -371,7 +371,7 @@ const FraudShieldPage = ({ userId, userName }) => {
                 <FraudEducationSwipe />
                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
                   <h3 className="text-sm font-bold text-white">Your protection stats</h3>
-                  <p className="mb-3 text-xs text-exiqo-glow/65">Detailed breakdown from FraudShield analytics.</p>
+                  <p className="mb-3 text-xs text-gray-400">Detailed breakdown from FraudShield analytics.</p>
                   <FraudStats userId={userId} />
                 </div>
               </div>
@@ -380,14 +380,14 @@ const FraudShieldPage = ({ userId, userName }) => {
                 <button
                   type="button"
                   onClick={() => setDiagOpen((o) => !o)}
-                  className="flex w-full items-center justify-between text-left text-sm font-semibold text-exiqo-glow/80 hover:text-white"
+                  className="flex w-full items-center justify-between text-left text-sm font-semibold text-gray-300 hover:text-white"
                 >
                   <span>Engine diagnostics (ops / demo)</span>
-                  <span className="text-xs text-exiqo-glow/50">{diagOpen ? "Hide" : "Show"}</span>
+                  <span className="text-xs text-gray-500">{diagOpen ? "Hide" : "Show"}</span>
                 </button>
                 {diagOpen ? (
                   <div className="mt-4 space-y-6 border-t border-white/10 pt-4">
-                    <p className="text-xs text-exiqo-glow/60">
+                    <p className="text-xs text-gray-400">
                       Internal ML consoles — previously separate sidebar items. Not required for day-to-day banking.
                     </p>
                     <Suspense fallback={tabFallback}>
@@ -411,7 +411,7 @@ const FraudShieldPage = ({ userId, userName }) => {
           {tab === "alerts" && (
             <div className="space-y-4">
               <h2 className="text-lg font-bold text-white">Alerts & review queue</h2>
-              <p className="text-sm text-exiqo-glow/65">
+              <p className="text-sm text-gray-400">
                 Phase 8 review queue with Phase 9 investigation hooks — same backend, unified surface.
               </p>
               <Suspense fallback={tabFallback}>
@@ -427,7 +427,7 @@ const FraudShieldPage = ({ userId, userName }) => {
           {tab === "behavior" && (
             <div className="space-y-4">
               <h2 className="text-lg font-bold text-white">Behaviour profile</h2>
-              <p className="text-sm text-exiqo-glow/65">Login cadence, geo signals, and anomaly list — ported from the old Behaviour Profile page.</p>
+              <p className="text-sm text-gray-400">Login cadence, geo signals, and anomaly list — ported from the old Behaviour Profile page.</p>
               <Suspense fallback={tabFallback}>
                 <BehaviorProfile userId={userId} onNavigate={onLegacyNav} embedded />
               </Suspense>
@@ -446,7 +446,7 @@ const FraudShieldPage = ({ userId, userName }) => {
             <div className="space-y-4">
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
                 <h2 className="text-lg font-bold text-white">AI investigations</h2>
-                <p className="mt-2 max-w-3xl text-sm leading-relaxed text-exiqo-glow/75">
+                <p className="mt-2 max-w-3xl text-sm leading-relaxed text-gray-300">
                   Our AI investigator (Phase 9) analyses every high-risk transaction the way a fraud analyst would — merchant
                   velocity, your spend curve, graph signals, and similar past frauds. Use <strong className="text-white">Run investigation</strong>{" "}
                   below to watch a live-style trace, then review real queue items.
@@ -462,7 +462,7 @@ const FraudShieldPage = ({ userId, userName }) => {
           {tab === "live" && (
             <div className="space-y-4">
               <h2 className="text-lg font-bold text-white">Live events</h2>
-              <p className="text-sm text-exiqo-glow/65">Stream of scored events — demo ticker until WebSocket feed lands.</p>
+              <p className="text-sm text-gray-400">Stream of scored events — demo ticker until WebSocket feed lands.</p>
               <FraudShieldLiveEventsTab userId={userId} />
             </div>
           )}
@@ -470,7 +470,7 @@ const FraudShieldPage = ({ userId, userName }) => {
       </AnimatePresence>
 
       {analyze?.summary ? (
-        <p className="text-center text-[11px] text-exiqo-glow/40">Analysis hint: {String(analyze.summary).slice(0, 160)}…</p>
+        <p className="text-center text-[11px] text-gray-600">Analysis hint: {String(analyze.summary).slice(0, 160)}…</p>
       ) : null}
     </div>
   );

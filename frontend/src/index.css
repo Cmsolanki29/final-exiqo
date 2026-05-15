@@ -2509,3 +2509,31 @@ button:disabled {
   }
 }
 
+/* ─── cmdk command palette overrides ──────────────────────────────────────── */
+[cmdk-root] {
+  display: flex;
+  flex-direction: column;
+}
+[cmdk-input] {
+  background: transparent;
+  border: none;
+  outline: none;
+  width: 100%;
+  font-size: 15px;
+  color: white;
+}
+[cmdk-input]::placeholder { color: #64748b; }
+[cmdk-list] {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* Items rendered via our custom PaletteItem component use data-selected from cmdk */
+[cmdk-item][aria-selected="true"],
+[cmdk-item][data-selected="true"] {
+  background: linear-gradient(90deg, rgba(139,92,246,0.20) 0%, rgba(139,92,246,0.05) 100%);
+  color: white;
+}
+/* Remove any default styling cmdk might add */
+[cmdk-separator] { display: none; }
+[cmdk-group-heading] { display: none; } /* We render our own headings */
+

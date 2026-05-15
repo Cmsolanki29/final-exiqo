@@ -71,9 +71,9 @@ export default function SubscriptionConnect({ ownerId, onComplete }) {
           </p>
 
           <h1 className="font-heading text-3xl font-bold text-white sm:text-4xl">Unlock 10× smarter detection</h1>
-          <h2 className="mt-2 font-heading text-xl font-semibold text-exiqo-glow/90 sm:text-2xl">Link your subscriptions.</h2>
+          <h2 className="mt-2 font-heading text-xl font-semibold text-gray-300 sm:text-2xl">Link your subscriptions.</h2>
 
-          <p className="mx-auto mt-5 max-w-xl text-sm leading-relaxed text-exiqo-glow/75 sm:text-base">
+          <p className="mx-auto mt-5 max-w-xl text-sm leading-relaxed text-gray-400 sm:text-base">
             We infer subscription value from usage minutes, sessions, and peaks — tuned for your wallet. Connect the apps
             you use so the AI Analysis Engine and Smart Reminder Engine can go to work.
           </p>
@@ -91,15 +91,15 @@ export default function SubscriptionConnect({ ownerId, onComplete }) {
           <div className="mt-10 grid gap-4 text-left sm:grid-cols-3 sm:text-center">
             <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
               <p className="text-xs font-semibold text-cyan-300">AI analysis</p>
-              <p className="mt-1 text-xs text-exiqo-glow/60">Verdicts, migrations, savings signals</p>
+              <p className="mt-1 text-xs text-gray-400">Verdicts, migrations, savings signals</p>
             </div>
             <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
               <p className="text-xs font-semibold text-violet-300">Smart reminders</p>
-              <p className="mt-1 text-xs text-exiqo-glow/60">Renewals, snooze with accountability</p>
+              <p className="mt-1 text-xs text-gray-400">Renewals, snooze with accountability</p>
             </div>
             <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
               <p className="text-xs font-semibold text-amber-300">Waste detection</p>
-              <p className="mt-1 text-xs text-exiqo-glow/60">Dormant subs & value leakage</p>
+              <p className="mt-1 text-xs text-gray-400">Dormant subs & value leakage</p>
             </div>
           </div>
         </div>

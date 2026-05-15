@@ -58,9 +58,9 @@ export default function FraudEducationSwipe() {
     <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 shadow-[0_0_40px_-20px_rgba(124,58,237,0.35)] backdrop-blur-xl sm:p-6">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-300/80">Fraud education</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">Fraud education</p>
           <h3 className="mt-1 text-lg font-bold tracking-tight text-white">Swipe through 4 red flags</h3>
-          <p className="mt-1 max-w-xl text-xs text-exiqo-glow/65">Built for India — KYC, lottery, collect, and ₹1 verification patterns.</p>
+          <p className="mt-1 max-w-xl text-xs text-gray-400">Built for India — KYC, lottery, collect, and ₹1 verification patterns.</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -98,8 +98,8 @@ export default function FraudEducationSwipe() {
               </div>
               <div className="min-w-0 flex-1">
                 <h4 className="text-xl font-bold tracking-tight text-white">{card.title}</h4>
-                <p className="mt-0.5 text-sm font-medium text-exiqo-glow/70">{card.subtitle}</p>
-                <p className="mt-3 text-sm leading-relaxed text-exiqo-glow/80">{card.body}</p>
+                <p className="mt-0.5 text-sm font-medium text-gray-400">{card.subtitle}</p>
+                <p className="mt-3 text-sm leading-relaxed text-gray-300">{card.body}</p>
                 <p className="mt-4 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs font-medium text-cyan-100/90">
                   <span className="text-cyan-300/90">Tip:</span> {card.tip}
                 </p>
@@ -118,7 +118,7 @@ export default function FraudEducationSwipe() {
             className={`snap-center shrink-0 rounded-xl border px-3 py-2 text-left text-[11px] font-semibold transition ${
               i === index
                 ? "border-violet-400/50 bg-violet-500/20 text-white shadow-[0_0_20px_-8px_rgba(124,58,237,0.5)]"
-                : "border-white/10 bg-white/[0.04] text-exiqo-glow/70 hover:border-white/20 hover:text-white"
+                : "border-white/10 bg-white/[0.04] text-gray-400 hover:border-white/20 hover:text-white"
             }`}
           >
             {c.title}

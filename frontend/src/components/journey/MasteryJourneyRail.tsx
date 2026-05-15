@@ -293,7 +293,7 @@ function MasteryJourneyRailInner({
             </h2>
             <p className="mt-0.5 text-[11px] text-white/40">
               12-layer protection stack &nbsp;·&nbsp;
-              <span className="tabular-nums text-exiqo-glow/80">
+              <span className="tabular-nums text-gray-300">
                 {journeyComplete ? "all layers active" : `${completedCount} of 12 active`}
               </span>
             </p>

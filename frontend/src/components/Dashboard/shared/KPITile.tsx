@@ -80,9 +80,9 @@ export function KPITile({
           )}
           {chip}
         </div>
-        <p className="relative mt-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-exiqo-glow/70">{title}</p>
+        <p className="relative mt-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-500">{title}</p>
         <p className="relative mt-1 font-heading text-2xl font-bold tabular-nums tracking-tight text-white sm:text-3xl">{value}</p>
-        {subtitle ? <p className="relative mt-1 text-xs text-exiqo-glow/60">{subtitle}</p> : null}
+        {subtitle ? <p className="relative mt-1 text-xs text-gray-400">{subtitle}</p> : null}
       </GlassCard>
     </motion.div>
   );

@@ -132,7 +132,7 @@ function IndiaPinMap({ devices }) {
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-exiqo-glow/45">Where you bank from</p>
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">Where you bank from</p>
       <svg viewBox="0 0 100 100" className="mx-auto h-36 w-full max-w-[220px]" aria-hidden>
         <defs>
           <linearGradient id="inMapFill" x1="0" y1="0" x2="1" y2="1">
@@ -160,7 +160,7 @@ function IndiaPinMap({ devices }) {
           </g>
         ))}
       </svg>
-      <ul className="mt-2 flex flex-wrap gap-2 text-[10px] text-exiqo-glow/60">
+      <ul className="mt-2 flex flex-wrap gap-2 text-[10px] text-gray-400">
         {pins.map((p) => (
           <li key={p.id} className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5">
             {p.label}
@@ -189,7 +189,7 @@ function DeviceCard({ device, index, embedded, expanded, onToggle, actionLabel, 
       }`;
 
   const titleCls = embedded ? "font-semibold text-sm text-white" : "font-semibold text-sm text-gray-900";
-  const metaCls = embedded ? "text-xs text-exiqo-glow/55" : "text-xs text-gray-400";
+  const metaCls = embedded ? "text-xs text-gray-500" : "text-xs text-gray-400";
 
   return (
     <motion.div
@@ -248,19 +248,19 @@ function DeviceCard({ device, index, embedded, expanded, onToggle, actionLabel, 
             <div className={`mt-4 border-t pt-4 ${embedded ? "border-white/10" : "border-gray-100"}`}>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <p className={embedded ? "text-[10px] uppercase text-exiqo-glow/45" : "text-[10px] uppercase text-gray-400"}>
+                  <p className={embedded ? "text-[10px] uppercase text-gray-500" : "text-[10px] uppercase text-gray-400"}>
                     First seen
                   </p>
                   <p className={embedded ? "text-sm text-white" : "text-sm text-gray-700"}>{fmtRelativeTime(device.first_seen)}</p>
                 </div>
                 <div>
-                  <p className={embedded ? "text-[10px] uppercase text-exiqo-glow/45" : "text-[10px] uppercase text-gray-400"}>
+                  <p className={embedded ? "text-[10px] uppercase text-gray-500" : "text-[10px] uppercase text-gray-400"}>
                     Last seen
                   </p>
                   <p className={embedded ? "text-sm text-white" : "text-sm text-gray-700"}>{fmtRelativeTime(device.last_seen)}</p>
                 </div>
                 <div>
-                  <p className={embedded ? "text-[10px] uppercase text-exiqo-glow/45" : "text-[10px] uppercase text-gray-400"}>
+                  <p className={embedded ? "text-[10px] uppercase text-gray-500" : "text-[10px] uppercase text-gray-400"}>
                     Transactions (90d)
                   </p>
                   <p className={embedded ? "text-sm tabular-nums text-white" : "text-sm tabular-nums text-gray-700"}>
@@ -268,7 +268,7 @@ function DeviceCard({ device, index, embedded, expanded, onToggle, actionLabel, 
                   </p>
                 </div>
                 <div>
-                  <p className={embedded ? "text-[10px] uppercase text-exiqo-glow/45" : "text-[10px] uppercase text-gray-400"}>
+                  <p className={embedded ? "text-[10px] uppercase text-gray-500" : "text-[10px] uppercase text-gray-400"}>
                     Avg ticket
                   </p>
                   <p className={embedded ? "text-sm tabular-nums text-white" : "text-sm tabular-nums text-gray-700"}>
@@ -310,7 +310,7 @@ function DeviceCard({ device, index, embedded, expanded, onToggle, actionLabel, 
                   onClick={() => onAction(device.id, "revoked")}
                   className={
                     embedded
-                      ? "inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-white/15 bg-white/[0.06] px-3 py-2 text-xs font-semibold text-exiqo-glow/85 transition hover:bg-white/[0.1]"
+                      ? "inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-white/15 bg-white/[0.06] px-3 py-2 text-xs font-semibold text-gray-300 transition hover:bg-white/[0.1]"
                       : "inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-800 transition hover:bg-gray-100"
                   }
                 >
@@ -360,7 +360,7 @@ function SummaryStats({ devices, embedded }) {
           <p className="text-2xl font-bold tabular-nums" style={{ color }}>
             {value}
           </p>
-          <p className={embedded ? "mt-1 text-[11px] text-exiqo-glow/55" : "mt-0.5 text-xs text-gray-400"}>{label}</p>
+          <p className={embedded ? "mt-1 text-[11px] text-gray-500" : "mt-0.5 text-xs text-gray-400"}>{label}</p>
         </div>
       ))}
     </div>
@@ -418,7 +418,7 @@ function HowItWorks({ embedded }) {
                     <p className={`text-xs font-bold ${embedded ? "text-white" : "text-gray-900"}`}>
                       {i + 1}. {s.title}
                     </p>
-                    <p className={`mt-0.5 text-[11px] leading-relaxed ${embedded ? "text-exiqo-glow/65" : "text-gray-600"}`}>
+                    <p className={`mt-0.5 text-[11px] leading-relaxed ${embedded ? "text-gray-400" : "text-gray-600"}`}>
                       {s.text}
                     </p>
                   </div>
@@ -518,7 +518,7 @@ const DeviceTrust = ({ userId = 1, onNavigate, embedded = false }) => {
                 Device Trust
               </h2>
             </div>
-            <p className="ml-8 mt-1 text-sm text-exiqo-glow/60">Phase 6 — fingerprints, locations, and trust scores</p>
+            <p className="ml-8 mt-1 text-sm text-gray-400">Phase 6 — fingerprints, locations, and trust scores</p>
           </div>
         </motion.div>
       )}
@@ -529,7 +529,7 @@ const DeviceTrust = ({ userId = 1, onNavigate, embedded = false }) => {
             <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-cyan-300" aria-hidden />
             <div>
               <h3 className="text-base font-bold text-white">Every device that touches your money is fingerprinted</h3>
-              <p className="mt-2 text-sm leading-relaxed text-exiqo-glow/80">
+              <p className="mt-2 text-sm leading-relaxed text-gray-300">
                 We trust channels you use often from places you usually are. Anything unfamiliar triggers extra checks before
                 high-value transfers — not to block you, but to keep mule and SIM-swap patterns out.
               </p>

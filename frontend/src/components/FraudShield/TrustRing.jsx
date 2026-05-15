@@ -35,9 +35,9 @@ export function TrustRing({
   const trackStroke = dark ? "rgba(255,255,255,0.08)" : "#e5e7eb";
   const numCls = dark ? "text-2xl font-bold tabular-nums tracking-tight text-white" : "text-2xl font-bold tabular-nums tracking-tight text-gray-900";
   const labelCls = dark
-    ? "text-[9px] font-medium uppercase tracking-wider text-exiqo-glow/50"
+    ? "text-[9px] font-medium uppercase tracking-wider text-gray-500"
     : "text-[9px] font-medium uppercase tracking-wider text-gray-500";
-  const subCls = dark ? "mt-0.5 max-w-[5.5rem] text-[9px] leading-tight text-exiqo-glow/45" : "mt-0.5 max-w-[5.5rem] text-[9px] leading-tight text-gray-500";
+  const subCls = dark ? "mt-0.5 max-w-[5.5rem] text-[9px] leading-tight text-gray-500" : "mt-0.5 max-w-[5.5rem] text-[9px] leading-tight text-gray-500";
 
   return (
     <div className={`relative inline-flex flex-col items-center ${className}`} style={{ width: size, height: size }}>

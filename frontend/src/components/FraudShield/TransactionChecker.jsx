@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2, Radar, ShieldAlert, ShieldCheck, ShieldX, Sparkles, TrendingUp } from "lucide-react";
+import { Loader2, Radar, ShieldAlert, ShieldCheck, ShieldX, Sparkles, TrendingUp, Zap } from "lucide-react";
 import { postFraudShieldAlertAction, postFraudShieldCheckTransaction } from "../../services/api";
 import { ShapExplanationBars } from "../risk/ShapExplanationBars";
 import { useToast } from "../common/Toast";
@@ -108,7 +108,7 @@ function ScanningOverlay({ stepIndex }) {
         </div>
       </div>
       <p className="text-base font-semibold tracking-tight text-white">Scanning…</p>
-      <p className="mt-2 max-w-sm px-4 text-center text-sm leading-relaxed text-exiqo-glow/70">{step}</p>
+      <p className="mt-2 max-w-sm px-4 text-center text-sm leading-relaxed text-gray-400">{step}</p>
       <div className="mt-8 flex max-w-xs flex-wrap justify-center gap-1.5">
         {SCAN_STEPS.map((label, i) => (
           <span
@@ -176,7 +176,7 @@ function MyProtectionStatsMini({ safetyScore = 0, threatsBlocked = 0, moneySaved
       body: (
         <div className="mt-1 flex items-center gap-3">
           <TrustRing score={safetyAnim} max={100} size={88} stroke={6} label="Score" dark />
-          <p className="max-w-[9rem] text-[11px] leading-snug text-exiqo-glow/55">Blended confidence on your recent activity.</p>
+          <p className="max-w-[9rem] text-[11px] leading-snug text-gray-400">Blended confidence on your recent activity.</p>
         </div>
       ),
       sub: "0–100 · higher is safer",
@@ -191,7 +191,7 @@ function MyProtectionStatsMini({ safetyScore = 0, threatsBlocked = 0, moneySaved
       transition={{ delay: 0.08, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
       className="mt-8"
     >
-      <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-exiqo-glow/45">My stats</p>
+      <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">My stats</p>
       <div className="grid gap-3 sm:grid-cols-3">
         {cards.map((c, i) => (
           <motion.div
@@ -204,7 +204,7 @@ function MyProtectionStatsMini({ safetyScore = 0, threatsBlocked = 0, moneySaved
           >
             <p className="text-[10px] font-semibold uppercase tracking-wider text-white/50">{c.label}</p>
             {c.body}
-            <p className="mt-2 text-[11px] text-exiqo-glow/50">{c.sub}</p>
+            <p className="mt-2 text-[11px] text-gray-500">{c.sub}</p>
           </motion.div>
         ))}
       </div>
@@ -268,7 +268,7 @@ function VerdictCard({ verdict, result, userName, reporting, reportMsg, onDismis
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] ${meta.pill}`}>{meta.title}</span>
-              <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-0.5 font-mono text-xs tabular-nums text-exiqo-glow/80">
+              <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-0.5 font-mono text-xs tabular-nums text-gray-300">
                 Score {Math.round(score)}/100
               </span>
             </div>
@@ -363,7 +363,7 @@ function VerdictCard({ verdict, result, userName, reporting, reportMsg, onDismis
           <button
             type="button"
             onClick={onDismiss}
-            className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-white/15 px-4 text-sm font-medium text-exiqo-glow/80 transition hover:bg-white/[0.06] hover:text-white"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-white/15 px-4 text-sm font-medium text-gray-400 transition hover:bg-white/[0.06] hover:text-white"
           >
             Scan another
           </button>
@@ -377,7 +377,7 @@ function VerdictCard({ verdict, result, userName, reporting, reportMsg, onDismis
       ) : null}
 
       {(isCritical || isSuspicious) && (
-        <p className="relative mt-3 text-center text-[11px] text-exiqo-glow/45">
+        <p className="relative mt-3 text-center text-[11px] text-gray-500">
           <a href={result.cybercrime_url || "https://cybercrime.gov.in"} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
             National Cyber Crime Reporting Portal
           </a>{" "}
@@ -528,8 +528,8 @@ const TransactionChecker = ({ userId, userName, onReportSuccess, protectionStats
   const amountLabel = Number.isFinite(amtPreview) ? inr(amtPreview) : "—";
 
   const inputShell =
-    "mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-4 text-base text-white outline-none transition placeholder:text-exiqo-glow/35 focus:border-violet-400/55 focus:ring-2 focus:ring-violet-500/25 sm:px-5 sm:py-[1.125rem]";
-  const labelClass = "text-[11px] font-semibold uppercase tracking-[0.14em] text-exiqo-glow/50";
+    "mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-4 text-base text-white outline-none transition placeholder:text-gray-600 placeholder:font-mono focus:border-violet-400/55 focus:ring-2 focus:ring-violet-500/25 sm:px-5 sm:py-[1.125rem]";
+  const labelClass = "text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500";
 
   return (
     <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#0a0a22]/95 via-violet-950/25 to-[#0f172a]/92 p-1 shadow-[0_0_64px_-22px_rgba(124,58,237,0.5)]">
@@ -540,15 +540,21 @@ const TransactionChecker = ({ userId, userName, onReportSuccess, protectionStats
           className="mb-8 flex flex-wrap items-end justify-between gap-4"
         >
           <div className="max-w-2xl">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-violet-300/85">Premium safety scanner</p>
-            <h3 className="mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl">Check before you pay</h3>
-            <p className="mt-3 text-sm leading-relaxed text-exiqo-glow/68 sm:text-base">
+            <div className="inline-flex items-center gap-2 rounded-full border border-purple-500/20 bg-purple-500/10 px-3 py-1">
+              <Sparkles className="h-3 w-3 text-purple-300" aria-hidden />
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-purple-300">Premium Safety Scanner</span>
+            </div>
+            <h3 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">Check before you pay</h3>
+            <p className="mt-3 text-sm leading-relaxed text-gray-400 sm:text-base">
               Large-field check against the same scoring stack as live protection — verdict, SHAP-style drivers, and a clear recommended action.
             </p>
           </div>
-          <div className="hidden text-right text-xs text-exiqo-glow/45 md:block">
-            <p className="tabular-nums">Scan ~1.2s</p>
-            <p>Rules + model + brief</p>
+          <div className="hidden flex-col items-end gap-1 md:flex">
+            <div className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.04] px-3 py-1.5">
+              <Zap className="h-3.5 w-3.5 text-cyan-300" aria-hidden />
+              <span className="text-sm font-medium text-white">Scan ~1.2s</span>
+            </div>
+            <span className="text-[11px] text-gray-500">Rules + model + brief</span>
           </div>
         </motion.div>
 
@@ -583,7 +589,7 @@ const TransactionChecker = ({ userId, userName, onReportSuccess, protectionStats
                   placeholder="0.00"
                   disabled={loading}
                 />
-                <p className="mt-1.5 text-xs text-exiqo-glow/40">Preview: {amountLabel}</p>
+                <p className="mt-1.5 text-xs text-gray-600">Preview: {amountLabel}</p>
               </label>
               <label className="block">
                 <span className={labelClass}>Time</span>
@@ -676,7 +682,7 @@ const TransactionChecker = ({ userId, userName, onReportSuccess, protectionStats
                 </>
               )}
             </motion.button>
-            <p className="text-xs text-exiqo-glow/45 sm:max-w-xs">Fill merchant / UPI and amount to run the scan.</p>
+            <p className="text-xs text-gray-400 sm:max-w-xs">Fill merchant / UPI and amount to run the scan.</p>
           </div>
         </form>
 

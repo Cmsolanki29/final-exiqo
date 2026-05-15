@@ -112,19 +112,19 @@ export function AlertDrawer({
           >
             <header className="flex shrink-0 items-start justify-between gap-3 border-b border-white/10 p-5">
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-300/80">Alert detail</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">Alert detail</p>
                 <h2 id="alert-drawer-title" className="mt-1 font-heading text-lg font-bold tracking-tight text-white">
                   {item.merchant || item.description || `Transaction ${txnId || ""}`}
                 </h2>
-                <div className="mt-2 flex flex-wrap gap-2 text-xs text-exiqo-glow/65">
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-400">
                   {txnId && <span className="tabular-nums">{txnId}</span>}
                   {item.amount != null && <span>{fmtCurrency(item.amount)}</span>}
                   <span>{fmtRelativeTime(item.created_at)}</span>
-                  <span className="rounded-full border border-white/15 bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold uppercase text-exiqo-glow/80">
+                  <span className="rounded-full border border-white/15 bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold uppercase text-gray-300">
                     {severityKey}
                   </span>
                   {item.status && (
-                    <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] capitalize text-exiqo-glow/70">
+                    <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] capitalize text-gray-400">
                       {item.status}
                     </span>
                   )}
@@ -157,7 +157,7 @@ export function AlertDrawer({
                   </h3>
                 </div>
                 {(predictedScore != null || riskAction) && (
-                  <div className="mb-3 flex flex-wrap gap-2 text-[11px] text-exiqo-glow/70">
+                  <div className="mb-3 flex flex-wrap gap-2 text-[11px] text-gray-400">
                     {predictedScore != null && (
                       <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 tabular-nums">
                         Model risk {typeof predictedScore === "number" ? predictedScore.toFixed(3) : predictedScore}
@@ -171,12 +171,12 @@ export function AlertDrawer({
                   </div>
                 )}
                 {naturalLanguage && (
-                  <p className="mb-3 rounded-xl border border-violet-500/20 bg-violet-500/10 p-3 text-xs leading-relaxed text-violet-100/90">
+                  <p className="mb-3 rounded-xl border border-violet-500/20 bg-violet-500/10 p-3 text-xs leading-relaxed text-gray-300">
                     {naturalLanguage}
                   </p>
                 )}
                 {skipExplain && (
-                  <p className="mb-2 text-[10px] text-exiqo-glow/45">Demo SHAP — production data loads from your explain endpoint.</p>
+                  <p className="mb-2 text-[10px] text-gray-500">Demo SHAP — production data loads from your explain endpoint.</p>
                 )}
                 {shapLoading ? (
                   <div className="space-y-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
@@ -185,7 +185,7 @@ export function AlertDrawer({
                     <div className="h-3 w-[70%] max-w-full animate-pulse rounded-full bg-white/[0.06]" />
                   </div>
                 ) : shapBlocked ? (
-                  <p className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-xs text-exiqo-glow/55">
+                  <p className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-xs text-gray-500">
                     SHAP is not available for this transaction (needs admin scope or a scored transaction id). Phase 9
                     investigation below still works when enabled.
                   </p>
@@ -200,7 +200,7 @@ export function AlertDrawer({
                     />
                   </div>
                 ) : (
-                  <p className="text-xs text-exiqo-glow/50">No feature contributions to display.</p>
+                  <p className="text-xs text-gray-500">No feature contributions to display.</p>
                 )}
               </section>
 
@@ -219,7 +219,7 @@ export function AlertDrawer({
                     onTrigger={onTriggerInv}
                   />
                 ) : (
-                  <p className="text-xs text-exiqo-glow/50">No transaction id — investigation unavailable.</p>
+                  <p className="text-xs text-gray-500">No transaction id — investigation unavailable.</p>
                 )}
               </section>
             </div>

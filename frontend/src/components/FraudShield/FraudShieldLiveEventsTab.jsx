@@ -64,7 +64,7 @@ export default function FraudShieldLiveEventsTab({ userId }) {
           </span>
           <div>
             <p className="text-sm font-semibold text-white">Live protection stream</p>
-            <p className="text-xs text-exiqo-glow/60">
+            <p className="text-xs text-gray-400">
               Simulated feed for user <span className="tabular-nums text-white/80">{userId}</span> — wire to WebSocket when ready.
             </p>
           </div>
@@ -72,7 +72,7 @@ export default function FraudShieldLiveEventsTab({ userId }) {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
             <div className="text-center">
-              <p className="text-[10px] uppercase tracking-wider text-exiqo-glow/50">Events / min</p>
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Events / min</p>
               <p className="text-lg font-bold tabular-nums text-white">{epm}</p>
             </div>
             <MiniSparkline values={epmHistory} className="opacity-90" />

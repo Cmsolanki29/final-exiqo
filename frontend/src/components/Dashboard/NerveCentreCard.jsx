@@ -56,7 +56,7 @@ function BudgetRow({ icon: Icon, label, value, sub, highlight = false, negative 
         )}
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-white/90">{label}</p>
-          {sub && <p className="text-[11px] text-exiqo-glow/50">{sub}</p>}
+          {sub && <p className="text-[11px] text-gray-500">{sub}</p>}
         </div>
       </div>
       <span className={`shrink-0 font-heading text-base font-bold tabular-nums ${negative ? "text-rose-300" : "text-white"}`}>
@@ -117,7 +117,7 @@ export default function NerveCentreCard({ userId, setActiveTab }) {
 
   if (state.loading) {
     return (
-      <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-5">
+      <div className="p-6">
         <div className="mb-3 h-4 w-40 animate-pulse rounded bg-white/[0.06]" />
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -130,7 +130,7 @@ export default function NerveCentreCard({ userId, setActiveTab }) {
 
   if (state.error || !state.data) {
     return (
-      <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-100/80">
+      <div className="m-6 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-4 text-sm text-amber-200">
         Could not load budget engine. <button onClick={load} className="underline">Retry</button>
       </div>
     );
@@ -147,15 +147,15 @@ export default function NerveCentreCard({ userId, setActiveTab }) {
   const events = Array.isArray(d.event_detail) ? d.event_detail : [];
 
   return (
-    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-xl">
+    <div className="overflow-hidden rounded-2xl">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-4">
+      <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-6 py-5">
         <div className="flex items-center gap-3">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-exiqo-purple/20 text-exiqo-purple">
             <Sparkles className="h-5 w-5" aria-hidden />
           </span>
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-exiqo-glow/50">Living Budget Engine</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Living Budget Engine</p>
             <p className="font-heading text-base font-bold text-white">This month's breakdown</p>
           </div>
         </div>
@@ -176,7 +176,7 @@ export default function NerveCentreCard({ userId, setActiveTab }) {
       </div>
 
       {/* Rows */}
-      <div className="space-y-1 p-4">
+      <div className="space-y-1 p-5">
         <BudgetRow icon={Banknote} label="Monthly income" value={d.income} sub="Your declared income basis" />
         <BudgetRow icon={Home} label="Fixed expenses" value={d.fixed_expenses} sub="Rent, utilities, insurance" negative />
         <BudgetRow icon={CreditCard} label={`EMIs (${d.emi_outgo > 0 ? "detected" : "none yet"})`} value={d.emi_outgo} sub="Active recurring loan debits" negative />
@@ -202,7 +202,7 @@ export default function NerveCentreCard({ userId, setActiveTab }) {
         )}
 
         {festivals.length === 0 && events.length === 0 && (
-          <div className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs text-exiqo-glow/40">
+          <div className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs text-gray-600">
             <CalendarDays className="h-4 w-4" aria-hidden />
             No festivals/events in next 90 days
           </div>
@@ -257,7 +257,7 @@ export default function NerveCentreCard({ userId, setActiveTab }) {
             <button
               type="button"
               onClick={() => setExpanded((e) => !e)}
-              className="flex w-full items-center justify-center gap-1.5 pt-2 text-[11px] font-medium text-exiqo-glow/55 transition hover:text-white/80"
+              className="flex w-full items-center justify-center gap-1.5 pt-2 text-[11px] font-medium text-gray-500 transition hover:text-white/80"
             >
               {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
               {expanded ? "Hide details" : "Show active plans"}
@@ -310,7 +310,7 @@ export default function NerveCentreCard({ userId, setActiveTab }) {
           <button
             type="button"
             onClick={() => setActiveTab?.("emi")}
-            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-exiqo-glow/80 transition hover:bg-white/[0.08]"
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-gray-300 transition hover:bg-white/[0.08]"
           >
             <CreditCard className="h-3.5 w-3.5" aria-hidden /> Add EMI check
             <ArrowRight className="h-3 w-3" aria-hidden />
@@ -318,7 +318,7 @@ export default function NerveCentreCard({ userId, setActiveTab }) {
           <button
             type="button"
             onClick={() => setActiveTab?.("purchase")}
-            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-exiqo-glow/80 transition hover:bg-white/[0.08]"
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-gray-300 transition hover:bg-white/[0.08]"
           >
             <ShoppingBag className="h-3.5 w-3.5" aria-hidden /> Plan purchase
             <ArrowRight className="h-3 w-3" aria-hidden />
@@ -326,7 +326,7 @@ export default function NerveCentreCard({ userId, setActiveTab }) {
           <button
             type="button"
             onClick={() => setActiveTab?.("festival")}
-            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-exiqo-glow/80 transition hover:bg-white/[0.08]"
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-gray-300 transition hover:bg-white/[0.08]"
           >
             <CalendarDays className="h-3.5 w-3.5" aria-hidden /> Festival plan
             <ArrowRight className="h-3 w-3" aria-hidden />

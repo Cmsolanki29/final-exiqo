@@ -260,7 +260,7 @@ const HealthScoreGauge = ({
       <GlassCard padding="md" surface="panel" className="border-white/[0.08]">
         <div className="mb-3 flex items-center justify-between gap-2">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-violet-300/70">Financial Health</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-gray-500">Financial Health</p>
             <h3 className="font-heading text-base font-semibold text-white">Health Score</h3>
           </div>
         </div>
@@ -298,7 +298,7 @@ const HealthScoreGauge = ({
       <GlassCard padding="md" surface="panel" className="border-white/[0.08]">
         <div className="mb-3 flex items-center justify-between gap-2">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-violet-300/70">Financial Health</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-gray-500">Financial Health</p>
             <h3 className="font-heading text-base font-semibold text-white">Health Score</h3>
           </div>
           <span className="h-6 w-20 animate-pulse rounded-full bg-white/[0.06]" />
@@ -330,7 +330,7 @@ const HealthScoreGauge = ({
       {/* Header */}
       <div className="mb-3 flex items-center justify-between gap-2">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-violet-300/70">Financial Health</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-gray-500">Financial Health</p>
           <h3 className="font-heading text-base font-semibold text-white">Health Score</h3>
         </div>
         {/* STABLE / IMPROVING / DECLINING badge */}

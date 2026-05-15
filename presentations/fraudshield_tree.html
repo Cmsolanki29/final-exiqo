@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SmartSpend — FraudShield Tree Diagram</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F8FAFC;--surface:#FFFFFF;--card:#FFFFFF;--border:#E2E8F0;
+  --purple:#7C3AED;--cyan:#0891B2;--emerald:#059669;--rose:#E11D48;
+  --amber:#D97706;--violet:#9333EA;--sky:#0284C7;--teal:#0D9488;
+  --text:#0F172A;--muted:#64748B;--subtle:#94A3B8;
+}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);font-family:'Inter',sans-serif;color:var(--text)}
+
+/* ── TOP BAR ─────────────────────────────────────── */
+.topbar{
+  position:fixed;top:0;left:0;right:0;z-index:300;height:56px;
+  background:rgba(255,255,255,.97);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+  box-shadow:0 1px 8px rgba(15,23,42,.06);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;gap:12px;
+}
+.topbar h1{font-size:15px;font-weight:700;color:#BE123C}
+.topbar p{font-size:11px;color:var(--muted)}
+.topbar-actions{display:flex;gap:8px;align-items:center}
+.btn{
+  padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;
+  border:1px solid var(--border);background:var(--card);color:var(--muted);
+  cursor:pointer;transition:all .15s;
+  box-shadow:0 1px 2px rgba(15,23,42,.04);
+}
+.btn:hover{border-color:var(--purple);color:var(--text);background:#F5F3FF}
+.btn-primary{background:#EDE9FE;border-color:var(--purple);color:var(--purple)}
+.hint{font-size:10px;color:var(--subtle)}
+
+/* ── CANVAS (pan + zoom) ─────────────────────────── */
+.viewport{
+  position:fixed;top:56px;left:0;right:0;bottom:0;
+  overflow:hidden;cursor:grab;
+}
+.viewport.grabbing{cursor:grabbing}
+.canvas{
+  position:absolute;transform-origin:0 0;
+  padding:60px 80px 120px;
+  min-width:max-content;min-height:max-content;
+  background-image:radial-gradient(circle,#CBD5E1 1px,transparent 1px);
+  background-size:24px 24px;
+}
+
+/* ── SVG CONNECTORS ──────────────────────────────── */
+#connectors{
+  position:absolute;top:0;left:0;
+  pointer-events:none;overflow:visible;
+}
+
+/* ── TREE NODE ───────────────────────────────────── */
+.tree-node{
+  position:absolute;
+  display:flex;flex-direction:column;align-items:flex-start;
+  z-index:10;
+}
+
+.node-box{
+  position:relative;
+  min-width:160px;max-width:220px;
+  padding:10px 14px;
+  border-radius:10px;
+  border:2px solid var(--nc,var(--purple));
+  background:linear-gradient(145deg,#FFFFFF 0%,#F8FAFC 100%);
+  cursor:pointer;
+  user-select:none;
+  transition:transform .15s,box-shadow .2s,border-color .2s;
+  box-shadow:0 2px 8px rgba(15,23,42,.08),0 1px 2px rgba(15,23,42,.04);
+}
+.node-box:hover{
+  transform:translateY(-2px);
+  box-shadow:0 8px 20px rgba(15,23,42,.10),0 0 0 3px color-mix(in srgb,var(--nc) 12%,transparent);
+}
+.node-box.expanded{border-color:var(--nc);box-shadow:0 0 0 2px color-mix(in srgb,var(--nc) 18%,transparent),0 8px 24px rgba(15,23,42,.10)}
+.node-box.root{
+  min-width:200px;padding:14px 18px;
+  border-width:2px;font-weight:700;
+  background:linear-gradient(145deg,#F5F3FF,#EDE9FE);
+}
+.node-box.has-children::after{
+  content:'';
+  position:absolute;right:-8px;top:50%;transform:translateY(-50%);
+  width:0;height:0;
+  border-top:6px solid transparent;border-bottom:6px solid transparent;
+  border-left:7px solid var(--nc,var(--purple));
+  opacity:.6;
+}
+.node-box.collapsed.has-children::before{
+  content:'+';
+  position:absolute;right:8px;top:8px;
+  width:18px;height:18px;border-radius:50%;
+  background:#F1F5F9;border:1px solid var(--nc);
+  color:var(--nc);font-size:12px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+  line-height:1;
+}
+.node-box.expanded.has-children::before{
+  content:'−';
+  position:absolute;right:8px;top:8px;
+  width:18px;height:18px;border-radius:50%;
+  background:color-mix(in srgb,var(--nc) 12%,#fff);
+  border:1px solid var(--nc);
+  color:var(--nc);font-size:14px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+  line-height:1;
+}
+
+.node-tag{
+  font-size:9px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.6px;color:var(--nc);margin-bottom:4px;opacity:.95;
+}
+.node-title{font-size:13px;font-weight:700;color:var(--text);line-height:1.35;padding-right:22px}
+.node-sub{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.4}
+.node-box.root .node-title{font-size:15px;color:#5B21B6}
+
+/* detail panel (leaf or expanded) */
+.node-detail{
+  display:none;margin-top:8px;padding:10px 12px;
+  background:#F8FAFC;border-radius:8px;
+  border:1px solid var(--border);
+  max-width:220px;font-size:10px;color:var(--muted);line-height:1.55;
+}
+.node-box.expanded .node-detail{display:block}
+.node-detail ul{margin:6px 0 0 14px;padding:0}
+.node-detail li{margin-bottom:3px}
+
+/* ── ZOOM CONTROLS ───────────────────────────────── */
+.zoom-controls{
+  position:fixed;bottom:24px;right:24px;z-index:300;
+  display:flex;flex-direction:column;gap:6px;
+}
+.zoom-controls button{
+  width:36px;height:36px;border-radius:10px;
+  border:1px solid var(--border);background:var(--card);
+  color:var(--text);font-size:18px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:border-color .15s;
+  box-shadow:0 2px 6px rgba(15,23,42,.06);
+}
+.zoom-controls button:hover{border-color:var(--purple);background:#F5F3FF}
+.zoom-level{
+  text-align:center;font-size:10px;color:var(--muted);
+  padding:4px;background:var(--card);border-radius:6px;border:1px solid var(--border);
+  box-shadow:0 1px 4px rgba(15,23,42,.05);
+}
+
+/* ── LEGEND ──────────────────────────────────────── */
+.legend{
+  position:fixed;bottom:24px;left:24px;z-index:300;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:12px 16px;font-size:10px;
+  box-shadow:0 4px 16px rgba(15,23,42,.08);
+}
+.legend-title{font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+.legend-item{display:flex;align-items:center;gap:8px;margin-bottom:5px;color:#475569}
+.legend-dot{width:10px;height:10px;border-radius:3px;border:2px solid}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  
+  
+  <div>
+    <h1>SmartSpend — FraudShield AI Pipeline</h1>
+    <p>Tree diagram · Click any box to expand branches · Drag to pan · Scroll to zoom</p>
+  
+  </div>
+  
+  
+  <div class="topbar-actions">
+    <span class="hint">Click +/− on boxes</span>
+    <button class="btn" onclick="expandAll()">Expand all</button>
+    <button class="btn" onclick="collapseAll()">Collapse all</button>
+    <button class="btn btn-primary" onclick="fitView()">Fit to screen</button>
+  </div>
+</div>
+
+<div class="viewport" id="viewport">
+  <div class="canvas" id="canvas">
+    <svg id="connectors"></svg>
+    
+    
+    <div id="treeRoot"></div>
+  </div>
+
+</div>
+
+<div class="zoom-controls">
+  <button onclick="zoomIn()" title="Zoom in">+</button>
+  <div class="zoom-level" id="zoomLabel">100%</div>
+  <button onclick="zoomOut()" title="Zoom out">−</button>
+</div>
+
+<div class="legend">
+  <div class="legend-title">Layers</div>
+  <div class="legend-item"><span class="legend-dot" style="border-color:#8B5CF6"></span> Root / Orchestrator</div>
+  <div class="legend-item"><span class="legend-dot" style="border-color:#06B6D4"></span> Data layer</div>
+  <div class="legend-item"><span class="legend-dot" style="border-color:#8B5CF6"></span> Model layer</div>
+  
+  
+  <div class="legend-item"><span class="legend-dot" style="border-color:#A855F7"></span> Intelligence</div>
+  <div class="legend-item"><span class="legend-dot" style="border-color:#10B981"></span> Ops / Learn</div>
+  <div class="legend-item"><span class="legend-dot" style="border-color:#F43F5E"></span> Verdict</div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   TREE DATA — draw.io style: root → branches → leaves
+   ═══════════════════════════════════════════════════════════ */
+const TREE = {
+  id: 'root',
+  tag: 'ENTRY',
+  title: 'FraudShield\nAI Pipeline',
+  sub: 'Transaction arrives · manual or real-time',
+  color: '#8B5CF6',
+  detail: 'UPI ID + amount check OR bank feed event. All 12 phases execute under 800ms.',
+  expanded: true,
+  children: [
+    {
+      id: 'ingest',
+      tag: 'INGEST',
+      title: 'Data Ingestion',
+      sub: 'Capture & enrich raw event',
+      color: '#06B6D4',
+      children: [
+        {
+          id: 'p1', tag: 'PHASE 01', title: 'Event Engine',
+          sub: 'Redis Streams · <50ms fan-out',
+          color: '#06B6D4',
+          detail: '<ul><li>Validate schema</li><li>Normalize UPI + merchant</li><li>Attach device + IP metadata</li><li>Publish to Redis Streams</li><li>Durable audit log</li></ul>',
+          children: []
+        },
+        {
+          id: 'p2', tag: 'PHASE 02', title: 'Feature Store',
+          sub: '212 signals · 28 to XGBoost',
+          color: '#06B6D4',
+          detail: '<ul><li>Transaction features (5)</li><li>Merchant features (5)</li><li>Velocity + behavioral (9)</li><li>Graph features from Phase 10 (4)</li><li>Redis online cache &lt;5ms</li></ul>',
+          children: []
+        },
+        {
+          id: 'p6', tag: 'PHASE 06', title: 'Graph Signals',
+          sub: '2.1M edges · 6 clusters',
+          color: '#06B6D4',
+          detail: '<ul><li>Build user-merchant-device graph</li><li>Louvain cluster detection</li><li>Mule score propagation</li><li>Shared UPI detection</li></ul>',
+          children: []
+        }
+      ]
+    },
+    {
+      id: 'score',
+      tag: 'SCORE',
+      title: 'ML Scoring',
+      sub: '3 models in parallel',
+      color: '#8B5CF6',
+      children: [
+        {
+          id: 'p3', tag: 'PHASE 03', title: 'XGBoost Classifier',
+          sub: 'fraud-xgboost-v0 · ROC 0.933',
+          color: '#8B5CF6',
+          detail: '<ul><li>28-feature tabular input</li><li>300 gradient-boosted trees</li><li>India UPI + RBI taxonomy training</li><li>Platt calibration → probability</li></ul>',
+          children: [
+            { id: 'p3a', tag: 'STEP', title: 'Tree ensemble vote', sub: 'Each tree outputs leaf score', color: '#8B5CF6', children: [] },
+            { id: 'p3b', tag: 'STEP', title: 'Sigmoid output', sub: 'Score 0.0 → 1.0', color: '#8B5CF6', children: [] }
+          ]
+        },
+        {
+          id: 'p10', tag: 'PHASE 10', title: 'GraphSAGE GNN',
+          sub: '64-dim embeddings · p99 38ms',
+          color: '#0EA5E9',
+          detail: '<ul><li>2-layer GraphSAGE aggregation</li><li>Contrastive training on graph</li><li>Redis: gnn:embed:{user_id}</li><li>Feeds orchestrator + features</li></ul>',
+          children: []
+        },
+        {
+          id: 'p11', tag: 'PHASE 11', title: 'DNN Shadow',
+          sub: '4-branch ResNeXt · blend 0.18',
+          color: '#14B8A6',
+          detail: '<ul><li>LSTM + amount + merchant + GNN branches</li><li>Shadow mode — not served until promoted</li><li>24hr regression gate</li><li>PHASE_11_DNN_PROMOTED flag</li></ul>',
+          children: []
+        },
+        {
+          id: 'p4', tag: 'PHASE 04', title: 'Decision Engine',
+          sub: '847 policies · rule overrides',
+          color: '#8B5CF6',
+          detail: '<ul><li>Merchant policy check</li><li>Blacklist sync &lt;2min</li><li>₹1 trap + UPI age + 2AM rules</li><li>Velocity hard cap 5/hr</li></ul>',
+          children: []
+        }
+      ]
+    },
+    {
+      id: 'intel',
+      tag: 'INTELLIGENCE',
+      title: 'Explain & Investigate',
+      sub: 'SHAP + LLM agent',
+      color: '#A855F7',
+      children: [
+        {
+          id: 'p7', tag: 'PHASE 07', title: 'SHAP Explainability',
+          sub: '1,247 explained today',
+          color: '#A855F7',
+          detail: '<ul><li>TreeExplainer on XGBoost</li><li>Top 3 features → plain English</li><li>Fraud education tip attached</li></ul>',
+          children: [
+            { id: 'p7a', tag: 'OUTPUT', title: 'UPI ID 2 days old', sub: '🔴 Top reason', color: '#F43F5E', children: [] },
+            { id: 'p7b', tag: 'OUTPUT', title: 'Amount ₹1 trap', sub: '🔴 Classic phishing', color: '#F43F5E', children: [] }
+          ]
+        },
+        {
+          id: 'p9', tag: 'PHASE 09', title: 'LLM Investigator',
+          sub: 'Groq · 41 dives today',
+          color: '#A855F7',
+          detail: '<ul><li>Fires on score ≥ 0.75 (Tier 3)</li><li>Tool: velocity, merchant, network, blacklist</li><li>Structured investigation report</li></ul>',
+          children: [
+            { id: 'p9a', tag: 'TOOL', title: 'check_velocity()', sub: '1hr / 24hr txn count', color: '#A855F7', children: [] },
+            { id: 'p9b', tag: 'TOOL', title: 'check_merchant()', sub: 'Global fraud reports', color: '#A855F7', children: [] },
+            { id: 'p9c', tag: 'TOOL', title: 'check_network()', sub: 'Shared device cluster', color: '#A855F7', children: [] }
+          ]
+        },
+        {
+          id: 'p12', tag: 'PHASE 12', title: 'Orchestrator',
+          sub: 'Tier 0–3 · 27% LLM savings',
+          color: '#F43F5E',
+          detail: '<ul><li>Blend: 45% XGB + 35% DNN + 20% GNN</li><li>Tier 0 ₹0 → Tier 3 ₹0.02 + LLM Judge</li><li>Log to orchestration_decisions</li></ul>',
+          children: [
+            { id: 't0', tag: 'TIER 0', title: 'XGBoost only', sub: 'Score &lt; 0.30 · ₹0.00', color: '#10B981', children: [] },
+            { id: 't1', tag: 'TIER 1', title: '+ Anomaly', sub: '0.30–0.55 · ₹0.001', color: '#06B6D4', children: [] },
+            { id: 't2', tag: 'TIER 2', title: '+ GNN', sub: '0.55–0.75 · ₹0.003', color: '#0EA5E9', children: [] },
+            { id: 't3', tag: 'TIER 3', title: '+ LLM Judge', sub: '≥ 0.75 · ₹0.02', color: '#F43F5E', children: [] }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'ops',
+      tag: 'OPS',
+      title: 'Learn & Monitor',
+      sub: 'MLOps + feedback loop',
+      color: '#10B981',
+      children: [
+        {
+          id: 'p5', tag: 'PHASE 05', title: 'MLOps & Drift',
+          sub: 'PSI 0.050 stable',
+          color: '#10B981',
+          detail: '<ul><li>PSI on 14 features weekly</li><li>MLflow registry stages</li><li>Shadow + canary promotion</li><li>Retrain when PSI &gt; 0.25</li></ul>',
+          children: []
+        },
+        {
+          id: 'p8', tag: 'PHASE 08', title: 'Feedback Flywheel',
+          sub: '312 labels/week',
+          color: '#10B981',
+          detail: '<ul><li>Analyst review queue</li><li>User fraud reports</li><li>Chargeback webhooks</li><li>Every 500 labels → retrain</li></ul>',
+          children: []
+        }
+      ]
+    },
+    {
+      id: 'verdict',
+      tag: 'OUTPUT',
+      title: 'User Verdict',
+      sub: 'Delivered &lt; 800ms',
+      color: '#F43F5E',
+      children: [
+        { id: 'v1', tag: 'HIGH', title: 'DO NOT PAY', sub: 'Score ≥ 0.80', color: '#F43F5E', children: [] },
+        { id: 'v2', tag: 'MED', title: 'CAUTION', sub: '0.50 – 0.79', color: '#F59E0B', children: [] },
+        { id: 'v3', tag: 'LOW', title: 'LIKELY SAFE', sub: '0.20 – 0.49', color: '#10B981', children: [] },
+        { id: 'v4', tag: 'SAFE', title: 'CLEAN', sub: '&lt; 0.20', color: '#10B981', children: [] }
+      ]
+    }
+  ]
+};
+
+/* ═══════════════════════════════════════════════════════════
+   LAYOUT — horizontal tree (draw.io style, left → right)
+   ═══════════════════════════════════════════════════════════ */
+const NODE_W = 200;
+const NODE_H_BASE = 72;
+const H_GAP = 100;  /* horizontal gap between levels */
+const V_GAP = 24;   /* vertical gap between siblings */
+
+const state = { expanded: new Set(['root']), positions: new Map() };
+
+function measureNode(node) {
+  const hasKids = node.children && node.children.length > 0;
+  const expanded = state.expanded.has(node.id);
+  let h = NODE_H_BASE;
+  if (expanded && node.detail) h += 70;
+  if (expanded && hasKids) {
+    /* height computed from children */
+  }
+  return { w: NODE_W, h };
+}
+
+function layoutTree(node, depth, yStart) {
+  const hasKids = node.children && node.children.length > 0;
+  const expanded = state.expanded.has(node.id);
+  const x = depth * (NODE_W + H_GAP);
+
+  if (!hasKids || !expanded) {
+    const h = NODE_H_BASE + (expanded && node.detail ? 75 : 0);
+    state.positions.set(node.id, { x, y: yStart, w: NODE_W, h, node, depth });
+    return yStart + h + V_GAP;
+  }
+
+  let childY = yStart;
+  const childPositions = [];
+  for (const child of node.children) {
+    const startY = childY;
+    childY = layoutTree(child, depth + 1, childY);
+    childPositions.push({ child, startY, endY: childY - V_GAP });
+  }
+
+  const totalChildH = childY - yStart - V_GAP;
+  const selfH = NODE_H_BASE + (node.detail ? 75 : 0);
+  const boxY = yStart + Math.max(0, (totalChildH - selfH) / 2);
+
+  state.positions.set(node.id, {
+    x, y: boxY, w: NODE_W, h: selfH, node, depth,
+    children: childPositions,
+    subtreeTop: yStart,
+    subtreeBottom: childY - V_GAP
+  });
+
+  return childY;
+}
+
+function renderNodes() {
+  const root = document.getElementById('treeRoot');
+  root.innerHTML = '';
+  state.positions.forEach((pos, id) => {
+    const n = pos.node;
+    const hasKids = n.children && n.children.length > 0;
+    const expanded = state.expitions?.has(id) ?? state.expanded.has(id);
+    const isExp = state.expanded.has(id);
+
+    const el = document.createElement('div');
+    el.className = 'tree-node';
+    el.style.left = pos.x + 'px';
+    el.style.top = pos.y + 'px';
+    el.dataset.id = id;
+
+    const box = document.createElement('div');
+    box.className = 'node-box' + (id === 'root' ? ' root' : '') +
+      (hasKids ? ' has-children' : '') +
+      (isExp ? ' expanded' : ' collapsed');
+    box.style.setProperty('--nc', n.color);
+
+    box.innerHTML = `
+      <div class="node-tag">${n.tag}</div>
+      
+      
+      
+      <div class="node-title">${n.title.replace(/\n/g, '<br>')}</div>
+      ${n.sub ? `<div class="node-sub">${n.sub}</div>` : ''}
+      ${n.detail ? `<div class="node-detail">${n.detail}</div>` : ''}
+    `;
+
+    box.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleNode(id, hasKids);
+    });
+
+    el.appendChild(box);
+    root.appendChild(el);
+  });
+}
+
+function toggleNode(id, hasKids) {
+  if (hasKids) {
+    if (state.expanded.has(id)) state.expanded.delete(id);
+    else state.expanded.add(id);
+  } else {
+    /* leaf: toggle detail only */
+    if (state.expanded.has(id)) state.expanded.delete(id);
+    else state.expanded.add(id);
+  }
+  relayout();
+}
+
+function relayout() {
+  state.positions.clear();
+  const bottomY = layoutTree(TREE, 0, 0);
+  const canvas = document.getElementById('canvas');
+  canvas.style.height = (bottomY + 80) + 'px';
+  canvas.style.width = (8 * (NODE_W + H_GAP)) + 'px';
+  renderNodes();
+  drawConnectors();
+}
+
+function drawConnectors() {
+  const svg = document.getElementById('connectors');
+  const w = parseInt(document.getElementById('canvas').style.width) || 3000;
+  const h = parseInt(document.getElementById('canvas').style.height) || 2000;
+  svg.setAttribute('width', w);
+  svg.setAttribute('height', h);
+  svg.innerHTML = '';
+
+  state.positions.forEach((pos) => {
+    if (!pos.children) return;
+    const parent = pos;
+    const x1 = parent.x + parent.w;
+    const y1 = parent.y + Math.min(NODE_H_BASE, parent.h) / 2 + 10;
+
+    for (const { child: childId, startY, endY } of pos.children) {
+      const childPos = state.positions.get(childId.id);
+      if (!childPos) continue;
+      const x2 = childPos.x;
+      const y2 = childPos.y + Math.min(NODE_H_BASE, childPos.h) / 2 + 10;
+      const midX = (x1 + x2) / 2;
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      const d = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
+      path.setAttribute('d', d);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', childPos.node.color || '#4B5563');
+      path.setAttribute('stroke-width', '2');
+      path.setAttribute('opacity', '0.75');
+      svg.appendChild(path);
+    }
+  });
+}
+
+/* fix typo in renderNodes */
+function renderNodesFixed() {
+  const root = document.getElementById('treeRoot');
+  root.innerHTML = '';
+  state.positions.forEach((pos, id) => {
+    const n = pos.node;
+    const hasKids = n.children && n.children.length > 0;
+    const isExp = state.expanded.has(id);
+
+    const el = document.createElement('div');
+    el.className = 'tree-node';
+    el.style.left = pos.x + 'px';
+    el.style.top = pos.y + 'px';
+
+    const box = document.createElement('div');
+    box.className = 'node-box' + (id === 'root' ? ' root' : '') +
+      (hasKids ? ' has-children' : '') +
+      (isExp ? ' expanded' : ' collapsed');
+    box.style.setProperty('--nc', n.color);
+
+    box.innerHTML = `
+      <div class="node-tag">${n.tag}</div>
+      <div class="node-title">${n.title.replace(/\n/g, '<br>')}</div>
+      ${n.sub ? `<div class="node-sub">${n.sub}</div>` : ''}
+      ${n.detail && isExp ? `<div class="node-detail">${n.detail}</div>` : ''}
+    `;
+
+    box.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (hasKids || n.detail) {
+        if (state.expanded.has(id)) state.expanded.delete(id);
+        else state.expanded.add(id);
+        relayoutFixed();
+      }
+    });
+
+    el.appendChild(box);
+    root.appendChild(el);
+  });
+}
+
+function layoutTreeFixed(node, depth, yStart) {
+  const hasKids = node.children && node.children.length > 0;
+  const expanded = state.expanded.has(node.id);
+  const x = depth * (NODE_W + H_GAP);
+  const selfH = NODE_H_BASE + (expanded && node.detail ? 78 : 0);
+
+  if (!hasKids || !expanded) {
+    state.positions.set(node.id, { x, y: yStart, w: NODE_W, h: selfH, node, depth });
+    return yStart + selfH + V_GAP;
+  }
+
+  let childY = yStart;
+  const childPositions = [];
+  for (const child of node.children) {
+    const startY = childY;
+    childY = layoutTreeFixed(child, depth + 1, childY);
+    childPositions.push({ child, startY, endY: childY - V_GAP });
+  }
+
+  const totalChildH = childY - yStart - V_GAP;
+  const boxY = yStart + Math.max(0, (totalChildH - selfH) / 2);
+
+  state.positions.set(node.id, {
+    x, y: boxY, w: NODE_W, h: selfH, node, depth,
+    children: childPositions
+  });
+
+  return childY;
+}
+
+function relayoutFixed() {
+  state.positions.clear();
+  const bottomY = layoutTreeFixed(TREE, 0, 0);
+  const canvas = document.getElementById('canvas');
+  canvas.style.height = (bottomY + 100) + 'px';
+  canvas.style.width = (7 * (NODE_W + H_GAP) + 120) + 'px';
+  renderNodesFixed();
+  drawConnectorsFixed();
+}
+
+function drawConnectorsFixed() {
+  const svg = document.getElementById('connectors');
+  const canvas = document.getElementById('canvas');
+  const w = canvas.offsetWidth || 2400;
+  const h = canvas.offsetHeight || 1600;
+  svg.setAttribute('width', w);
+  svg.setAttribute('height', h);
+  svg.style.width = w + 'px';
+  svg.style.height = h + 'px';
+  svg.innerHTML = '';
+
+  state.positions.forEach((pos) => {
+    if (!pos.children) return;
+    const x1 = pos.x + pos.w;
+    const y1 = pos.y + 36;
+
+    for (const { child } of pos.children) {
+      const cp = state.positions.get(child.id);
+      if (!cp) continue;
+      const x2 = cp.x;
+      const y2 = cp.y + 36;
+      const midX = (x1 + x2) / 2;
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', cp.node.color);
+      path.setAttribute('stroke-width', '2');
+      path.setAttribute('opacity', '0.75');
+      svg.appendChild(path);
+    }
+  });
+}
+
+function expandAll() {
+  function walk(n) {
+    state.expanded.add(n.id);
+    (n.children || []).forEach(walk);
+  }
+  walk(TREE);
+  relayoutFixed();
+}
+
+function collapseAll() {
+  state.expanded = new Set(['root']);
+  relayoutFixed();
+}
+
+/* ── PAN & ZOOM ───────────────────────────────────── */
+let scale = 0.85, panX = 40, panY = 20, dragging = false, lastX, lastY;
+
+function applyTransform() {
+  const c = document.getElementById('canvas');
+  c.style.transform = `translate(${panX}px,${panY}px) scale(${scale})`;
+  document.getElementById('zoomLabel').textContent = Math.round(scale * 100) + '%';
+}
+
+const viewport = document.getElementById('viewport');
+viewport.addEventListener('mousedown', e => {
+  if (e.target.closest('.node-box')) return;
+  dragging = true;
+  lastX = e.clientX; lastY = e.clientY;
+  viewport.classList.add('grabbing');
+});
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  panX += e.clientX - lastX;
+  panY += e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  applyTransform();
+});
+window.addEventListener('mouseup', () => {
+  dragging = false;
+  viewport.classList.remove('grabbing');
+});
+viewport.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -0.06 : 0.06;
+  scale = Math.min(1.8, Math.max(0.25, scale + delta));
+  applyTransform();
+}, { passive: false });
+
+function zoomIn() { scale = Math.min(1.8, scale + 0.1); applyTransform(); }
+function zoomOut() { scale = Math.max(0.25, scale - 0.1); applyTransform(); }
+
+function fitView() {
+  const vp = viewport.getBoundingClientRect();
+  const cw = 7 * (NODE_W + H_GAP) + 120;
+  const ch = 900;
+  scale = Math.min(1, (vp.width - 60) / cw, (vp.height - 60) / ch);
+  panX = 30;
+  panY = 20;
+  applyTransform();
+}
+
+/* ── INIT ─────────────────────────────────────────── */
+state.expanded = new Set(['root']);
+relayoutFixed();
+applyTransform();
+setTimeout(fitView, 100);
+</script>
+</body>
+</html>

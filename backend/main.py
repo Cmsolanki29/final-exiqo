@@ -555,9 +555,11 @@ def dashboard(user_id: int, conn=Depends(get_db)):
     m, y = today.month, today.year
     cur = conn.cursor()
     try:
+        # User row + last_login (used as a freshness fallback when no bank is linked).
         cur.execute(
             """
-            SELECT id, name, email, monthly_income::float, savings_goal::float, risk_tolerance
+            SELECT id, name, email, monthly_income::float, savings_goal::float, risk_tolerance,
+                   last_login
             FROM users WHERE id = %s;
             """,
             (user_id,),
@@ -573,6 +575,33 @@ def dashboard(user_id: int, conn=Depends(get_db)):
             savings_goal=float(ur[4]),
             risk_tolerance=ur[5],
         )
+        last_login = ur[6]
+
+        # Real "Last synced" — most-recent bank sync across all linked banks.
+        # Returns NULL when the user has not linked any bank yet; the frontend
+        # then falls back to last_login or hides the timestamp gracefully.
+        cur.execute(
+            """
+            SELECT MAX(last_synced)
+            FROM bank_connections
+            WHERE user_id = %s AND last_synced IS NOT NULL;
+            """,
+            (user_id,),
+        )
+        ls_row = cur.fetchone()
+        last_synced = ls_row[0] if ls_row else None
+
+        # Pending fraud signals — drives the greeting status pill
+        # ("FraudShield is watching N signals"). PENDING = awaiting user action.
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM fraud_alerts
+            WHERE user_id = %s
+              AND COALESCE(user_action, 'PENDING') = 'PENDING';
+            """,
+            (user_id,),
+        )
+        fraud_pending = int(cur.fetchone()[0] or 0)
         cur.execute(
             """
             SELECT COALESCE(SUM(CASE WHEN type = 'CREDIT' THEN amount ELSE 0 END), 0)::float,
@@ -720,6 +749,9 @@ def dashboard(user_id: int, conn=Depends(get_db)):
         spending_by_category=spending,
         monthly_trends=trends,
         unread_alerts=unread,
+        last_synced=last_synced,
+        last_login=last_login,
+        fraud_pending_count=fraud_pending,
     )
 
 

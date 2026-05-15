@@ -38,17 +38,17 @@ export default function LiveEventRow({ event: e }) {
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] text-[10px] font-bold tabular-nums text-exiqo-glow/80">
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] text-[10px] font-bold tabular-nums text-gray-300">
             {e.score}
           </div>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold tracking-tight text-white">{e.merchant}</p>
-            <p className="mt-0.5 flex items-center gap-2 text-[11px] tabular-nums text-exiqo-glow/55">
+            <p className="mt-0.5 flex items-center gap-2 text-[11px] tabular-nums text-gray-500">
               <time dateTime={e.ts.toISOString()}>
                 {e.ts.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </time>
-              <span className="text-exiqo-glow/35">·</span>
-              <span className="text-exiqo-glow/45">micro-score</span>
+              <span className="text-gray-600">·</span>
+              <span className="text-gray-500">micro-score</span>
             </p>
           </div>
         </div>

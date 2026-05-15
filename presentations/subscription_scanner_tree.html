@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SmartSpend — Subscription AI Scanner</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F8FAFC;--surface:#FFFFFF;--card:#FFFFFF;--border:#E2E8F0;
+  --purple:#7C3AED;--cyan:#0891B2;--emerald:#059669;--rose:#E11D48;
+  --amber:#D97706;--violet:#9333EA;--sky:#0284C7;--teal:#0D9488;
+  --text:#0F172A;--muted:#64748B;--subtle:#94A3B8;
+}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);font-family:'Inter',sans-serif;color:var(--text)}
+
+.topbar{
+  position:fixed;top:0;left:0;right:0;z-index:300;height:56px;
+  background:rgba(255,255,255,.97);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+  box-shadow:0 1px 8px rgba(15,23,42,.06);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;gap:12px;
+}
+.topbar h1{font-size:15px;font-weight:700;color:#059669}
+.topbar p{font-size:11px;color:var(--muted)}
+.topbar-actions{display:flex;gap:8px;align-items:center}
+.btn{
+  padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;
+  border:1px solid var(--border);background:var(--card);color:var(--muted);
+  cursor:pointer;transition:all .15s;
+  box-shadow:0 1px 2px rgba(15,23,42,.04);
+}
+.btn:hover{border-color:var(--emerald);color:var(--text);background:#F0FDF4}
+.btn-primary{background:#DCFCE7;border-color:var(--emerald);color:var(--emerald)}
+.hint{font-size:10px;color:var(--subtle)}
+
+.viewport{
+  position:fixed;top:56px;left:0;right:0;bottom:0;
+  overflow:hidden;cursor:grab;
+}
+.viewport.grabbing{cursor:grabbing}
+.canvas{
+  position:absolute;transform-origin:0 0;
+  padding:40px 48px 80px;
+  min-width:max-content;min-height:max-content;
+  background-image:radial-gradient(circle,#CBD5E1 1px,transparent 1px);
+  background-size:24px 24px;
+}
+
+#connectors{
+  position:absolute;top:0;left:0;
+  pointer-events:none;overflow:visible;
+  z-index:1;
+}
+
+.tree-node{
+  position:absolute;
+  display:flex;flex-direction:column;align-items:flex-start;
+  z-index:10;
+}
+.tree-node[data-root="1"]{z-index:12}
+
+.node-box{
+  position:relative;
+  min-width:160px;max-width:220px;
+  padding:10px 14px;
+  border-radius:10px;
+  border:2px solid var(--nc,var(--emerald));
+  background:linear-gradient(145deg,#FFFFFF 0%,#F8FAFC 100%);
+  cursor:pointer;
+  user-select:none;
+  transition:transform .15s,box-shadow .2s,border-color .2s;
+  box-shadow:0 2px 8px rgba(15,23,42,.08),0 1px 2px rgba(15,23,42,.04);
+}
+.node-box:hover{
+  transform:translateY(-2px);
+  box-shadow:0 8px 20px rgba(15,23,42,.10),0 0 0 3px color-mix(in srgb,var(--nc) 12%,transparent);
+}
+.node-box.expanded{border-color:var(--nc);box-shadow:0 0 0 2px color-mix(in srgb,var(--nc) 18%,transparent),0 8px 24px rgba(15,23,42,.10)}
+.node-box.root{
+  min-width:200px;max-width:240px;padding:14px 18px;
+  border-width:2px;font-weight:700;
+  background:linear-gradient(145deg,#F0FDF4,#DCFCE7);
+  z-index:12;
+}
+.node-box.root.has-children.expanded .node-detail{display:none}
+.node-box.has-children::after{
+  content:'';
+  position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);
+  width:0;height:0;
+  border-left:6px solid transparent;border-right:6px solid transparent;
+  border-top:7px solid var(--nc,var(--emerald));
+  opacity:.6;
+}
+.node-box.collapsed.has-children::before{
+  content:'+';
+  position:absolute;right:8px;top:8px;
+  width:18px;height:18px;border-radius:50%;
+  background:#F1F5F9;border:1px solid var(--nc);
+  color:var(--nc);font-size:12px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+  line-height:1;
+}
+.node-box.expanded.has-children::before{
+  content:'−';
+  position:absolute;right:8px;top:8px;
+  width:18px;height:18px;border-radius:50%;
+  background:color-mix(in srgb,var(--nc) 12%,#fff);
+  border:1px solid var(--nc);
+  color:var(--nc);font-size:14px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+  line-height:1;
+}
+
+.node-tag{
+  font-size:9px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.6px;color:var(--nc);margin-bottom:4px;opacity:.95;
+}
+.node-title{font-size:13px;font-weight:700;color:var(--text);line-height:1.35;padding-right:22px}
+.node-sub{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.4}
+.node-box.root .node-title{font-size:15px;color:#059669}
+
+.node-detail{
+  display:none;margin-top:8px;padding:10px 12px;
+  background:#F8FAFC;border-radius:8px;
+  border:1px solid var(--border);
+  max-width:220px;font-size:10px;color:var(--muted);line-height:1.55;
+}
+.node-box.expanded .node-detail{display:block}
+.node-detail ul{margin:6px 0 0 14px;padding:0}
+.node-detail li{margin-bottom:3px}
+
+.zoom-controls{
+  position:fixed;bottom:24px;right:24px;z-index:300;
+  display:flex;flex-direction:column;gap:6px;
+}
+.zoom-controls button{
+  width:36px;height:36px;border-radius:10px;
+  border:1px solid var(--border);background:var(--card);
+  color:var(--text);font-size:18px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:border-color .15s;
+  box-shadow:0 2px 6px rgba(15,23,42,.06);
+}
+.zoom-controls button:hover{border-color:var(--emerald);background:#F0FDF4}
+.zoom-level{
+  text-align:center;font-size:10px;color:var(--muted);
+  padding:4px;background:var(--card);border-radius:6px;border:1px solid var(--border);
+  box-shadow:0 1px 4px rgba(15,23,42,.05);
+}
+
+.legend{
+  position:fixed;bottom:24px;left:24px;z-index:300;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:12px 16px;font-size:10px;
+  box-shadow:0 4px 16px rgba(15,23,42,.08);
+}
+.legend-title{font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+.legend-item{display:flex;align-items:center;gap:8px;margin-bottom:5px;color:#475569}
+.legend-dot{width:10px;height:10px;border-radius:3px;border:2px solid}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  
+  <div>
+    <h1>SmartSpend — Subscription AI Scanner</h1>
+    <p>Horizontal flow · Click boxes to expand · Drag to pan · Scroll to zoom</p>
+  </div>
+  <div class="topbar-actions">
+    <span class="hint">Click +/− on boxes</span>
+    <button class="btn" onclick="expandAll()">Expand all</button>
+    <button class="btn" onclick="collapseAll()">Collapse all</button>
+    <button class="btn btn-primary" onclick="fitView()">Fit to screen</button>
+  </div>
+
+</div>
+
+<div class="viewport" id="viewport">
+  <div class="canvas" id="canvas">
+    <svg id="connectors"></svg>
+    <div id="treeRoot"></div>
+  </div>
+</div>
+
+<div class="zoom-controls">
+  <button onclick="zoomIn()" title="Zoom in">+</button>
+  <div class="zoom-level" id="zoomLabel">100%</div>
+  <button onclick="zoomOut()" title="Zoom out">−</button>
+</div>
+
+<div class="legend">
+  <div class="legend-title">Layers</div>
+  <div class="legend-item"><span class="legend-dot" style="border-color:#059669"></span> Entry / Root</div>
+  <div class="legend-item"><span class="legend-dot" style="border-color:#06B6D4"></span> Data Collection</div>
+  <div class="legend-item"><span class="legend-dot" style="border-color:#8B5CF6"></span> Detection Engine</div>
+  <div class="legend-item"><span class="legend-dot" style="border-color:#F59E0B"></span> Ghost & Overlap</div>
+  <div class="legend-item"><span class="legend-dot" style="border-color:#A855F7"></span> AI Recommendations</div>
+  <div class="legend-item"><span class="legend-dot" style="border-color:#F43F5E"></span> Alerts & Actions</div>
+  <div class="legend-item"><span class="legend-dot" style="border-color:#10B981"></span> Re-scan Loop</div>
+</div>
+
+<script>
+const TREE = {
+  id: 'root',
+  tag: 'ENTRY',
+  title: 'Subscription AI\nScanner',
+  sub: 'User opens scanner · auto-triggered monthly',
+  color: '#059669',
+  detail: 'Analyzes 6 months of transactions. Detects active, ghost, and overlapping subscriptions under 1.2s.',
+  expanded: true,
+  children: [
+    {
+      id: 'collect',
+      tag: 'STEP 1',
+      title: 'Data Collection',
+      sub: 'Pull & clean transaction history',
+      color: '#06B6D4',
+      children: [
+        {
+          id: 'c1', tag: 'FETCH', title: 'DB Query',
+          sub: 'Last 6 months · debit only',
+          color: '#06B6D4',
+          detail: '<ul><li>Filter: transaction_type = DEBIT</li><li>Exclude one-time payments</li><li>Group by merchant name</li><li>Normalize merchant strings</li></ul>',
+          children: []
+        },
+        {
+          id: 'c2', tag: 'CLEAN', title: 'Data Normalization',
+          sub: 'Strip noise · ±₹5 tolerance',
+          color: '#06B6D4',
+          detail: '<ul><li>Lowercase merchant names</li><li>Merge duplicate merchant aliases</li><li>Amount tolerance ±₹5 for same sub</li><li>Remove refunded transactions</li></ul>',
+          children: []
+        },
+        {
+          id: 'c3', tag: 'ENRICH', title: 'Metadata Attach',
+          sub: 'Logo · category · cancel URL',
+          color: '#06B6D4',
+          detail: '<ul><li>Merchant logo from CDN</li><li>Category tag: streaming/saas/fitness</li><li>Cancellation URL auto-fetched</li><li>Next expected charge date computed</li></ul>',
+          children: []
+        }
+      ]
+    },
+    {
+      id: 'pattern',
+      tag: 'STEP 2',
+      title: 'Pattern Detection',
+      sub: 'Find recurring charges',
+      color: '#8B5CF6',
+      children: [
+        {
+          id: 'p1', tag: 'INTERVAL', title: 'Interval Calculator',
+          sub: 'Days between same merchant charges',
+          color: '#8B5CF6',
+          detail: '<ul><li>Calculate gap between each charge</li><li>Mean + std deviation of intervals</li><li>Flag if std dev &lt; 3 days = recurring</li></ul>',
+          children: [
+            { id: 'p1a', tag: 'MONTHLY', title: '~30 days ±3', sub: 'Monthly subscription', color: '#8B5CF6', children: [] },
+            { id: 'p1b', tag: 'QUARTERLY', title: '~90 days ±5', sub: 'Quarterly subscription', color: '#8B5CF6', children: [] },
+            { id: 'p1c', tag: 'ANNUAL', title: '~365 days ±10', sub: 'Annual subscription', color: '#8B5CF6', children: [] },
+            { id: 'p1d', tag: 'WEEKLY', title: '~7 days ±1', sub: 'Weekly subscription', color: '#8B5CF6', children: [] }
+          ]
+        },
+        {
+          id: 'p2', tag: 'CONFIDENCE', title: 'Confidence Scorer',
+          sub: 'How regular is the pattern?',
+          color: '#8B5CF6',
+          detail: '<ul><li>Score 0.0 → 1.0 per merchant</li><li>&gt;0.85 = Confirmed subscription</li><li>0.50–0.85 = Probable → user review</li><li>&lt;0.50 = Ignore silently</li></ul>',
+          children: [
+            { id: 'p2a', tag: 'CONFIRMED', title: 'Score > 0.85', sub: '✅ Added to active list', color: '#10B981', children: [] },
+            { id: 'p2b', tag: 'PROBABLE', title: 'Score 0.50–0.85', sub: '🟡 Flagged for review', color: '#F59E0B', children: [] },
+            { id: 'p2c', tag: 'SKIP', title: 'Score < 0.50', sub: '⚪ Silently ignored', color: '#94A3B8', children: [] }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'ghost',
+      tag: 'STEP 3',
+      title: 'Ghost Detection',
+      sub: 'Paying but not using?',
+      color: '#F59E0B',
+      children: [
+        {
+          id: 'g1', tag: 'USAGE CHECK', title: 'Activity Cross-check',
+          sub: 'Any app usage in last 60 days?',
+          color: '#F59E0B',
+          detail: '<ul><li>Check app session logs</li><li>Check content consumption signals</li><li>Check login events per service</li><li>YES = Active · NO = Investigate</li></ul>',
+          children: [
+            { id: 'g1a', tag: 'ACTIVE', title: 'Used recently', sub: '✅ Mark as active', color: '#10B981', children: [] },
+            { id: 'g1b', tag: '30-60 DAYS', title: 'Unused 30+ days', sub: '🟡 Warning issued', color: '#F59E0B', children: [] },
+            { id: 'g1c', tag: '60-90 DAYS', title: 'Unused 60+ days', sub: '🟠 Likely ghost', color: '#F97316', children: [] },
+            { id: 'g1d', tag: '90+ DAYS', title: 'Unused 90+ days', sub: '🔴 Confirmed ghost!', color: '#F43F5E', children: [] }
+          ]
+        },
+        {
+          id: 'g2', tag: 'WASTE CALC', title: 'Money Wasted Calculator',
+          sub: 'Monthly charge × months unused',
+          color: '#F59E0B',
+          detail: '<ul><li>amount × months_since_last_use</li><li>Displayed as total wasted ₹</li><li>Annual projection shown</li><li>Shown in red on ghost card</li></ul>',
+          children: []
+        }
+      ]
+    },
+    {
+      id: 'overlap',
+      tag: 'STEP 4',
+      title: 'Overlap Detection',
+      sub: 'Duplicate services finder',
+      color: '#A855F7',
+      children: [
+        {
+          id: 'o1', tag: 'CATEGORY', title: 'Category Grouper',
+          sub: 'Same category found twice?',
+          color: '#A855F7',
+          detail: '<ul><li>Group all subs by category</li><li>Streaming: Netflix + Prime + Hotstar</li><li>Music: Spotify + Apple Music + YT Music</li><li>Cloud: Drive + Dropbox + OneDrive</li></ul>',
+          children: [
+            { id: 'o1a', tag: 'STREAMING', title: '3 Streaming apps', sub: '🔴 ₹1,198/mo redundant', color: '#F43F5E', children: [] },
+            { id: 'o1b', tag: 'MUSIC', title: '2 Music apps', sub: '🟡 ₹119/mo wasted', color: '#F59E0B', children: [] },
+            { id: 'o1c', tag: 'UNIQUE', title: 'No overlap', sub: '✅ All different categories', color: '#10B981', children: [] }
+          ]
+        },
+        {
+          id: 'o2', tag: 'AI PICK', title: 'Best Value Picker',
+          sub: 'AI selects the winner to keep',
+          color: '#A855F7',
+          detail: '<ul><li>Price per feature ratio</li><li>Usage frequency vs cost</li><li>Suggests which one to keep</li><li>"Keep Prime · Cancel Hotstar + Netflix"</li></ul>',
+          children: []
+        }
+      ]
+    },
+    {
+      id: 'ai',
+      tag: 'STEP 5',
+      title: 'AI Recommendation\nEngine',
+      sub: 'Aggregate + benchmark + suggest',
+      color: '#A855F7',
+      children: [
+        {
+          id: 'a1', tag: 'TOTAL CALC', title: 'Total Spend Calculator',
+          sub: 'All subs · monthly total',
+          color: '#A855F7',
+          detail: '<ul><li>Sum all confirmed subscriptions</li><li>Breakdown by category</li><li>Monthly + annual projection</li><li>Pie chart data assembled</li></ul>',
+          children: []
+        },
+        {
+          id: 'a2', tag: 'BENCHMARK', title: 'India Benchmark',
+          sub: 'Your spend vs income bracket avg',
+          color: '#A855F7',
+          detail: '<ul><li>Compare vs India avg for income band</li><li>&gt;15% of income = High Alert 🔴</li><li>10–15% = Moderate 🟡</li><li>&lt;10% = Healthy 🟢</li></ul>',
+          children: [
+            { id: 'a2a', tag: 'HIGH', title: 'Over 15% income', sub: '🔴 Overspending alert', color: '#F43F5E', children: [] },
+            { id: 'a2b', tag: 'MODERATE', title: '10–15% income', sub: '🟡 Slightly above avg', color: '#F59E0B', children: [] },
+            { id: 'a2c', tag: 'HEALTHY', title: 'Under 10% income', sub: '🟢 Managing well', color: '#10B981', children: [] }
+          ]
+        },
+        {
+          id: 'a3', tag: 'SAVINGS EST', title: 'Savings Estimator',
+          sub: 'If all ghosts cancelled',
+          color: '#A855F7',
+          detail: '<ul><li>Ghost sub total × 12 = annual save</li><li>Overlap redundancy cost</li><li>"Cancel these 3 → Save ₹1,847/mo"</li><li>Displayed as banner on dashboard</li></ul>',
+          children: []
+        }
+      ]
+    },
+    {
+      id: 'output',
+      tag: 'STEP 6',
+      title: 'Dashboard Output',
+      sub: 'Cards delivered to user',
+      color: '#F43F5E',
+      children: [
+        { id: 'out1', tag: 'CARD 1', title: 'Active Subscriptions', sub: 'Logos + next charge date', color: '#10B981', children: [] },
+        { id: 'out2', tag: 'CARD 2', title: 'Ghost Subscriptions', sub: '🔴 Red + Cancel button', color: '#F43F5E', children: [] },
+        { id: 'out3', tag: 'CARD 3', title: 'Overlap Alert', sub: 'Side-by-side comparison', color: '#F59E0B', children: [] },
+        { id: 'out4', tag: 'CARD 4', title: 'Monthly Cost Chart', sub: 'Pie breakdown by category', color: '#06B6D4', children: [] },
+        { id: 'out5', tag: 'BANNER', title: 'Savings Banner', sub: '"Save ₹1,847/mo — Cancel 3"', color: '#A855F7', children: [] }
+      ]
+    },
+    {
+      id: 'action',
+      tag: 'STEP 7',
+      title: 'User Action',
+      sub: 'What user does next',
+      color: '#F43F5E',
+      children: [
+        {
+          id: 'act1', tag: 'CANCEL', title: 'Cancel Subscription',
+          sub: 'Opens cancellation URL in-app',
+          color: '#F43F5E',
+          detail: '<ul><li>Open cancel URL in in-app browser</li><li>Monitor if charge appears next month</li><li>If charged again → Re-charge Alert 🚨</li><li>If clear → Update savings tracker ✅</li></ul>',
+          children: [
+            { id: 'act1a', tag: 'SUCCESS', title: 'Cancellation done', sub: '✅ Savings tracker updated', color: '#10B981', children: [] },
+            { id: 'act1b', tag: 'FAILED', title: 'Charged again next month', sub: '🚨 Re-charge alert fired', color: '#F43F5E', children: [] }
+          ]
+        },
+        { id: 'act2', tag: 'KEEP', title: 'Mark as Intentional', sub: 'Stop ghost alerts 30 days', color: '#06B6D4', children: [] },
+        { id: 'act3', tag: 'SNOOZE', title: 'Remind Later', sub: 'Snooze · remind in 7 days', color: '#F59E0B', children: [] }
+      ]
+    },
+    {
+      id: 'loop',
+      tag: 'STEP 8',
+      title: 'Auto Re-scan Loop',
+      sub: 'Every 30 days · background job',
+      color: '#10B981',
+      children: [
+        {
+          id: 'l1', tag: 'SCHEDULER', title: 'Monthly Cron Job',
+          sub: 'Triggers full re-scan silently',
+          color: '#10B981',
+          detail: '<ul><li>Runs on 1st of every month</li><li>Full pipeline re-executed</li><li>New ghosts detected automatically</li><li>Push notification if new ghost found</li></ul>',
+          children: []
+        },
+        {
+          id: 'l2', tag: 'DRIFT CHECK', title: 'Failed Cancel Detector',
+          sub: 'Cancelled sub charged again?',
+          color: '#10B981',
+          detail: '<ul><li>Check cancelled_subs list</li><li>If charge detected → alert user</li><li>Re-open cancel flow automatically</li><li>Log as cancellation_failed event</li></ul>',
+          children: [
+            { id: 'l2a', tag: 'CLEAR', title: 'All clear', sub: '✅ Dashboard stays clean', color: '#10B981', children: [] },
+            { id: 'l2b', tag: 'RECHARGED', title: 'Re-charge detected', sub: '🚨 Cancellation may have failed', color: '#F43F5E', children: [] }
+          ]
+        }
+      ]
+    }
+  ]
+};
+
+const NODE_W = 168;
+const NODE_H_BASE = 68;
+const SIBLING_GAP = 24;
+const LEVEL_GAP = 56;
+const ROOT_GAP = 44;      /* clear space between root row and step row */
+const ROOT_ROW_H = 76;    /* fixed height for root lane */
+
+const state = { expanded: new Set(['root']), positions: new Map() };
+
+function rowY(depth) {
+  if (depth === 0) return 0;
+  return ROOT_ROW_H + ROOT_GAP + (depth - 1) * (NODE_H_BASE + LEVEL_GAP);
+}
+
+function nodeHeight(node, expanded, hasKids) {
+  if (node.id === 'root' && hasKids && expanded) return ROOT_ROW_H;
+  if (expanded && node.detail && !(hasKids && expanded)) return NODE_H_BASE + 72;
+  return NODE_H_BASE;
+}
+
+/** Top-down: root centered on its own top row; steps in horizontal row below */
+function layoutHorizontal(node, depth, xCursor) {
+  const hasKids = node.children && node.children.length > 0;
+  const expanded = state.expanded.has(node.id);
+  const selfH = nodeHeight(node, expanded, hasKids);
+  const y = rowY(depth);
+
+  if (!hasKids || !expanded) {
+    const x = xCursor;
+    state.positions.set(node.id, { x, y, w: NODE_W, h: selfH, node, depth });
+    return {
+      nextX: xCursor + NODE_W + SIBLING_GAP,
+      width: NODE_W,
+      centerX: x + NODE_W / 2,
+      bottomY: y + selfH,
+      topY: y,
+    };
+  }
+
+  let cx = xCursor;
+  const childMeta = [];
+  for (const child of node.children) {
+    const res = layoutHorizontal(child, depth + 1, cx);
+    childMeta.push({ child, centerX: res.centerX, topY: res.topY });
+    cx = res.nextX;
+  }
+
+  const totalW = Math.max(NODE_W, cx - xCursor - SIBLING_GAP);
+  const nodeX = xCursor + (totalW - NODE_W) / 2;
+
+  state.positions.set(node.id, {
+    x: nodeX,
+    y,
+    w: NODE_W,
+    h: selfH,
+    node,
+    depth,
+    children: childMeta,
+    centerX: nodeX + NODE_W / 2,
+    bottomY: y + selfH,
+  });
+
+  return {
+    nextX: cx,
+    width: totalW,
+    centerX: nodeX + NODE_W / 2,
+    bottomY: y + selfH,
+    topY: y,
+  };
+}
+
+function renderNodesFixed() {
+  const mount = document.getElementById('treeRoot');
+  mount.innerHTML = '';
+  const entries = [...state.positions.entries()].sort((a, b) => {
+    if (a[0] === 'root') return 1;
+    if (b[0] === 'root') return -1;
+    return 0;
+  });
+  entries.forEach(([id, pos]) => {
+    const n = pos.node;
+    const hasKids = n.children && n.children.length > 0;
+    const isExp = state.expanded.has(id);
+
+    const el = document.createElement('div');
+    el.className = 'tree-node';
+    el.style.left = pos.x + 'px';
+    el.style.top = pos.y + 'px';
+    if (id === 'root') el.dataset.root = '1';
+
+    const box = document.createElement('div');
+    box.className = 'node-box' + (id === 'root' ? ' root' : '') +
+      (hasKids ? ' has-children' : '') +
+      (isExp ? ' expanded' : ' collapsed');
+    box.style.setProperty('--nc', n.color);
+
+    box.innerHTML = `
+      <div class="node-tag">${n.tag}</div>
+      <div class="node-title">${n.title.replace(/\n/g, '<br>')}</div>
+      ${n.sub ? `<div class="node-sub">${n.sub}</div>` : ''}
+      ${(isExp && n.detail && !(hasKids && isExp)) ? `<div class="node-detail">${n.detail}</div>` : ''}
+    `;
+
+    box.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (hasKids || n.detail) {
+        if (state.expanded.has(id)) state.expanded.delete(id);
+        else state.expanded.add(id);
+        relayoutFixed();
+      }
+    });
+
+    el.appendChild(box);
+    mount.appendChild(el);
+  });
+}
+
+function drawConnectorsFixed() {
+  const svg = document.getElementById('connectors');
+  const canvas = document.getElementById('canvas');
+  const w = canvas.offsetWidth || 1200;
+  const h = canvas.offsetHeight || 800;
+  svg.setAttribute('width', w);
+  svg.setAttribute('height', h);
+  svg.style.width = w + 'px';
+  svg.style.height = h + 'px';
+  svg.innerHTML = '';
+
+  state.positions.forEach((pos) => {
+    if (!pos.children || !pos.children.length) return;
+    const px = pos.centerX ?? pos.x + pos.w / 2;
+    const py = pos.bottomY ?? pos.y + pos.h;
+    const childTops = pos.children.map(({ child, centerX }) => {
+      const cp = state.positions.get(child.id);
+      if (!cp) return null;
+      return {
+        cx: centerX ?? cp.x + cp.w / 2,
+        cy: cp.y,
+        color: cp.node.color,
+      };
+    }).filter(Boolean);
+    if (!childTops.length) return;
+
+    const busY = pos.node.id === 'root'
+      ? py + 22
+      : py + Math.max(18, (childTops[0].cy - py) * 0.42);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const minX = Math.min(...childTops.map((c) => c.cx));
+    const maxX = Math.max(...childTops.map((c) => c.cx));
+    let d = `M ${px} ${py} L ${px} ${busY}`;
+    if (childTops.length > 0) {
+      d += ` M ${minX} ${busY} L ${maxX} ${busY}`;
+      childTops.forEach((c) => {
+        d += ` M ${c.cx} ${busY} L ${c.cx} ${c.cy}`;
+      });
+    }
+    path.setAttribute('d', d);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', pos.node.color);
+    path.setAttribute('stroke-width', '2');
+    path.setAttribute('opacity', '0.65');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(path);
+  });
+}
+
+function getContentBounds() {
+  let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+  state.positions.forEach((pos) => {
+    minX = Math.min(minX, pos.x);
+    minY = Math.min(minY, pos.y);
+    maxX = Math.max(maxX, pos.x + pos.w);
+    maxY = Math.max(maxY, pos.y + pos.h);
+  });
+  if (!isFinite(minX)) return { minX: 0, minY: 0, maxX: 800, maxY: 400 };
+  return { minX, minY, maxX, maxY };
+}
+
+function relayoutFixed() {
+  state.positions.clear();
+  layoutHorizontal(TREE, 0, 0);
+  const bounds = getContentBounds();
+  const pad = 40;
+  const ox = pad - bounds.minX;
+  const oy = pad - bounds.minY;
+  state.positions.forEach((pos) => {
+    pos.x += ox;
+    pos.y += oy;
+    pos.centerX = pos.x + pos.w / 2;
+    pos.bottomY = pos.y + pos.h;
+    if (pos.children) {
+      pos.children.forEach((c) => {
+        const cp = state.positions.get(c.child.id);
+        if (cp) c.centerX = cp.x + cp.w / 2;
+      });
+    }
+  });
+  const canvas = document.getElementById('canvas');
+  canvas.style.width = bounds.maxX - bounds.minX + pad * 2 + 'px';
+  canvas.style.height = bounds.maxY - bounds.minY + pad * 2 + 'px';
+  renderNodesFixed();
+  drawConnectorsFixed();
+  requestAnimationFrame(fitView);
+}
+
+function expandAll() {
+  function walk(n) {
+    state.expanded.add(n.id);
+    (n.children || []).forEach(walk);
+  }
+  walk(TREE);
+  relayoutFixed();
+}
+
+function collapseAll() {
+  state.expanded = new Set(['root']);
+  relayoutFixed();
+}
+
+let scale = 0.85, panX = 40, panY = 20, dragging = false, lastX, lastY;
+
+function applyTransform() {
+  const c = document.getElementById('canvas');
+  c.style.transform = `translate(${panX}px,${panY}px) scale(${scale})`;
+  document.getElementById('zoomLabel').textContent = Math.round(scale * 100) + '%';
+}
+
+const viewport = document.getElementById('viewport');
+viewport.addEventListener('mousedown', e => {
+  if (e.target.closest('.node-box')) return;
+  dragging = true;
+  lastX = e.clientX; lastY = e.clientY;
+  viewport.classList.add('grabbing');
+});
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  panX += e.clientX - lastX;
+  panY += e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  applyTransform();
+});
+window.addEventListener('mouseup', () => {
+  dragging = false;
+  viewport.classList.remove('grabbing');
+});
+viewport.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -0.06 : 0.06;
+  scale = Math.min(1.8, Math.max(0.25, scale + delta));
+  applyTransform();
+}, { passive: false });
+
+function zoomIn() { scale = Math.min(1.8, scale + 0.1); applyTransform(); }
+function zoomOut() { scale = Math.max(0.25, scale - 0.1); applyTransform(); }
+
+function fitView() {
+  const vp = viewport.getBoundingClientRect();
+  const canvas = document.getElementById('canvas');
+  const cw = canvas.offsetWidth || 1200;
+  const ch = canvas.offsetHeight || 600;
+  const margin = 32;
+  scale = Math.min(1, (vp.width - margin) / cw, (vp.height - margin) / ch);
+  panX = Math.max(margin / 2, (vp.width - cw * scale) / 2);
+  panY = Math.max(margin / 2, (vp.height - ch * scale) / 2);
+  applyTransform();
+}
+
+window.addEventListener('resize', () => requestAnimationFrame(fitView));
+
+state.expanded = new Set(['root']);
+relayoutFixed();
+</script>
+</body>
+</html>

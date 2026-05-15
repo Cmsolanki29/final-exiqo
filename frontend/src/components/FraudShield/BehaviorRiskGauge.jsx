@@ -28,7 +28,7 @@ export function BehaviorRiskGauge({ risk = 0, embedded = true }) {
       <h3 className={embedded ? "text-sm font-semibold text-white" : "text-sm font-semibold text-gray-700"}>
         Behavioral risk score
       </h3>
-      <p className={embedded ? "mt-0.5 text-xs text-exiqo-glow/55" : "mt-0.5 text-xs text-gray-400"}>
+      <p className={embedded ? "mt-0.5 text-xs text-gray-500" : "mt-0.5 text-xs text-gray-400"}>
         Safe · Watch · Risky bands (0–100)
       </p>
       <div className="mt-4 flex flex-wrap items-center gap-6">
@@ -53,7 +53,7 @@ export function BehaviorRiskGauge({ risk = 0, embedded = true }) {
             <span className={embedded ? "text-xl font-bold tabular-nums text-white" : "text-xl font-bold tabular-nums text-gray-900"}>
               {pct}
             </span>
-            <span className={embedded ? "text-[9px] text-exiqo-glow/45" : "text-[9px] text-gray-400"}>/ 100</span>
+            <span className={embedded ? "text-[9px] text-gray-500" : "text-[9px] text-gray-400"}>/ 100</span>
           </div>
         </div>
         <div className="min-w-0 flex-1 space-y-2">
@@ -68,10 +68,10 @@ export function BehaviorRiskGauge({ risk = 0, embedded = true }) {
           >
             {label}
           </span>
-          <p className={embedded ? "text-sm leading-relaxed text-exiqo-glow/75" : "text-sm text-gray-600"}>{sub}</p>
+          <p className={embedded ? "text-sm leading-relaxed text-gray-400" : "text-sm text-gray-600"}>{sub}</p>
           <div
             className={`flex flex-wrap gap-3 text-[10px] uppercase tracking-wider ${
-              embedded ? "text-exiqo-glow/45" : "text-gray-400"
+              embedded ? "text-gray-500" : "text-gray-400"
             }`}
           >
             <span className="flex items-center gap-1">

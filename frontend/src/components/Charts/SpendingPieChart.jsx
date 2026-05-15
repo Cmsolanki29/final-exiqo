@@ -89,7 +89,7 @@ const SpendingPieChart = ({ spendingData = [], month, year, prevMonthExpense = 0
     <GlassCard padding="md" surface="panel" className="border-white/[0.08]">
       <div className="mb-3 flex items-center justify-between gap-2 border-b border-white/[0.06] pb-3">
         <h3 className="font-heading text-base font-semibold text-white">Spending by category</h3>
-        <span className="text-[11px] font-medium text-exiqo-glow/55 tabular-nums">
+        <span className="text-[11px] font-medium text-gray-500 tabular-nums">
           {month}/{year}
         </span>
       </div>
@@ -143,7 +143,7 @@ const SpendingPieChart = ({ spendingData = [], month, year, prevMonthExpense = 0
                   ))}
                 </Pie>
                 <Tooltip content={<CustomTooltip />} />
-                <text x="50%" y="47%" textAnchor="middle" fill="rgba(167,139,250,0.75)" fontSize={11}>
+                <text x="50%" y="47%" textAnchor="middle" fill="rgba(156,163,175,0.65)" fontSize={11}>
                   This month
                 </text>
                 <text x="50%" y="55%" textAnchor="middle" fill="#f5f3ff" fontSize={18} fontWeight={700} className="tabular-nums">

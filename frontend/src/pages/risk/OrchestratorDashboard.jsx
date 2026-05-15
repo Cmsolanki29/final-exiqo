@@ -66,12 +66,12 @@ function StatCard({ icon: Icon, label, value, sublabel, color = "#a78bfa" }) {
       animate={{ opacity: 1, y: 0 }}
       className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-sm"
     >
-      <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-exiqo-glow/40 font-semibold">
+      <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-gray-600 font-semibold">
         {Icon && <Icon size={11} style={{ color }} />}
         {label}
       </div>
       <p className="text-2xl font-bold text-white mt-1.5">{value ?? "—"}</p>
-      {sublabel && <p className="text-[11px] text-exiqo-glow/40 mt-0.5">{sublabel}</p>}
+      {sublabel && <p className="text-[11px] text-gray-600 mt-0.5">{sublabel}</p>}
     </motion.div>
   );
 }
@@ -83,7 +83,7 @@ function BudgetBar({ spent, cap }) {
   const color = over80 ? "#ef4444" : pct > 50 ? "#f59e0b" : "#22c55e";
   return (
     <div className="mt-3">
-      <div className="flex items-center justify-between text-[11px] text-exiqo-glow/50 mb-1">
+      <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1">
         <span>{fmtUsd(spent)} spent</span>
         <span>{fmtUsd(cap)} cap</span>
       </div>
@@ -154,7 +154,7 @@ function LiveTierDisplay({ score }) {
         <span className="text-xs font-semibold text-white">
           {info.label}
         </span>
-        <span className="text-[10px] bg-white/[0.06] border border-white/10 px-2 py-0.5 rounded-full text-exiqo-glow/60">
+        <span className="text-[10px] bg-white/[0.06] border border-white/10 px-2 py-0.5 rounded-full text-gray-400">
           Tier {info.tier}
         </span>
       </div>
@@ -167,7 +167,7 @@ function LiveTierDisplay({ score }) {
       </div>
 
       {/* Cost callout */}
-      <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 text-[12px] leading-relaxed text-exiqo-glow/70">
+      <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 text-[12px] leading-relaxed text-gray-400">
         At this risk level,{" "}
         <span className="text-white font-semibold">{info.active.length}</span> model
         {info.active.length !== 1 ? "s" : ""} activate.
@@ -230,7 +230,7 @@ function TierStrip({ thresholds, previewScore, previewTier }) {
       </div>
 
       {/* Scale */}
-      <div className="flex justify-between text-[10px] text-exiqo-glow/40 mt-1 px-0.5">
+      <div className="flex justify-between text-[10px] text-gray-600 mt-1 px-0.5">
         {[0, 25, 50, 75, 100].map((v) => (
           <span key={v}>{v}</span>
         ))}
@@ -238,7 +238,7 @@ function TierStrip({ thresholds, previewScore, previewTier }) {
 
       {/* Preview row */}
       {Number.isFinite(previewScore) && (
-        <p className="text-[11px] text-exiqo-glow/60 mt-2">
+        <p className="text-[11px] text-gray-400 mt-2">
           Score{" "}
           <span className="text-white font-semibold">{previewScore}</span> →{" "}
           <span className="text-purple-300 font-semibold">{previewTier || "—"}</span>
@@ -338,7 +338,7 @@ const OrchestratorDashboard = () => {
               Phase 12 · 2026
             </span>
           </div>
-          <p className="text-exiqo-glow/60 text-sm mt-1">
+          <p className="text-gray-400 text-sm mt-1">
             Daily LLM spend, tier routing thresholds, and judge-call breakdown.
           </p>
         </div>
@@ -347,7 +347,7 @@ const OrchestratorDashboard = () => {
           type="button"
           onClick={handleRefresh}
           disabled={refreshing}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-white/10 bg-white/[0.03] text-exiqo-glow/80 hover:bg-white/[0.07] transition disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-white/10 bg-white/[0.03] text-gray-300 hover:bg-white/[0.07] transition disabled:opacity-50"
         >
           <RefreshCw size={12} className={refreshing ? "animate-spin" : ""} />
           {refreshing ? "Refreshing…" : "Refresh"}
@@ -364,7 +364,7 @@ const OrchestratorDashboard = () => {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-sm">
-            <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-exiqo-glow/40 font-semibold">
+            <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-gray-600 font-semibold">
               <DollarSign size={11} className="text-emerald-300" /> Today spend
             </div>
             <p className="text-2xl font-bold text-white mt-1.5">{fmtUsd(totalSpend)}</p>
@@ -413,7 +413,7 @@ const OrchestratorDashboard = () => {
         </div>
 
         {chartData.length === 0 ? (
-          <div className="py-10 text-center text-sm text-exiqo-glow/40">
+          <div className="py-10 text-center text-sm text-gray-600">
             No LLM calls recorded today. Trigger an investigation or judge replay to see data here.
           </div>
         ) : (
@@ -456,7 +456,7 @@ const OrchestratorDashboard = () => {
             <h3 className="text-sm font-semibold text-white">Tier routing thresholds</h3>
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-[11px] text-exiqo-glow/50 uppercase tracking-wider">
+            <label className="text-[11px] text-gray-500 uppercase tracking-wider">
               Preview score
             </label>
             <input

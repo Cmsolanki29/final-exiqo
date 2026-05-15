@@ -46,9 +46,9 @@ export default function InvestigationConsole({ transactionLabel = "TXN-9981" }) 
             <Terminal className="h-5 w-5 text-violet-200" aria-hidden />
           </div>
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-300/80">Phase 9 · Live console</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">Phase 9 · Live console</p>
             <h3 className="mt-1 text-lg font-bold tracking-tight text-white">Investigation stream</h3>
-            <p className="mt-1 max-w-xl text-xs leading-relaxed text-exiqo-glow/70">
+            <p className="mt-1 max-w-xl text-xs leading-relaxed text-gray-400">
               Our AI investigator analyses high-risk transactions like a fraud analyst — merchant velocity, ring signals,
               your spend curve, and SHAP drivers. Stream below is scripted; wire to{" "}
               <code className="rounded bg-black/30 px-1 text-[10px]">POST /risk/investigations/…/run</code> for live output.
@@ -66,9 +66,9 @@ export default function InvestigationConsole({ transactionLabel = "TXN-9981" }) 
         </button>
       </div>
       <div className="rounded-xl border border-white/10 bg-black/35 p-4 font-mono text-[11px] leading-relaxed text-emerald-100/90">
-        <p className="mb-2 text-violet-200/80">Target: {transactionLabel}</p>
+        <p className="mb-2 text-gray-400">Target: {transactionLabel}</p>
         {lines.length === 0 && !running ? (
-          <p className="text-exiqo-glow/45">Press Run investigation to stream the agent trace.</p>
+          <p className="text-gray-500">Press Run investigation to stream the agent trace.</p>
         ) : (
           <ul className="space-y-1.5">
             <AnimatePresence initial={false}>

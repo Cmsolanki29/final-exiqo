@@ -66,15 +66,15 @@ const AnomalyList = ({ anomalies = [], userId, compact = false }) => {
                 <strong className="min-w-0 flex-1 truncate text-sm text-white">{a.merchant || "Unknown merchant"}</strong>
                 <span className="font-heading text-sm font-bold tabular-nums text-white">{apiUtils.formatINR(a.amount)}</span>
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-exiqo-glow/55">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-500">
                 <span className="tabular-nums">{String(a.transaction_date)}</span>
                 <span className="rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold uppercase text-exiqo-glow/80">
                   {a.risk_level}
                 </span>
               </div>
-              <p className="line-clamp-2 text-xs text-exiqo-glow/70">{a.reason}</p>
+              <p className="line-clamp-2 text-xs text-gray-400">{a.reason}</p>
               <div className="flex items-center justify-between">
-                <span className="text-[11px] text-exiqo-glow/50 tabular-nums">Risk {a.risk_score}</span>
+                <span className="text-[11px] text-gray-500 tabular-nums">Risk {a.risk_score}</span>
                 <button
                   type="button"
                   onClick={() => setSelected(a)}
@@ -104,7 +104,7 @@ const AnomalyList = ({ anomalies = [], userId, compact = false }) => {
         <GlassCard padding="md" surface="panel" className="border-white/[0.08]">
           <div className="mb-3 border-b border-white/[0.06] pb-3">
             <h3 className="font-heading text-base font-semibold text-white">Top anomalies</h3>
-            <p className="text-xs text-exiqo-glow/60">{filtered.length} flagged in view</p>
+            <p className="text-xs text-gray-400">{filtered.length} flagged in view</p>
           </div>
           {body}
         </GlassCard>
@@ -116,7 +116,7 @@ const AnomalyList = ({ anomalies = [], userId, compact = false }) => {
                 <AlertTriangle className="h-5 w-5 text-exiqo-pink" aria-hidden />
                 Suspicious transactions
               </h3>
-              <p className="text-xs text-exiqo-glow/60">{filtered.length} transactions flagged</p>
+              <p className="text-xs text-gray-400">{filtered.length} transactions flagged</p>
             </div>
 
             <div className="filter-row flex flex-wrap gap-2">

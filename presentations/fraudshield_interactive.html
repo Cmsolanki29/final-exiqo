@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartSpend — FraudShield: All 12 Phases (Interactive)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0A0612;
+      --surface:  #0F0A1F;
+      --card:     #15102A;
+      --border:   #2D2244;
+      --purple:   #8B5CF6;
+      --cyan:     #06B6D4;
+      --emerald:  #10B981;
+      --rose:     #F43F5E;
+      --amber:    #F59E0B;
+      --sky:      #0EA5E9;
+      --teal:     #14B8A6;
+      --text:     #F9FAFB;
+      --muted:    #9CA3AF;
+      --subtle:   #4B5563;
+    }
+
+    body {
+      background: var(--bg);
+      font-family: 'Inter', sans-serif;
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── HEADER ───────────────────────────────── */
+    .header {
+      text-align: center;
+      padding: 44px 24px 0;
+    }
+    .page-title {
+      color: var(--rose);
+      font-size: 30px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+      margin-bottom: 6px;
+    }
+    .page-subtitle {
+      color: var(--purple);
+      font-size: 15px;
+      font-weight: 500;
+      margin-bottom: 28px;
+    }
+
+    /* ── METRICS BAR ──────────────────────────── */
+    .metrics-bar {
+      display: flex;
+      gap: 14px;
+      justify-content: center;
+      flex-wrap: wrap;
+      padding: 0 24px 32px;
+    }
+    .metric-card {
+      background: var(--card);
+      border: 1px solid var(--purple);
+      border-radius: 12px;
+      padding: 14px 28px;
+      text-align: center;
+      box-shadow: 0 0 18px rgba(139,92,246,0.10);
+      min-width: 130px;
+    }
+    .metric-label { color: var(--muted); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.8px; }
+    .metric-value { color: var(--purple); font-size: 26px; font-weight: 700; margin-top: 2px; }
+
+    /* ── HINT BAR ─────────────────────────────── */
+    .hint-bar {
+      text-align: center;
+      margin: 0 24px 20px;
+      padding: 10px 20px;
+      background: rgba(139,92,246,0.06);
+      border: 1px solid rgba(139,92,246,0.20);
+      border-radius: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      max-width: 900px;
+      margin-inline: auto;
+    }
+    .hint-bar strong { color: var(--purple); }
+
+    /* ── MAIN LAYOUT ──────────────────────────── */
+    .main-layout {
+      display: flex;
+      gap: 0;
+      padding: 0 20px 60px;
+      max-width: 1600px;
+      margin: 0 auto;
+      align-items: flex-start;
+    }
+
+    /* ── DIAGRAM PANEL ────────────────────────── */
+    .diagram-panel {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 40px 24px;
+      overflow-x: auto;
+      transition: flex 0.4s ease;
+    }
+    .diagram-panel .mermaid {
+      display: flex;
+      justify-content: center;
+    }
+    .diagram-panel .mermaid svg {
+      max-width: 100%;
+      height: auto;
+      font-family: 'Inter', sans-serif !important;
+      cursor: pointer;
+    }
+
+    /* Make mermaid nodes look clickable */
+    .diagram-panel .mermaid svg .node rect,
+    .diagram-panel .mermaid svg .node circle,
+    .diagram-panel .mermaid svg .node polygon,
+    .diagram-panel .mermaid svg .node ellipse {
+      cursor: pointer;
+      transition: filter 0.2s;
+    }
+    .diagram-panel .mermaid svg .node:hover rect,
+    .diagram-panel .mermaid svg .node:hover circle,
+    .diagram-panel .mermaid svg .node:hover ellipse {
+      filter: brightness(1.4) drop-shadow(0 0 8px rgba(139,92,246,0.7));
+    }
+
+    /* ── DETAIL PANEL ─────────────────────────── */
+    .detail-panel {
+      width: 0;
+      overflow: hidden;
+      transition: width 0.4s ease, opacity 0.3s ease, margin-left 0.4s ease;
+      opacity: 0;
+      margin-left: 0;
+      flex-shrink: 0;
+    }
+    .detail-panel.open {
+      width: 480px;
+      opacity: 1;
+      margin-left: 20px;
+    }
+    .detail-inner {
+      width: 480px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 28px 24px;
+      position: sticky;
+      top: 20px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+    }
+    .detail-inner::-webkit-scrollbar { width: 4px; }
+    .detail-inner::-webkit-scrollbar-track { background: transparent; }
+    .detail-inner::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .detail-close {
+      position: absolute;
+      top: 14px; right: 16px;
+      background: none;
+      border: none;
+      color: var(--subtle);
+      font-size: 22px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .detail-close:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+
+    .phase-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+    .detail-title {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      line-height: 1.3;
+    }
+    .detail-subtitle {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 18px;
+    }
+
+    .detail-section {
+      margin-bottom: 16px;
+    }
+    .detail-section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--subtle);
+      margin-bottom: 8px;
+    }
+
+    .step-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .step-item {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.04);
+    }
+    .step-num {
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .step-content { flex: 1; }
+    .step-label { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+    .step-desc  { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+    .metric-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .metric-pill {
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid;
+    }
+
+    .flow-diagram-mini {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.8;
+      font-family: 'Inter', monospace;
+    }
+    .flow-arrow { color: var(--purple); font-weight: 700; }
+
+    /* ── PHASE GRID (overview below diagram) ──── */
+    .phase-legend {
+      max-width: 1560px;
+      margin: 16px auto 0;
+      padding: 0 20px;
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 8px;
+    }
+    .phase-chip {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 6px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+    }
+    .phase-chip:hover {
+      border-color: var(--purple);
+      box-shadow: 0 0 12px rgba(139,92,246,0.25);
+      transform: translateY(-2px);
+    }
+    .phase-chip.active {
+      border-color: var(--purple);
+      background: rgba(139,92,246,0.12);
+      box-shadow: 0 0 16px rgba(139,92,246,0.30);
+    }
+    .phase-chip-num { font-size: 18px; font-weight: 700; }
+    .phase-chip-name { font-size: 10px; color: var(--muted); margin-top: 2px; line-height: 1.3; }
+
+    /* scrollbar */
+    body::-webkit-scrollbar { width: 6px; }
+    body::-webkit-scrollbar-track { background: var(--bg); }
+    body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <h1 class="page-title">SmartSpend — FraudShield: All 12 Phases AI Pipeline</h1>
+    <p class="page-subtitle">XGBoost + DNN + GraphSAGE + LLM Orchestrator — 12 layers of protection · click any phase to expand</p>
+  </div>
+
+  <!-- Metrics -->
+  <div class="metrics-bar">
+    <div class="metric-card"><div class="metric-label">ROC-AUC</div><div class="metric-value">0.933</div></div>
+    <div class="metric-card"><div class="metric-label">ML Models</div><div class="metric-value">4</div></div>
+    <div class="metric-card"><div class="metric-label">Features</div><div class="metric-value">28</div></div>
+    <div class="metric-card"><div class="metric-label">PSI (drift)</div><div class="metric-value">0.050</div></div>
+    <div class="metric-card"><div class="metric-label">Latency</div><div class="metric-value">&lt;50ms</div></div>
+    <div class="metric-card"><div class="metric-label">Phases</div><div class="metric-value">12</div></div>
+  </div>
+
+  <!-- Hint -->
+  <div class="hint-bar">
+    <strong>👆 Click any phase chip below or any node in the diagram</strong> to see full internal working of that phase. Press <strong>Esc</strong> to close.
+  </div>
+
+  <!-- Phase chips -->
+  <div class="phase-legend" id="phaseChips"></div>
+
+  <!-- Main layout: diagram + detail panel -->
+  <div class="main-layout" style="margin-top:20px">
+    <div class="diagram-panel">
+      <div class="mermaid" id="mainDiagram">
+flowchart TD
+
+    %% ── ENTRY ──────────────────────────────────────────────────────────
+    ENTRY([👤 Transaction arrives\nManual check or real-time\nbank feed trigger])
+
+    ENTRY --> P1
+
+    %% ── PHASE 1 ─────────────────────────────────────────────────────────
+    subgraph G1["⚡ Phase 1 — Event Engine"]
+        P1[Redis Streams ingestion\n18k+ events/hour\nSub-50ms fan-out to scoring DAG\nDurable events log + baseline alerts]
+    end
+
+    %% ── PHASE 2 ─────────────────────────────────────────────────────────
+    G1 --> G2
+    subgraph G2["🗄️ Phase 2 — Feature Store"]
+        P2[212 behavioural signals materialized\nOnline Redis cache for real-time scoring\nOffline snapshots for point-in-time training\namount_zscore · velocity · geo drift · merchant history]
+    end
+
+    %% ── PHASE 3 ─────────────────────────────────────────────────────────
+    G2 --> G3
+    subgraph G3["🌲 Phase 3 — Fraud Classifier — XGBoost"]
+        P3[fraud-xgboost-v0 · Production · ROC-AUC 0.933\n300 gradient-boosted trees\nTrained on India UPI patterns + RBI fraud taxonomy\nOutputs probability score 0.0 → 1.0]
+    end
+
+    %% ── PHASE 4 ─────────────────────────────────────────────────────────
+    G3 --> G4
+    subgraph G4["🛡️ Phase 4 — Decision Engine"]
+        P4[847 active merchant policies\nBlacklist sync under 2 minutes\nKYC rules + velocity caps\nRule-gate on top of ML score]
+    end
+
+    %% ── PHASE 5 ─────────────────────────────────────────────────────────
+    G4 --> G5
+    subgraph G5["⚙️ Phase 5 — MLOps & Drift Detection"]
+        P5[PSI watch on 14 features · Current PSI 0.050 Stable\nMLflow model registry + stage promotions\nCanary scoring + shadow dual-scoring\nAuto-retrain trigger when PSI exceeds 0.25]
+    end
+
+    %% ── PHASE 6 ─────────────────────────────────────────────────────────
+    G5 --> G6
+    subgraph G6["🕸️ Phase 6 — Graph Signals"]
+        P6[Heterogeneous graph: device + IP + card + user\n2.1M edges pruned · 6 high-risk clusters today\nShared-UPI detection + mule score propagation\nFraud distance from user's normal network]
+    end
+
+    %% ── PHASE 7 ─────────────────────────────────────────────────────────
+    G6 --> G7
+    subgraph G7["💡 Phase 7 — SHAP Explainability"]
+        P7[SHAP values on every scored transaction\nTop 3 features ranked in plain English\nRunning on 1247 transactions today\nJudge-friendly: why was this flagged?]
+    end
+
+    %% ── PHASE 8 ─────────────────────────────────────────────────────────
+    G7 --> G8
+    subgraph G8["🔄 Phase 8 — Feedback Flywheel"]
+        P8[Analyst dispute review queue\n312 labels added this week · SLA 4h median\nChargeback webhooks feed confirmed fraud labels\nCloses loop back to Phase 3 retraining]
+    end
+
+    %% ── PHASE 9 ─────────────────────────────────────────────────────────
+    G8 --> G9
+    subgraph G9["🤖 Phase 9 — LLM Investigation Agent"]
+        P9[Groq-powered LLaMA agent\nFires on high-risk transactions automatically\nTool calls: velocity check · merchant check · network scan\nWrites structured investigation report with recommended action]
+    end
+
+    %% ── PHASE 10 ─────────────────────────────────────────────────────────
+    G9 --> G10
+    subgraph G10["🧬 Phase 10 — GraphSAGE GNN Embeddings"]
+        P10[Pure-PyTorch GraphSAGE\n64-dimensional user embedding per user\nLearns from transaction relationship graph\nEmbeddings stored in Redis · p99 latency 38ms]
+    end
+
+    %% ── PHASE 11 ─────────────────────────────────────────────────────────
+    G10 --> G11
+    subgraph G11["🧠 Phase 11 — DNN Shadow Model"]
+        P11[4-branch ResNeXt-inspired multi-branch DNN\nRunning in shadow alongside XGBoost\nBlend weight 0.18 · shadow traffic 12%\nPromoted only after 24h regression passes]
+    end
+
+    %% ── PHASE 12 ─────────────────────────────────────────────────────────
+    G11 --> G12
+    subgraph G12["🎯 Phase 12 — Multi-Model Orchestrator"]
+        P12[Tier routing: XGBoost only → +Anomaly → +GNN → +LLM Judge\nBlends XGBoost + GNN + DNN scores per transaction\nLLM-as-Judge for borderline cases\nSaved 27% LLM calls vs baseline this week]
+    end
+
+    %% ── VERDICT ────────────────────────────────────────────────────────
+    G12 --> VERDICT
+
+    subgraph VERD["🚦 Final Verdict — Delivered under 800ms"]
+        VERDICT{Risk Score?}
+        VERDICT -->|Score ≥ 0.80| V_HIGH[🔴 DO NOT PAY\nHigh confidence fraud]
+        VERDICT -->|Score 0.50–0.79| V_MED[🟡 PROCEED WITH CAUTION\nModerate risk]
+        VERDICT -->|Score 0.20–0.49| V_LOW[🟢 LIKELY SAFE\nLow risk]
+        VERDICT -->|Score < 0.20| V_SAFE[✅ CLEAN TRANSACTION\nVery high confidence]
+    end
+
+    V_HIGH --> FEEDBACK_LOOP
+    V_MED --> FEEDBACK_LOOP
+    V_LOW --> FEEDBACK_LOOP
+    V_SAFE --> FEEDBACK_LOOP
+
+    FEEDBACK_LOOP[(📦 Log all 28 features\n+ score + verdict + user action\n→ PostgreSQL → feeds Phase 8)]
+
+    FEEDBACK_LOOP -->|Every 500 labels| G3
+
+    %% ── STYLES ──────────────────────────────────────────────────────────
+    classDef dataPhase   fill:#0a1525,stroke:#06B6D4,stroke-width:2px,color:#e2e8f0
+    classDef modelPhase  fill:#12072a,stroke:#8B5CF6,stroke-width:2px,color:#e2e8f0
+    classDef opsPhase    fill:#071a12,stroke:#10B981,stroke-width:2px,color:#e2e8f0
+    classDef intelPhase  fill:#1a0725,stroke:#A855F7,stroke-width:2px,color:#e2e8f0
+    classDef riskHigh    fill:#2a0a0a,stroke:#F43F5E,stroke-width:2px,color:#fff
+    classDef riskMed     fill:#2a1a0a,stroke:#F59E0B,stroke-width:2px,color:#fff
+    classDef riskLow     fill:#0a1a0a,stroke:#10B981,stroke-width:2px,color:#fff
+    classDef riskSafe    fill:#0a1a0a,stroke:#10B981,stroke-width:3px,color:#fff
+    classDef dbNode      fill:#0a0a1a,stroke:#6366F1,stroke-width:2px,color:#e2e8f0
+    classDef entryNode   fill:#1a0a2a,stroke:#8B5CF6,stroke-width:3px,color:#fff
+
+    class G1,G2,G6 dataPhase
+    class G3,G4,G11 modelPhase
+    class G5,G8 opsPhase
+    class G7,G9,G10,G12 intelPhase
+    class V_HIGH riskHigh
+    class V_MED riskMed
+    class V_LOW riskLow
+    class V_SAFE riskSafe
+    class FEEDBACK_LOOP dbNode
+    class ENTRY entryNode
+
+    click P1 "openPhase('1')"
+    click P2 "openPhase('2')"
+    click P3 "openPhase('3')"
+    click P4 "openPhase('4')"
+    click P5 "openPhase('5')"
+    click P6 "openPhase('6')"
+    click P7 "openPhase('7')"
+    click P8 "openPhase('8')"
+    click P9 "openPhase('9')"
+    click P10 "openPhase('10')"
+    click P11 "openPhase('11')"
+    click P12 "openPhase('12')"
+      </div>
+    </div>
+
+    <!-- Detail Panel -->
+    <div class="detail-panel" id="detailPanel">
+      <div class="detail-inner" id="detailInner">
+        <button class="detail-close" onclick="closeDetail()" title="Close (Esc)">×</button>
+        <div id="detailContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <p style="text-align:center;color:#374151;font-size:12px;padding:20px;">SmartSpend Analytics · FraudShield · 12 phases. 4 ML models in production. 1 unified user experience.</p>
+
+  <!-- ── PHASE DATA ───────────────────────────────────────────────── -->
+  <script>
+  const PHASES = {
+    "1": {
+      title: "Event Engine",
+      subtitle: "Real-time transaction event bus",
+      category: "DATA",
+      color: "#06B6D4",
+      badge_bg: "rgba(6,182,212,0.15)",
+      icon: "⚡",
+      description: "Every transaction — whether manual check or bank feed — enters the pipeline here. Redis Streams captures the raw event and fans it out to all downstream phases in under 50ms.",
+      steps: [
+        { label: "Ingest raw event", desc: "Transaction payload lands in Redis Streams topic `fraud.events.raw`" },
+        { label: "Validate schema", desc: "Required fields: user_id, amount, merchant, upi_id, timestamp, device_id" },
+        { label: "Normalize", desc: "Lowercase merchant names, strip UPI special chars, parse amount to float" },
+        { label: "Attach metadata", desc: "Device fingerprint, IP geolocation, app session ID appended" },
+        { label: "Fan-out", desc: "Event published to 8 downstream consumer groups simultaneously — sub-50ms" },
+        { label: "Durable log", desc: "Raw event persisted to `fraud_events` table for audit + replay" },
+        { label: "Baseline alert", desc: "If amount > 3× user 30-day average → instant low-confidence alert raised" },
+      ],
+      flow: "Raw TX → Redis Streams → Schema Check → Normalize → Fan-out → 8 downstream phases",
+      metrics: [
+        { label: "18.4k events/hr", color: "#06B6D4" },
+        { label: "<50ms fan-out", color: "#10B981" },
+        { label: "Sub-tab: Live", color: "#8B5CF6" },
+      ],
+    },
+    "2": {
+      title: "Feature Store",
+      subtitle: "200+ behavioural signals computed live",
+      category: "DATA",
+      color: "#06B6D4",
+      badge_bg: "rgba(6,182,212,0.15)",
+      icon: "🗄️",
+      description: "The Feature Store pre-computes 212 signals per user in two layers: online (Redis) for real-time serving under 5ms, and offline (snapshots) for point-in-time training without data leakage.",
+      steps: [
+        { label: "Online Redis store", desc: "212 signals pre-computed and cached per user_id in Redis hash" },
+        { label: "Transaction features", desc: "amount_zscore, amount_to_income_ratio, is_round_number, txn_hour, is_weekend" },
+        { label: "Merchant features", desc: "merchant_seen_before, merchant_frequency, merchant_avg_amount, blacklist_score, upi_id_age" },
+        { label: "Velocity features", desc: "txn_velocity_1hr, txn_velocity_24hr, time_since_last_txn" },
+        { label: "Behavioural features", desc: "usual_hour_deviation, device_match, location_deviation, spending_rhythm_delta" },
+        { label: "Graph features", desc: "user_merchant_edge_weight, cluster_risk, shared_upi_connections, embedding_distance (from Phase 10)" },
+        { label: "Offline snapshots", desc: "Point-in-time feature snapshots prevent future data leakage in training" },
+        { label: "Cache hit rate", desc: "Cache warm: >95% hit rate — cold fetch from DB on miss in <20ms" },
+      ],
+      flow: "Event → Feature extractor → 212 signals → Redis cache → Served to Phase 3 in <5ms",
+      metrics: [
+        { label: "212 signals", color: "#06B6D4" },
+        { label: "Cache hit >95%", color: "#10B981" },
+        { label: "Sub-tab: Behavior", color: "#8B5CF6" },
+      ],
+    },
+    "3": {
+      title: "Fraud Classifier — XGBoost",
+      subtitle: "fraud-xgboost-v0 · Production · ROC-AUC 0.933",
+      category: "MODEL",
+      color: "#8B5CF6",
+      badge_bg: "rgba(139,92,246,0.15)",
+      icon: "🌲",
+      description: "The primary production model. Trained on India-specific UPI fraud patterns and RBI fraud taxonomy. 300 gradient-boosted decision trees each vote on fraud probability — the ensemble score is the weighted vote.",
+      steps: [
+        { label: "Input: 28 features", desc: "All 28 features from Feature Store assembled into structured tabular row" },
+        { label: "XGBoost inference", desc: "300 decision trees evaluate the feature row — each outputs a leaf score" },
+        { label: "Gradient boosting", desc: "Each tree corrects errors of the previous — final score = sum of leaf values through sigmoid" },
+        { label: "India-specific training", desc: "Trained on UPI collect scams, ₹1 phishing traps, festival-cycle spikes, RBI taxonomy" },
+        { label: "Score output", desc: "Raw probability 0.0 → 1.0 — higher = more likely fraud" },
+        { label: "Calibration", desc: "Platt scaling applied post-prediction — scores are true probabilities, not just rankings" },
+        { label: "Model artifact", desc: "fraud-xgboost-v0 registered in MLflow · promoted to Production stage · trained 4 days ago" },
+      ],
+      flow: "28 features → 300 trees → gradient boosting → sigmoid → probability score 0.0–1.0",
+      metrics: [
+        { label: "ROC-AUC: 0.933", color: "#10B981" },
+        { label: "PR-AUC: 0.037", color: "#F59E0B" },
+        { label: "Recall@5%FPR: 50%", color: "#8B5CF6" },
+        { label: "Val AUCPR: 1.0", color: "#06B6D4" },
+      ],
+    },
+    "4": {
+      title: "Decision Engine",
+      subtitle: "Per-merchant risk policies + rule-based gate",
+      category: "MODEL",
+      color: "#8B5CF6",
+      badge_bg: "rgba(139,92,246,0.15)",
+      icon: "🛡️",
+      description: "A deterministic rule layer that sits ON TOP of the XGBoost ML score. Rules can override, boost, or block — giving compliance teams control without retraining the model.",
+      steps: [
+        { label: "Merchant policy check", desc: "847 active policies: per-merchant transaction limits, category blocks, velocity caps" },
+        { label: "KYC rule evaluation", desc: "If merchant KYC status = unverified AND amount > ₹2000 → risk boost +0.25" },
+        { label: "Blacklist sync", desc: "Global UPI blacklist synced every <2 minutes — instant block if upi_id on list" },
+        { label: "India rule overrides", desc: "₹1 amount → +0.30 · UPI ID age <7 days → +0.20 · 2AM–5AM → +0.15 · Blacklist hit → score = 1.0" },
+        { label: "Velocity cap", desc: "If txn_velocity_1hr > 5 → hard block regardless of ML score" },
+        { label: "Score merge", desc: "Rule-adjusted score = min(1.0, ML_score + rule_boosts)" },
+        { label: "Policy violations log", desc: "Every rule trigger logged to `policy_violations` table for audit" },
+      ],
+      flow: "ML score → merchant policy → KYC check → blacklist → rule boosts → final adjusted score",
+      metrics: [
+        { label: "847 active policies", color: "#8B5CF6" },
+        { label: "Blacklist sync <2min", color: "#06B6D4" },
+        { label: "Sub-tab: Overview", color: "#10B981" },
+      ],
+    },
+    "5": {
+      title: "MLOps & Drift Detection",
+      subtitle: "PSI watch · MLflow registry · auto-retrain",
+      category: "OPS",
+      color: "#10B981",
+      badge_bg: "rgba(16,185,129,0.15)",
+      icon: "⚙️",
+      description: "Production ML operations: monitors for data drift, manages the model lifecycle in MLflow, and auto-triggers retraining when the input distribution shifts too far from training data.",
+      steps: [
+        { label: "PSI monitoring", desc: "Population Stability Index computed weekly on 14 key features — current PSI: 0.050 (Stable)" },
+        { label: "Drift thresholds", desc: "PSI 0.0–0.1 = stable · 0.1–0.25 = monitor · >0.25 = retrain triggered" },
+        { label: "MLflow registry", desc: "Models: None → Staging → Production → Archived. fraud-xgboost-v0 is Production." },
+        { label: "Shadow dual-scoring", desc: "Challenger model scores every request in parallel — results logged, never served to users" },
+        { label: "Canary promotion", desc: "Shadow model promoted to canary at 5% traffic → validated → full promotion" },
+        { label: "APScheduler retrain", desc: "Every 500 new fraud labels → retrain job runs · new model validated before promotion" },
+        { label: "Retrain gate", desc: "New model must achieve ROC-AUC > 0.90 AND PR-AUC > 0.40 vs holdout set before promotion" },
+      ],
+      flow: "Weekly PSI check → if drift > 0.25 → retrain → validate AUC → MLflow staging → canary → production",
+      metrics: [
+        { label: "PSI: 0.050 stable", color: "#10B981" },
+        { label: "14 features watched", color: "#06B6D4" },
+        { label: "Retrain gate: AUC>0.90", color: "#8B5CF6" },
+      ],
+    },
+    "6": {
+      title: "Graph Signals",
+      subtitle: "Device · IP · card · user network signals",
+      category: "DATA",
+      color: "#06B6D4",
+      badge_bg: "rgba(6,182,212,0.15)",
+      icon: "🕸️",
+      description: "Builds a heterogeneous transaction graph where nodes are users, devices, IPs, UPI IDs, and merchants. Edges represent payments. Fraud patterns like mule accounts and fake merchant rings are visible as graph clusters.",
+      steps: [
+        { label: "Graph construction", desc: "Nodes: users, devices, IPs, UPI IDs, merchants. Edges: transactions with amount + timestamp weights" },
+        { label: "Edge pruning", desc: "2.1M low-weight edges pruned — keeps graph sparse and fast to traverse" },
+        { label: "Shared-device detection", desc: "If device_id shared by 3+ user accounts → high mule-account risk score" },
+        { label: "Cluster detection", desc: "Louvain community detection → 6 high-risk clusters flagged today" },
+        { label: "Fraud distance", desc: "BFS from user node → distance to nearest known-fraud merchant node" },
+        { label: "Mule propagation", desc: "Guilt-by-association: accounts N hops from confirmed fraud get elevated risk score" },
+        { label: "Shared UPI check", desc: "If same UPI ID used by 5+ users in 7 days → flag as likely recycled/scam UPI" },
+      ],
+      flow: "Graph built from DB → prune → cluster detection → mule score → fraud distance → 4 graph features added to Feature Store",
+      metrics: [
+        { label: "2.1M edges pruned", color: "#06B6D4" },
+        { label: "6 clusters today", color: "#F43F5E" },
+        { label: "Sub-tab: Devices", color: "#8B5CF6" },
+      ],
+    },
+    "7": {
+      title: "SHAP Explainability",
+      subtitle: "Why was this transaction flagged?",
+      category: "INTELLIGENCE",
+      color: "#A855F7",
+      badge_bg: "rgba(168,85,247,0.15)",
+      icon: "💡",
+      description: "SHAP (SHapley Additive exPlanations) decomposes each XGBoost decision into the contribution of every feature — turning a black-box ML score into an auditable, human-readable verdict.",
+      steps: [
+        { label: "TreeExplainer init", desc: "shap.TreeExplainer(xgb_model) — optimized for tree-based models, exact values not approximate" },
+        { label: "SHAP values computed", desc: "One SHAP value per feature — positive = pushes score UP (more fraud), negative = DOWN" },
+        { label: "Top 3 features ranked", desc: "Features sorted by |SHAP value| descending — top 3 surface to user" },
+        { label: "Plain English conversion", desc: "Feature name lookup table: `amount_zscore` → 'This amount is 4× your usual' " },
+        { label: "Color coding", desc: "🔴 if SHAP contribution > 0.2 · 🟡 if 0.05–0.20 · ⚪ if < 0.05" },
+        { label: "Fraud education tip", desc: "Rule-based lookup: if top feature is `is_round_number` + `upi_id_age` → attach UPI phishing explainer" },
+        { label: "Volume", desc: "Running SHAP on 1,247 transactions today — every scored tx gets an explanation" },
+      ],
+      flow: "XGBoost model + features → TreeExplainer → 28 SHAP values → top 3 → plain English → user sees reasons",
+      metrics: [
+        { label: "1,247 explained today", color: "#A855F7" },
+        { label: "Exact SHAP (not approx)", color: "#06B6D4" },
+        { label: "Sub-tab: Alerts", color: "#8B5CF6" },
+      ],
+    },
+    "8": {
+      title: "Feedback Flywheel",
+      subtitle: "Analyst labels → retraining loop",
+      category: "OPS",
+      color: "#10B981",
+      badge_bg: "rgba(16,185,129,0.15)",
+      icon: "🔄",
+      description: "The learning loop that keeps the model current. Analyst-reviewed transactions, user fraud reports, and bank chargeback webhooks all produce confirmed fraud labels that flow back into Phase 3 training data.",
+      steps: [
+        { label: "Analyst review queue", desc: "High-risk flagged transactions land in `fraud_feedback` table with status=pending" },
+        { label: "Review UI", desc: "Analyst sees transaction + SHAP reasons + marks: confirmed_fraud | false_positive | needs_info" },
+        { label: "User dispute intake", desc: "User taps 'Report Fraud' → transaction logged with user_reported=true" },
+        { label: "Chargeback webhook", desc: "Bank chargeback events arrive via webhook → auto-label transaction as confirmed_fraud" },
+        { label: "Label propagation", desc: "Confirmed fraud labels propagate to related transactions (same UPI ID, same device cluster)" },
+        { label: "Training batch trigger", desc: "Every 500 new confirmed labels → Phase 5 MLOps triggers retrain job" },
+        { label: "Queue SLA", desc: "312 labels added this week · p50 review time: 4 hours" },
+      ],
+      flow: "Analyst review + user report + chargeback → confirmed labels → Phase 5 triggers retrain → fraud-xgboost-v1",
+      metrics: [
+        { label: "312 labels/week", color: "#10B981" },
+        { label: "4hr median SLA", color: "#06B6D4" },
+        { label: "Sub-tab: Alerts", color: "#8B5CF6" },
+      ],
+    },
+    "9": {
+      title: "LLM Investigation Agent",
+      subtitle: "Groq-powered agentic AI — auto-investigates high-risk txns",
+      category: "INTELLIGENCE",
+      color: "#A855F7",
+      badge_bg: "rgba(168,85,247,0.15)",
+      icon: "🤖",
+      description: "A Groq LLaMA-powered AI agent that fires automatically on transactions with score > 0.75. It uses function-calling (tool calls) to independently check velocity, merchant reputation, and network signals — then writes a structured investigation report.",
+      steps: [
+        { label: "Trigger threshold", desc: "Fires when Orchestrator (Phase 12) routes to Tier 3 (score ≥ 0.75)" },
+        { label: "Tool: velocity check", desc: "Agent calls `check_velocity(user_id)` — how many transactions in last 1hr/24hr?" },
+        { label: "Tool: merchant check", desc: "Agent calls `check_merchant(upi_id)` — global fraud reports for this merchant" },
+        { label: "Tool: network scan", desc: "Agent calls `check_network(device_id)` — how many accounts share this device?" },
+        { label: "Tool: blacklist lookup", desc: "Agent calls `check_blacklist(upi_id)` — is this UPI on any known fraud list?" },
+        { label: "Report generation", desc: "LLM synthesizes tool results into structured JSON: risk_summary, top_reasons, recommended_action" },
+        { label: "Cost control", desc: "Agent budget tracked: 92% utilised today · 41 deep dives completed · cost logged to /costs/today" },
+        { label: "Persistence", desc: "Report saved to `risk_investigations` table — visible in FraudShield Investigations tab" },
+      ],
+      flow: "Score ≥ 0.75 → LLaMA agent → 4 tool calls → synthesize → structured report → Investigations tab",
+      metrics: [
+        { label: "41 deep dives today", color: "#A855F7" },
+        { label: "Budget: 92% utilised", color: "#F59E0B" },
+        { label: "Sub-tab: Investigations", color: "#8B5CF6" },
+      ],
+    },
+    "10": {
+      title: "GraphSAGE GNN Embeddings",
+      subtitle: "64-dim user embeddings from transaction graph",
+      category: "INTELLIGENCE",
+      color: "#0EA5E9",
+      badge_bg: "rgba(14,165,233,0.15)",
+      icon: "🧬",
+      description: "Pure-PyTorch GraphSAGE builds a 64-dimensional embedding vector per user by aggregating features from their neighborhood in the transaction graph. These embeddings capture behavioral identity — who you normally transact with.",
+      steps: [
+        { label: "Graph construction", desc: "Heterogeneous graph: user nodes + merchant nodes + device nodes + edges = transactions" },
+        { label: "GraphSAGE layers", desc: "2-layer GraphSAGE: each layer aggregates mean of 1-hop neighbors' features" },
+        { label: "Node features", desc: "Each node: transaction count, average amount, fraud rate, merchant category" },
+        { label: "Training", desc: "Unsupervised contrastive loss: similar transaction patterns → similar embeddings" },
+        { label: "64-dim output", desc: "Each user gets a 64-dimensional float vector stored in Redis under key `gnn:embed:{user_id}`" },
+        { label: "Serving", desc: "Embeddings served at p99 38ms — attached to every Orchestrator call as context signal" },
+        { label: "Training window", desc: "90-day transaction window · last retrain: recent · epochs: configurable" },
+        { label: "Orchestrator signal", desc: "Embedding distance between user and merchant node is 1 of the 28 features in Feature Store" },
+      ],
+      flow: "Transaction graph → GraphSAGE 2-layer aggregation → 64-dim embedding → Redis → Orchestrator context",
+      metrics: [
+        { label: "64-dim embeddings", color: "#0EA5E9" },
+        { label: "p99 latency 38ms", color: "#10B981" },
+        { label: "Sub-tab: Overview", color: "#8B5CF6" },
+      ],
+    },
+    "11": {
+      title: "DNN Shadow Model",
+      subtitle: "4-branch ResNeXt-inspired DNN — shadow mode",
+      category: "MODEL",
+      color: "#14B8A6",
+      badge_bg: "rgba(20,184,166,0.15)",
+      icon: "🧠",
+      description: "A multi-branch deep neural network that runs in parallel with XGBoost in shadow mode — its score is logged but not served to users until it passes a 24-hour regression validation. Promotion is controlled by an environment flag.",
+      steps: [
+        { label: "Architecture", desc: "4 parallel branches: temporal branch (LSTM), amount branch (dense), merchant branch (embedding), graph branch (from Phase 10 GNN)" },
+        { label: "Shadow mode", desc: "Scores every transaction alongside XGBoost — result logged to `shadow_predictions`, never served" },
+        { label: "Traffic split", desc: "Shadow traffic: 12% of transactions scored through DNN in this session · blend weight 0.18" },
+        { label: "Comparison", desc: "Side-by-side XGBoost vs DNN comparison in Admin → DNN Shadow Report" },
+        { label: "24h regression", desc: "Before promotion: 24-hour shadow log reviewed — DNN must not regress ROC-AUC vs XGBoost" },
+        { label: "Promotion gate", desc: "Set env var PHASE_11_DNN_PROMOTED=true to blend DNN score into production scoring" },
+        { label: "Blend weight", desc: "When promoted: final = 0.82 × XGBoost + 0.18 × DNN — weight tunable without redeployment" },
+      ],
+      flow: "Transaction → DNN 4-branch inference → shadow score logged → 24h regression → if pass → promote blend",
+      metrics: [
+        { label: "Shadow traffic: 12%", color: "#14B8A6" },
+        { label: "Blend weight: 0.18", color: "#8B5CF6" },
+        { label: "Sub-tab: Overview", color: "#06B6D4" },
+      ],
+    },
+    "12": {
+      title: "Multi-Model Orchestrator",
+      subtitle: "LLM-as-Judge routing · tier 0–3 · cost-aware",
+      category: "INTELLIGENCE",
+      color: "#F43F5E",
+      badge_bg: "rgba(244,63,94,0.15)",
+      icon: "🎯",
+      description: "The brain of FraudShield. Routes each transaction to the cheapest tier that gives sufficient confidence. Only calls the expensive LLM judge for genuinely borderline cases — saved 27% LLM calls vs always-on baseline this week.",
+      steps: [
+        { label: "Tier 0: XGBoost only", desc: "Score < 0.30 → verdict from XGBoost alone. Cost: ₹0.00 per transaction" },
+        { label: "Tier 1: +Anomaly", desc: "Score 0.30–0.55 → XGBoost + Isolation Forest anomaly signal. Cost: ₹0.001" },
+        { label: "Tier 2: +GNN", desc: "Score 0.55–0.75 → XGBoost + GNN embedding distance. Cost: ₹0.003" },
+        { label: "Tier 3: +LLM Judge", desc: "Score ≥ 0.75 → full stack + Groq LLM-as-Judge for final borderline decision. Cost: ₹0.02" },
+        { label: "Ensemble weights", desc: "XGBoost 45% + DNN 35% + GNN 20% = blended score before tier routing" },
+        { label: "LLM Judge prompt", desc: "LLM receives: scores from all models + top SHAP features + investigation report → returns structured verdict" },
+        { label: "Cost tracking", desc: "GET /api/risk/costs/today → daily LLM spend across Phase 9 + Phase 12 in USD and INR" },
+        { label: "Decision log", desc: "Every orchestration decision logged to `orchestration_decisions` with tier, scores, final verdict, cost" },
+      ],
+      flow: "Score → tier router → Tier 0 (fast) or Tier 3 (full) → blended verdict → SHAP reasons → user UI",
+      metrics: [
+        { label: "27% LLM savings", color: "#10B981" },
+        { label: "Tier 0 cost: ₹0.00", color: "#06B6D4" },
+        { label: "Tier 3 cost: ₹0.02", color: "#F43F5E" },
+      ],
+    },
+  };
+
+  // ── Build phase chips ─────────────────────────────────────────
+  const chipsEl = document.getElementById('phaseChips');
+  const phaseColors = {
+    "1":"#06B6D4","2":"#06B6D4","3":"#8B5CF6","4":"#8B5CF6",
+    "5":"#10B981","6":"#06B6D4","7":"#A855F7","8":"#10B981",
+    "9":"#A855F7","10":"#0EA5E9","11":"#14B8A6","12":"#F43F5E"
+  };
+  for (let i = 1; i <= 12; i++) {
+    const p = PHASES[String(i)];
+    const chip = document.createElement('div');
+    chip.className = 'phase-chip';
+    chip.id = `chip-${i}`;
+    chip.style.borderColor = phaseColors[String(i)] + '55';
+    chip.innerHTML = `<div class="phase-chip-num" style="color:${phaseColors[String(i)]}">${i}</div><div class="phase-chip-name">${p.title.split(' ').slice(0,2).join(' ')}</div>`;
+    chip.addEventListener('click', () => openPhase(String(i)));
+    chipsEl.appendChild(chip);
+  }
+
+  // ── Detail panel logic ────────────────────────────────────────
+  let activePhase = null;
+
+  window.openPhase = function(id) {
+    const p = PHASES[id];
+    if (!p) return;
+    activePhase = id;
+
+    // Chips
+    document.querySelectorAll('.phase-chip').forEach(c => c.classList.remove('active'));
+    const chip = document.getElementById(`chip-${id}`);
+    if (chip) { chip.classList.add('active'); chip.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+
+    // Build content
+    const stepsHtml = p.steps.map((s, i) => `
+      <div class="step-item">
+        <div class="step-num" style="background:${p.color}22;color:${p.color}">${i+1}</div>
+        <div class="step-content">
+          <div class="step-label">${s.label}</div>
+          <div class="step-desc">${s.desc}</div>
+        </div>
+      </div>
+    `).join('');
+
+    const metricsHtml = p.metrics.map(m => `
+      <span class="metric-pill" style="color:${m.color};border-color:${m.color}44;background:${m.color}11">${m.label}</span>
+    `).join('');
+
+    document.getElementById('detailContent').innerHTML = `
+      <div class="phase-badge" style="background:${p.badge_bg};color:${p.color}">Phase ${id} · ${p.category}</div>
+      <div class="detail-title">${p.icon} ${p.title}</div>
+      <div class="detail-subtitle">${p.subtitle}</div>
+      <div class="detail-section">
+        <div class="detail-section-title">Overview</div>
+        <div class="step-desc" style="font-size:13px;line-height:1.6;color:#D1D5DB;padding:10px 12px;background:rgba(255,255,255,0.02);border-radius:8px;border:1px solid rgba(255,255,255,0.04)">${p.description}</div>
+      </div>
+      <div class="detail-section" style="margin-top:16px">
+        <div class="detail-section-title">Internal sub-steps</div>
+        <div class="step-list">${stepsHtml}</div>
+      </div>
+      <div class="detail-section" style="margin-top:16px">
+        <div class="detail-section-title">Data flow</div>
+        <div class="flow-diagram-mini">${p.flow.split(' → ').map((s,i,a) => `<span>${s}</span>${i < a.length-1 ? ' <span class="flow-arrow">→</span> ' : ''}`).join('')}</div>
+      </div>
+      <div class="detail-section" style="margin-top:16px">
+        <div class="detail-section-title">Key metrics</div>
+        <div class="metric-pills">${metricsHtml}</div>
+      </div>
+    `;
+
+    // Open panel
+    document.getElementById('detailPanel').classList.add('open');
+  };
+
+  window.closeDetail = function() {
+    document.getElementById('detailPanel').classList.remove('open');
+    document.querySelectorAll('.phase-chip').forEach(c => c.classList.remove('active'));
+    activePhase = null;
+  };
+
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+
+  // ── Mermaid init ──────────────────────────────────────────────
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      background:           '#0F0A1F',
+      mainBkg:              '#15102A',
+      nodeBorder:           '#8B5CF6',
+      clusterBkg:           '#0D0922',
+      clusterBorder:        '#2D2244',
+      titleColor:           '#E5E7EB',
+      edgeLabelBackground:  '#0F0A1F',
+      lineColor:            '#4B5563',
+      primaryColor:         '#15102A',
+      primaryTextColor:     '#F9FAFB',
+      primaryBorderColor:   '#8B5CF6',
+      secondaryColor:       '#0a1525',
+      secondaryTextColor:   '#e2e8f0',
+      secondaryBorderColor: '#06B6D4',
+      tertiaryColor:        '#071a12',
+      tertiaryTextColor:    '#e2e8f0',
+      tertiaryBorderColor:  '#10B981',
+      fontFamily:           'Inter, sans-serif',
+      fontSize:             '13px',
+    },
+    flowchart: {
+      curve:       'basis',
+      padding:     20,
+      nodeSpacing: 50,
+      rankSpacing: 55,
+      htmlLabels:  true,
+      useMaxWidth: true,
+    },
+    securityLevel: 'loose',
+  });
+  </script>
+</body>
+</html>

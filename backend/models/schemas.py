@@ -88,3 +88,9 @@ class DashboardSummary(BaseModel):
     spending_by_category: list[SpendingAnalysis]
     monthly_trends: list[MonthlyTrend]
     unread_alerts: int
+    # Live freshness signals (used by the dashboard greeting / status pill).
+    # `last_synced` is MAX(bank_connections.last_synced) for the user, falling
+    # back to users.last_login when no bank is linked yet. Both can be null.
+    last_synced: Optional[datetime] = None
+    last_login: Optional[datetime] = None
+    fraud_pending_count: int = 0

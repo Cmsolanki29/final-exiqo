@@ -40,9 +40,9 @@ export default function SubscriptionHub({ ownerId, onOpenAI, onOpenReminders, on
   return (
     <div className="mx-auto max-w-6xl space-y-8 pb-16">
       <header className="space-y-2">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-violet-300/90">Subscriptions</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">Subscriptions</p>
         <h1 className="font-heading text-3xl font-bold text-white sm:text-4xl">Subscription intelligence hub</h1>
-        <p className="max-w-2xl text-sm text-exiqo-glow/70 sm:text-base">
+        <p className="max-w-2xl text-sm text-gray-400 sm:text-base">
           Device usage plus bank debits → verdicts, substitution insights, and a renewal engine with accountability. Pick an
           engine below — they stay separate by design.
         </p>
@@ -52,7 +52,7 @@ export default function SubscriptionHub({ ownerId, onOpenAI, onOpenReminders, on
         <div className="flex flex-col gap-4 border-b border-white/10 pb-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="font-heading text-lg font-semibold text-white">Connected applications</h2>
-            <p className="text-xs text-exiqo-glow/60">
+            <p className="text-xs text-gray-400">
               {connected.length} app{connected.length === 1 ? "" : "s"} linked for intelligent tracking (demo: stored on
               this device).
             </p>
@@ -62,7 +62,7 @@ export default function SubscriptionHub({ ownerId, onOpenAI, onOpenReminders, on
             <button
               type="button"
               onClick={handleManage}
-              className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/[0.06] px-4 py-2 text-sm font-medium text-exiqo-glow/90 transition hover:bg-white/10"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/[0.06] px-4 py-2 text-sm font-medium text-gray-300 transition hover:bg-white/10"
             >
               <Settings className="h-4 w-4" aria-hidden />
               Manage permissions
@@ -120,13 +120,13 @@ export default function SubscriptionHub({ ownerId, onOpenAI, onOpenReminders, on
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600">
             <Brain className="h-6 w-6 text-white" aria-hidden />
           </div>
-          <p className="mt-3 text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300/90">Feature A</p>
+          <p className="mt-3 text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">Feature A</p>
           <h3 className="mt-1 font-heading text-xl font-bold text-white">AI analysis engine</h3>
-          <p className="mt-2 text-sm text-exiqo-glow/70">
+          <p className="mt-2 text-sm text-gray-400">
             Usage intelligence, value leakage, substitution detection, verdict buckets, and savings rollups — refreshed from
             live data.
           </p>
-          <ul className="mt-4 space-y-1.5 text-xs text-exiqo-glow/80">
+          <ul className="mt-4 space-y-1.5 text-xs text-gray-300">
             <li className="flex gap-2">
               <span className="text-violet-400">●</span> Behavioural verdicts (thriving / declining / dormant)
             </li>
@@ -138,7 +138,7 @@ export default function SubscriptionHub({ ownerId, onOpenAI, onOpenReminders, on
             </li>
           </ul>
           <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
-            <span className="text-sm font-semibold text-violet-200 group-hover:text-white">Open AI analysis →</span>
+            <span className="text-sm font-semibold text-gray-300 group-hover:text-white">Open AI analysis →</span>
             <div onClick={(e) => e.stopPropagation()} className="flex shrink-0">
               <AddAppButton ownerId={ownerId} connectedIds={connected} variant="small" onAppsUpdated={bump} />
             </div>
@@ -164,11 +164,11 @@ export default function SubscriptionHub({ ownerId, onOpenAI, onOpenReminders, on
           </div>
           <p className="mt-3 text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300/90">Feature B</p>
           <h3 className="mt-1 font-heading text-xl font-bold text-white">Smart reminder engine</h3>
-          <p className="mt-2 text-sm text-exiqo-glow/70">
+          <p className="mt-2 text-sm text-gray-400">
             Billing reminders, T−10 / T−3 / T−1 alerts, escalation, snooze with mandatory reasons, and cancellation
             assistance.
           </p>
-          <ul className="mt-4 space-y-1.5 text-xs text-exiqo-glow/80">
+          <ul className="mt-4 space-y-1.5 text-xs text-gray-300">
             <li className="flex gap-2">
               <span className="text-amber-400">●</span> Renewal queue & pending actions
             </li>
@@ -188,7 +188,7 @@ export default function SubscriptionHub({ ownerId, onOpenAI, onOpenReminders, on
         </GlassCard>
       </div>
 
-      <p className="text-center text-xs text-exiqo-glow/50">
+      <p className="text-center text-xs text-gray-500">
         Demo mode: linked apps are stored in your browser for this workspace user ({ownerId}). Production would sync to
         your account on the server.
       </p>

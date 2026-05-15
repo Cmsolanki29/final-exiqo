@@ -100,10 +100,10 @@ const DEMO_STATS = {
 };
 
 const STATUS_META = {
-  pending:  { color: "#f59e0b", bg: "#fffbeb", icon: Clock,        label: "Pending" },
-  resolved: { color: "#10b981", bg: "#ecfdf5", icon: CheckCircle,  label: "Resolved" },
-  fraud:    { color: "#ef4444", bg: "#fef2f2", icon: ShieldOff,    label: "Confirmed Fraud" },
-  dismissed:{ color: "#6b7280", bg: "#f3f4f6", icon: XCircle,      label: "Dismissed" },
+  pending:  { color: "#f59e0b", bg: "rgba(245,158,11,0.15)",  icon: Clock,        label: "Pending" },
+  resolved: { color: "#10b981", bg: "rgba(16,185,129,0.15)",  icon: CheckCircle,  label: "Resolved" },
+  fraud:    { color: "#ef4444", bg: "rgba(239,68,68,0.15)",   icon: ShieldOff,    label: "Confirmed Fraud" },
+  dismissed:{ color: "#9ca3af", bg: "rgba(107,114,128,0.15)", icon: XCircle,      label: "Dismissed" },
 };
 
 // ── Queue row + drawer (Phase 7 SHAP in AlertDrawer) ───────────────────────
@@ -138,7 +138,7 @@ function QueueItem({
           onOpenDetail(item);
         }
       }}
-      className="cursor-pointer overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:border-violet-200/80 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
+      className="cursor-pointer overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.04] shadow-[0_8px_32px_-16px_rgba(0,0,0,0.7)] backdrop-blur-sm transition duration-200 hover:border-violet-400/40 hover:bg-white/[0.07] hover:shadow-[0_0_28px_-8px_rgba(124,58,237,0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
     >
       <div className="p-4">
         <div className="flex items-start gap-3">
@@ -150,7 +150,7 @@ function QueueItem({
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <p className="font-semibold text-sm text-gray-900 truncate">
+              <p className="font-semibold text-sm text-white truncate">
                 {item.merchant || item.description || `Txn #${item.transaction_id}`}
               </p>
               <span
@@ -163,13 +163,13 @@ function QueueItem({
                 {severityKey}
               </span>
             </div>
-            <p className="text-xs text-gray-400 mt-0.5">
+            <p className="text-xs text-white/45 mt-0.5">
               {item.transaction_id && `${item.transaction_id} · `}
               {item.amount != null && `${fmtCurrency(item.amount)} · `}
               {fmtRelativeTime(item.created_at)}
             </p>
             {item.notes && (
-              <p className="text-xs text-gray-500 mt-1.5 italic bg-gray-50 px-2 py-1 rounded">"{item.notes}"</p>
+              <p className="text-xs text-white/55 mt-1.5 italic bg-white/[0.05] px-2 py-1 rounded border border-white/[0.06]">"{item.notes}"</p>
             )}
           </div>
         </div>
@@ -180,8 +180,8 @@ function QueueItem({
               type="button"
               onClick={() => onDecide(item.id, "fraud")}
               disabled={deciding}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-red-50 text-red-600
-                         text-xs font-semibold hover:bg-red-100 disabled:opacity-50 transition"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-red-500/15 text-red-400 border border-red-500/30
+                         text-xs font-semibold hover:bg-red-500/25 hover:border-red-400/50 disabled:opacity-50 transition"
             >
               {deciding ? <Loader2 size={12} className="animate-spin" /> : <ShieldOff size={12} />}
               Confirm Fraud
@@ -190,8 +190,8 @@ function QueueItem({
               type="button"
               onClick={() => onDecide(item.id, "dismissed")}
               disabled={deciding}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-gray-50 text-gray-500
-                         text-xs font-semibold hover:bg-gray-100 disabled:opacity-50 transition"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-white/[0.05] text-white/60 border border-white/[0.10]
+                         text-xs font-semibold hover:bg-white/[0.10] hover:text-white/80 disabled:opacity-50 transition"
             >
               <XCircle size={12} />
               Dismiss
@@ -397,14 +397,14 @@ const AlertsCenter = ({ userId }) => {
             <Inbox size={22} className="text-orange-400" />
             Alerts Center
           </h2>
-          <p className="text-exiqo-glow/60 text-sm mt-1">
+          <p className="text-gray-400 text-sm mt-1">
             Phase 8 — Feedback flywheel · analyst review queue · Phase 9 verdicts inline
           </p>
         </div>
         <button
           type="button"
           onClick={refresh}
-          className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-white/10 text-exiqo-glow
+          className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-white/10 text-gray-300
                      hover:bg-white/15 transition font-medium"
         >
           <RefreshCw size={13} />
@@ -415,14 +415,14 @@ const AlertsCenter = ({ userId }) => {
       {/* Demo/real data banner */}
       {usingDemo ? (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-xs"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs"
         >
           <AlertTriangle size={14} />
           Showing demo queue — real flagged transactions from your account will appear here automatically.
         </motion.div>
       ) : (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-green-50 border border-green-200 text-green-700 text-xs"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs"
         >
           <CheckCircle size={14} />
           Showing {enrichedQueue?.length} real flagged transactions — sorted by risk score. Use Confirm / Dismiss to label them and improve the model.
@@ -441,9 +441,9 @@ const AlertsCenter = ({ userId }) => {
             { label: "Confirmed fraud",   value: stats.confirmed_fraud ?? 0,                                                              color: "#ef4444" },
             { label: "Model improvement", value: stats.accuracy_delta ? `+${(stats.accuracy_delta * 100).toFixed(1)}%` : "—",            color: "#10b981" },
           ].map(({ label, value, color }) => (
-            <div key={label} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-center">
+            <div key={label} className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-4 shadow-[0_8px_32px_-16px_rgba(0,0,0,0.6)] backdrop-blur-sm text-center">
               <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-              <p className="text-xs text-gray-400 mt-0.5">{label}</p>
+              <p className="text-xs text-white/45 mt-0.5">{label}</p>
             </div>
           ))}
         </motion.div>
@@ -486,7 +486,7 @@ const AlertsCenter = ({ userId }) => {
               <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-white opacity-60">
                 Awaiting review ({pending.length})
               </h3>
-              <p className="mb-3 text-[11px] text-exiqo-glow/50">
+              <p className="mb-3 text-[11px] text-gray-500">
                 Click any alert for Phase 7 SHAP drivers, full transaction context, and Run Investigation.
               </p>
               <div className="space-y-2">
@@ -538,10 +538,10 @@ const AlertsCenter = ({ userId }) => {
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="flex flex-col items-center gap-3 py-12 text-gray-400"
+              className="flex flex-col items-center gap-3 py-12 text-white/40"
             >
-              <Inbox size={40} className="text-gray-200" />
-              <p className="font-medium">No items in the review queue</p>
+              <Inbox size={40} className="text-white/20" />
+              <p className="font-medium text-white/60">No items in the review queue</p>
               <p className="text-xs text-center max-w-xs">
                 When users report suspicious transactions, they appear here for analyst review.
               </p>

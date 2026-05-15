@@ -196,7 +196,7 @@ const AIPerformance = () => {
           <Brain size={22} className="text-indigo-400" />
           AI Performance
         </h2>
-        <p className="text-exiqo-glow/60 text-sm mt-1">
+        <p className="text-gray-400 text-sm mt-1">
           Phase 3 (XGBoost classifier) · Phase 5 (MLOps drift detection)
         </p>
       </motion.div>

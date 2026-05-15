@@ -105,11 +105,11 @@ function WasteLedgerHero({ amount, loading }) {
       className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-violet-600/25 via-[#0a0a22]/80 to-blue-900/20 p-6 shadow-[0_0_50px_-20px_rgba(124,58,237,0.45)] backdrop-blur-xl sm:p-8"
     >
       <div className="pointer-events-none absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_20%_20%,rgba(124,58,237,0.4),transparent_45%)]" />
-      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-200/80">Waste ledger</p>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">Waste ledger</p>
       <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-white sm:text-4xl">
         You&apos;ve saved {inr(n)} this year with SmartSpend
       </p>
-      <p className="mt-2 max-w-xl text-sm text-exiqo-glow/65">
+      <p className="mt-2 max-w-xl text-sm text-gray-400">
         Aggregated from verdict-classified monthly waste × 12 — same numbers your bank feed can&apos;t see without device context.
       </p>
     </motion.div>
@@ -408,7 +408,7 @@ export default function SubscriptionGraveyard({ userId }) {
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-exiqo-glow/80 backdrop-blur-md"
+          className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-gray-300 backdrop-blur-md"
         >
           <span className="font-semibold text-white">Discovery.</span> {discoveryMsg}
         </motion.p>
@@ -434,7 +434,7 @@ export default function SubscriptionGraveyard({ userId }) {
             <Bell className="mt-0.5 h-5 w-5 shrink-0 text-amber-200" />
             <div>
               <p className="text-sm font-semibold text-white">Renewal reminder — {banner.merchant}</p>
-              <p className="text-xs text-exiqo-glow/65">
+              <p className="text-xs text-gray-400">
                 {banner.reminder_type} · {inr(banner.monthly_cost)}/mo
               </p>
               <p className="mt-2 text-[11px] text-amber-200/80">
@@ -479,7 +479,7 @@ export default function SubscriptionGraveyard({ userId }) {
       ) : null}
 
       {!deviceLinked ? (
-        <div className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-exiqo-glow/75 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-gray-400 sm:flex-row sm:items-center sm:justify-between">
           <p>
             No device link on this account yet. Use <span className="font-semibold text-white">Connect</span> in the intelligence hub first — this list stays in sync with the same backend seed.
           </p>
@@ -502,12 +502,12 @@ export default function SubscriptionGraveyard({ userId }) {
       {deviceLinked ? (
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-xl">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-exiqo-glow/50">Connected applications</h3>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500">Connected applications</h3>
             <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-200">
               Live sync
             </span>
           </div>
-          <p className="mt-1 text-xs text-exiqo-glow/55">
+          <p className="mt-1 text-xs text-gray-500">
             Normalized from your last device link. Re-open Connect to add or remove packages — revoked apps stay in the database for audit, but drop off this list.
           </p>
           {connectedAppsDisplay.length > 0 ? (
@@ -523,7 +523,7 @@ export default function SubscriptionGraveyard({ userId }) {
               ))}
             </ul>
           ) : (
-            <p className="mt-4 rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-xs text-exiqo-glow/65">
+            <p className="mt-4 rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-xs text-gray-400">
               No packages synced yet. Press <span className="font-semibold text-white">Refresh</span> after linking, or reconnect from the device modal.
             </p>
           )}
@@ -533,12 +533,12 @@ export default function SubscriptionGraveyard({ userId }) {
       {deviceLinked ? (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-exiqo-glow/50">AI intelligence feed</h3>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500">AI intelligence feed</h3>
             <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-cyan-100">
               Deduped
             </span>
           </div>
-          <p className="text-xs text-exiqo-glow/55">
+          <p className="text-xs text-gray-500">
             Behavioral alerts (not billing pings). Persisted in your workspace — mark read when you have acted on them.
           </p>
           {intelligenceInsights.length > 0 ? (
@@ -558,7 +558,7 @@ export default function SubscriptionGraveyard({ userId }) {
                         : ins.insight_type) || "Insight"}
                   </p>
                   <p className="mt-1 text-sm font-semibold text-white">{ins.title}</p>
-                  <p className="mt-2 text-xs leading-relaxed text-exiqo-glow/70">{ins.body}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-gray-400">{ins.body}</p>
                   {!ins.read_at ? (
                     <button
                       type="button"
@@ -572,7 +572,7 @@ export default function SubscriptionGraveyard({ userId }) {
               ))}
             </div>
           ) : (
-            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-xs text-exiqo-glow/70">
+            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-xs text-gray-400">
               <p>
                 No behavioral feed cards yet. Use <span className="font-semibold text-white">Refresh hub data</span>{" "}
                 below — declining, dormant, and dead verdicts sync into this feed; substitution alerts appear when migration
@@ -592,7 +592,7 @@ export default function SubscriptionGraveyard({ userId }) {
 
       {substitutions.length ? (
         <div>
-          <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-exiqo-glow/50">Cross-platform substitution</h3>
+          <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-gray-500">Cross-platform substitution</h3>
           <div className="grid gap-4 md:grid-cols-2">
             {substitutions.map((ins, i) => (
               <motion.div
@@ -608,7 +608,7 @@ export default function SubscriptionGraveyard({ userId }) {
                   <span className="text-xs font-bold uppercase tracking-wide">Paired insight</span>
                 </div>
                 <p className="mt-2 text-sm font-semibold text-white">{ins.headline}</p>
-                <p className="mt-2 text-xs leading-relaxed text-exiqo-glow/70">{ins.body}</p>
+                <p className="mt-2 text-xs leading-relaxed text-gray-400">{ins.body}</p>
               </motion.div>
             ))}
           </div>
@@ -616,7 +616,7 @@ export default function SubscriptionGraveyard({ userId }) {
       ) : null}
 
       <div className="space-y-3">
-        <h3 className="text-sm font-bold uppercase tracking-wider text-exiqo-glow/50">Your subscriptions</h3>
+        <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500">Your subscriptions</h3>
         <AnimatePresence>
           {subs.map((s, i) => (
             <motion.article
@@ -638,14 +638,14 @@ export default function SubscriptionGraveyard({ userId }) {
                     <span className="font-bold text-white">{s.merchant}</span>
                     {s.current_verdict ? <VerdictBadge verdict={s.current_verdict} /> : null}
                   </div>
-                  <p className="mt-1 text-xs text-exiqo-glow/55 tabular-nums">
+                  <p className="mt-1 text-xs text-gray-500 tabular-nums">
                     {inr(s.monthly_cost || s.amount)} / mo · {s.linked_app_package ? "Linked app" : "No app link"}
                   </p>
-                  {s.verdict_reason ? <p className="mt-2 text-xs text-exiqo-glow/70">{s.verdict_reason}</p> : null}
+                  {s.verdict_reason ? <p className="mt-2 text-xs text-gray-400">{s.verdict_reason}</p> : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {s.verdict_confidence != null ? (
-                    <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] tabular-nums text-exiqo-glow/60">
+                    <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] tabular-nums text-gray-400">
                       {s.verdict_confidence}% conf
                     </span>
                   ) : null}
@@ -674,7 +674,7 @@ export default function SubscriptionGraveyard({ userId }) {
                           </LineChart>
                         </ResponsiveContainer>
                       ) : (
-                        <p className="text-xs text-exiqo-glow/50">No usage series yet — reset demo or link device.</p>
+                        <p className="text-xs text-gray-500">No usage series yet — reset demo or link device.</p>
                       )}
                     </div>
                     <div className="mt-4 rounded-xl border border-violet-500/20 bg-violet-500/10 p-4">
@@ -682,7 +682,7 @@ export default function SubscriptionGraveyard({ userId }) {
                         <Sparkles className="h-4 w-4" />
                         <span className="text-xs font-bold uppercase">Advisor note</span>
                       </div>
-                      <p className="mt-2 text-sm leading-relaxed text-exiqo-glow/80">
+                      <p className="mt-2 text-sm leading-relaxed text-gray-300">
                         {recoLoading && !recoById[s.subscription_id] ? "Loading…" : recoById[s.subscription_id] || "—"}
                       </p>
                     </div>
@@ -695,7 +695,7 @@ export default function SubscriptionGraveyard({ userId }) {
       </div>
 
       {hub?.legacy?.ai_advice ? (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-sm text-exiqo-glow/75">{hub.legacy.ai_advice}</div>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-sm text-gray-400">{hub.legacy.ai_advice}</div>
       ) : null}
 
       <AnimatePresence>
@@ -718,7 +718,7 @@ export default function SubscriptionGraveyard({ userId }) {
               <div className="mb-4 flex items-start justify-between gap-2">
                 <div>
                   <h3 className="text-lg font-bold text-white">Connect SmartSpend Device Intelligence</h3>
-                  <p className="mt-1 text-xs text-exiqo-glow/65">
+                  <p className="mt-1 text-xs text-gray-400">
                     We infer subscription value from your usage patterns — like Digital Wellbeing, but for your wallet.
                   </p>
                 </div>
@@ -726,7 +726,7 @@ export default function SubscriptionGraveyard({ userId }) {
                   <X className="h-5 w-5" />
                 </button>
               </div>
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-exiqo-glow/45">Apps to correlate</p>
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-500">Apps to correlate</p>
               <div className="mb-4 grid max-h-48 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
                 {DEMO_APPS.map((a) => (
                   <label key={a.id} className="flex cursor-pointer items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white">
@@ -741,7 +741,7 @@ export default function SubscriptionGraveyard({ userId }) {
                   { k: "notifications", label: "Notification Metadata", hint: "count, not content" },
                   { k: "session_duration", label: "Session Duration", hint: "how long, not what you watched" },
                 ].map((p) => (
-                  <label key={p.k} className="flex items-start gap-2 text-xs text-exiqo-glow/80">
+                  <label key={p.k} className="flex items-start gap-2 text-xs text-gray-300">
                     <input
                       type="checkbox"
                       checked={!!perm[p.k]}
@@ -769,7 +769,7 @@ export default function SubscriptionGraveyard({ userId }) {
                       transition={{ duration: 2.4, ease: "easeInOut" }}
                     />
                   </div>
-                  <p className="text-center text-xs text-exiqo-glow/70">
+                  <p className="text-center text-xs text-gray-400">
                     {["Scanning installed apps…", "Reading 30-day usage history…", "Building behavioral baseline…", "Done."][connectStep]}
                   </p>
                 </div>
@@ -815,7 +815,7 @@ export default function SubscriptionGraveyard({ userId }) {
                   <X className="h-5 w-5" />
                 </button>
               </div>
-              <p className="text-sm text-exiqo-glow/75">
+              <p className="text-sm text-gray-400">
                 This subscription is on renewal escalation tier 2+. Why are you keeping it despite low usage? We log
                 this with your snooze so SmartSpend can tune future nudges.
               </p>
@@ -823,14 +823,14 @@ export default function SubscriptionGraveyard({ userId }) {
                 value={snoozeReason}
                 onChange={(e) => setSnoozeReason(e.target.value)}
                 rows={4}
-                className="mt-4 w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-exiqo-glow/40 focus:border-violet-500/50 focus:outline-none"
+                  className="mt-4 w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-gray-600 focus:border-violet-500/50 focus:outline-none"
                 placeholder="Be specific (min 10 characters)…"
               />
               <div className="mt-4 flex flex-wrap justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setSnoozeModal({ open: false, id: null })}
-                  className="rounded-xl border border-white/15 px-4 py-2 text-xs font-semibold text-exiqo-glow"
+                  className="rounded-xl border border-white/15 px-4 py-2 text-xs font-semibold text-gray-300"
                 >
                   Cancel
                 </button>

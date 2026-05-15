@@ -34,7 +34,7 @@ export function BankCard({ id, name, logo, onSelect, index = 0 }: BankCardProps)
         {logo}
       </div>
       <h3 className="mb-2 text-lg font-semibold text-white md:text-xl">{name}</h3>
-      <div className="text-sm font-medium text-violet-300/90 transition group-hover:text-fuchsia-300">
+      <div className="text-sm font-medium text-gray-300 transition group-hover:text-fuchsia-300">
         Connect via AA →
       </div>
     </motion.button>

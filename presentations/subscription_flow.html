@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartSpend — Subscription AI Scanner Flow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0A0612;
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px 60px;
+    }
+
+    .page-title {
+      color: #8B5CF6;
+      font-size: 28px;
+      font-weight: 700;
+      text-align: center;
+      letter-spacing: -0.3px;
+      margin-bottom: 8px;
+    }
+
+    .page-subtitle {
+      color: #6B7280;
+      font-size: 14px;
+      text-align: center;
+      margin-bottom: 40px;
+      letter-spacing: 0.5px;
+    }
+
+    .diagram-wrapper {
+      background: #0F0A1F;
+      border: 1px solid #2D2244;
+      border-radius: 16px;
+      padding: 40px 32px;
+      width: 100%;
+      max-width: 1200px;
+      box-shadow: 0 0 60px rgba(139, 92, 246, 0.08);
+      overflow-x: auto;
+    }
+
+    .mermaid {
+      display: flex;
+      justify-content: center;
+    }
+
+    /* Override mermaid SVG text */
+    .mermaid svg {
+      max-width: 100%;
+      height: auto;
+      font-family: 'Inter', sans-serif !important;
+    }
+
+    .footer-note {
+      margin-top: 36px;
+      color: #4B5563;
+      font-size: 12px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <h1 class="page-title">SmartSpend — Subscription AI Scanner: Complete Working Flow</h1>
+  <p class="page-subtitle">9-step pipeline · from raw transactions to ₹ savings on dashboard</p>
+
+  <div class="diagram-wrapper">
+    <div class="mermaid">
+flowchart TD
+    %% ── ENTRY POINT ──────────────────────────────────────────
+    USER([👤 User opens\nSubscription Scanner])
+    USER --> FETCH
+
+    %% ── STEP 1: DATA COLLECTION ──────────────────────────────
+    subgraph S1["📥 STEP 1 — Data Collection"]
+        FETCH[Pull last 6 months\nof transactions from DB]
+        FETCH --> F1[Filter by transaction type\nDebit only]
+        F1 --> F2[Remove one-time payments\namount never repeated]
+        F2 --> F3[Keep recurring candidates\nsame merchant ± ₹5 tolerance]
+    end
+
+    %% ── STEP 2: PATTERN DETECTION ────────────────────────────
+    F3 --> S2_START
+
+    subgraph S2["🔍 STEP 2 — Recurring Pattern Detection"]
+        S2_START[Group transactions\nby Merchant Name]
+        S2_START --> S2A[Calculate interval\nbetween each charge]
+        S2A --> S2B{What is the interval?}
+
+        S2B -->|~30 days ±3| MON[🗓️ Monthly Subscription]
+        S2B -->|~90 days ±5| QTR[📅 Quarterly Subscription]
+        S2B -->|~365 days ±10| ANN[📆 Annual Subscription]
+        S2B -->|~7 days ±1| WEK[📋 Weekly Subscription]
+        S2B -->|No clear pattern| SKIP[❌ Skip — Not a subscription]
+
+        MON --> CONF[Confidence Score\nhow regular is the pattern?\n0.0 → 1.0]
+        QTR --> CONF
+        ANN --> CONF
+        WEK --> CONF
+    end
+
+    %% ── STEP 3: SUBSCRIPTION CLASSIFICATION ──────────────────
+    CONF --> S3_START
+
+    subgraph S3["🏷️ STEP 3 — Subscription Classification"]
+        S3_START{Confidence Score?}
+
+        S3_START -->|Score > 0.85| CONFIRMED[✅ Confirmed Subscription\nAdd to active list]
+        S3_START -->|Score 0.5–0.85| PROBABLE[🟡 Probable Subscription\nMark for user review]
+        S3_START -->|Score < 0.5| UNLIKELY[⚪ Unlikely\nIgnore silently]
+
+        CONFIRMED --> TAG[Tag with category\nStreaming / SaaS / Food /\nFitness / Finance / Other]
+        PROBABLE --> TAG
+        TAG --> ENRICH[Enrich with merchant data\nlogo, website, cancellation URL]
+    end
+
+    %% ── STEP 4: GHOST DETECTION ──────────────────────────────
+    ENRICH --> S4_START
+
+    subgraph S4["👻 STEP 4 — Ghost Subscription Detection"]
+        S4_START[Cross-check:\nIs this subscription being USED?]
+
+        S4_START --> S4A{Any app activity\nfor this service\nin last 60 days?}
+
+        S4A -->|YES — App used recently| ACTIVE_SUB[✅ Active\nUser is using it]
+        S4A -->|NO — No activity found| S4B{How long since\nlast use?}
+
+        S4B -->|30–60 days| WARN[🟡 Warning\nUnused for 30+ days]
+        S4B -->|60–90 days| GHOST_LIKELY[🟠 Likely Ghost\nNot used in 2 months]
+        S4B -->|90+ days| GHOST_CONFIRMED[🔴 Ghost Subscription\nPaying for nothing!]
+
+        GHOST_CONFIRMED --> GHOST_CALC[Calculate waste:\nmonthly charge × months unused\n= Total money wasted]
+        GHOST_LIKELY --> GHOST_CALC
+        WARN --> GHOST_CALC
+    end
+
+    %% ── STEP 5: OVERLAP DETECTION ────────────────────────────
+    GHOST_CALC --> S5_START
+    ACTIVE_SUB --> S5_START
+
+    subgraph S5["⚠️ STEP 5 — Duplicate and Overlap Detection"]
+        S5_START[Compare all confirmed\nsubscriptions against each other]
+
+        S5_START --> S5A{Same category\nfound twice?}
+
+        S5A -->|YES| S5B[Identify overlapping pair\ne.g. Netflix + Hotstar + Prime]
+        S5B --> S5C[Calculate redundancy cost\nHow much for duplicates?]
+        S5C --> S5D[AI picks the best-value one\nbased on price per feature]
+        S5D --> OVERLAP_FLAG[🔴 Overlap Alert\nYou have 3 streaming apps.\nKeep Prime. Save ₹1198/mo]
+
+        S5A -->|NO| NO_OVERLAP[✅ No overlap found\nAll unique services]
+    end
+
+    %% ── STEP 6: AI RECOMMENDATION ENGINE ────────────────────
+    OVERLAP_FLAG --> S6_START
+    NO_OVERLAP --> S6_START
+
+    subgraph S6["🤖 STEP 6 — AI Recommendation Engine"]
+        S6_START[Aggregate all findings:\nGhost + Overlap + Active list]
+
+        S6_START --> S6A[Calculate Total Subscription Spend\nper month across all services]
+        S6A --> S6B[Benchmark against\nIndia average for this income bracket]
+
+        S6B --> S6C{Spending vs benchmark?}
+
+        S6C -->|Over 15% of income| HIGH_SPEND[🔴 High Spend Alert\nSubscriptions eating 18%\nof your income]
+        S6C -->|10–15%| MED_SPEND[🟡 Moderate\nSlightly above average]
+        S6C -->|Under 10%| LOW_SPEND[🟢 Healthy\nYou are managing well]
+
+        S6A --> S6D[Generate AI suggestions\nfor each ghost subscription]
+        S6D --> S6E[Fetch cancellation URL\nfor each service automatically]
+        S6E --> S6F[Estimate annual savings\nif all ghost subs cancelled]
+    end
+
+    %% ── STEP 7: FINAL OUTPUT TO USER ─────────────────────────
+    S6F --> S7_START
+    HIGH_SPEND --> S7_START
+    MED_SPEND --> S7_START
+    LOW_SPEND --> S7_START
+
+    subgraph S7["📱 STEP 7 — Dashboard Output"]
+        S7_START[Build Subscription Dashboard]
+
+        S7_START --> D1[💳 Active Subscriptions Card\nList with logos + next charge date]
+        S7_START --> D2[👻 Ghost Subscriptions Card\nRed highlight + cancel button]
+        S7_START --> D3[⚠️ Overlap Alert Card\nSide-by-side comparison]
+        S7_START --> D4[💰 Total Monthly Cost\nBreakdown pie chart by category]
+        S7_START --> D5[🎯 Potential Savings Banner\nCancel these 3 — Save ₹1847/mo]
+    end
+
+    %% ── STEP 8: USER ACTION ──────────────────────────────────
+    D2 --> S8_START
+    D3 --> S8_START
+    D5 --> S8_START
+
+    subgraph S8["👆 STEP 8 — User Takes Action"]
+        S8_START{What does user do?}
+
+        S8_START -->|Clicks Cancel Subscription| CANCEL_FLOW[Open cancellation URL\nin in-app browser]
+        S8_START -->|Clicks Keep| MARK_KEEP[Mark as intentional\nStop ghost alerts for 30 days]
+        S8_START -->|Clicks Remind Later| SNOOZE[Snooze alert\nRemind in 7 days]
+
+        CANCEL_FLOW --> VERIFY{Did user complete\ncancellation?}
+        VERIFY -->|YES| MARK_CANCELLED[✅ Mark cancelled in DB\nUpdate savings tracker]
+        VERIFY -->|NO| REMIND[Remind again next week]
+
+        MARK_CANCELLED --> SAVINGS_UPDATE[Update Total Savings Counter\non main dashboard]
+    end
+
+    %% ── STEP 9: BACKGROUND RE-SCAN ──────────────────────────
+    SAVINGS_UPDATE --> S9_START
+
+    subgraph S9["🔄 STEP 9 — Auto Re-scan Loop"]
+        S9_START[Schedule next scan]
+        S9_START --> S9A[Re-scan every 30 days\nautomatically]
+        S9A --> S9B[Check if cancelled subs\ncharged again — detect failed cancellations]
+        S9B --> S9C{Cancelled sub\ncharged again?}
+        S9C -->|YES| RECHARGE_ALERT[🚨 Alert: Re-charge Detected!\nCancellation may have failed]
+        S9C -->|NO| ALL_CLEAR[✅ All clear\nDashboard stays clean]
+        RECHARGE_ALERT --> USER
+    end
+
+    %% ── STYLES ───────────────────────────────────────────────
+    classDef stepBox fill:#15102A,stroke:#8B5CF6,stroke-width:2px,color:#fff
+    classDef ghostBox fill:#2a0a0a,stroke:#F43F5E,stroke-width:2px,color:#fff
+    classDef activeBox fill:#0a2a0a,stroke:#10B981,stroke-width:2px,color:#fff
+    classDef warnBox fill:#2a1a0a,stroke:#F59E0B,stroke-width:2px,color:#fff
+    classDef aiBox fill:#0a1a2a,stroke:#06B6D4,stroke-width:2px,color:#fff
+    classDef userBox fill:#1a0a2a,stroke:#8B5CF6,stroke-width:3px,color:#fff
+
+    class S1,S2,S3 stepBox
+    class S4,S8 stepBox
+    class S5,S9 stepBox
+    class S6,S7 aiBox
+    class GHOST_CONFIRMED,RECHARGE_ALERT,OVERLAP_FLAG ghostBox
+    class ACTIVE_SUB,MARK_CANCELLED,ALL_CLEAR activeBox
+    class WARN,GHOST_LIKELY,MED_SPEND warnBox
+    class USER userBox
+    </div>
+  </div>
+
+  <p class="footer-note">SmartSpend Analytics · Subscription AI Scanner · 9-step pipeline · 12 phases. 4 ML models in production. 1 unified user experience.</p>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      themeVariables: {
+        background:       '#0F0A1F',
+        mainBkg:          '#15102A',
+        nodeBorder:       '#8B5CF6',
+        clusterBkg:       '#110C20',
+        clusterBorder:    '#2D2244',
+        titleColor:       '#E5E7EB',
+        edgeLabelBackground: '#0F0A1F',
+        lineColor:        '#6B7280',
+        primaryColor:     '#15102A',
+        primaryTextColor: '#F9FAFB',
+        primaryBorderColor: '#8B5CF6',
+        secondaryColor:   '#0a1a2a',
+        tertiaryColor:    '#0a2a0a',
+        fontFamily:       'Inter, sans-serif',
+        fontSize:         '14px',
+      },
+      flowchart: {
+        curve: 'basis',
+        padding: 20,
+        nodeSpacing: 50,
+        rankSpacing: 60,
+        htmlLabels: true,
+        useMaxWidth: true,
+      },
+      securityLevel: 'loose',
+    });
+  </script>
+</body>
+</html>

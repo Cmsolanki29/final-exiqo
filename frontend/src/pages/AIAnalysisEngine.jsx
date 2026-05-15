@@ -10,7 +10,7 @@ import SubscriptionIntelligence from "./SubscriptionIntelligence";
 export default function AIAnalysisEngine({ onBack, onOpenReminders }) {
   return (
     <div className="mx-auto max-w-6xl space-y-8 pb-16">
-      <nav className="text-xs text-exiqo-glow/55" aria-label="Breadcrumb">
+      <nav className="text-xs text-gray-500" aria-label="Breadcrumb">
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -35,7 +35,7 @@ export default function AIAnalysisEngine({ onBack, onOpenReminders }) {
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Back to hub
         </button>
-        <p className="text-xs text-exiqo-glow/55">Live data from subscription-intelligence APIs</p>
+        <p className="text-xs text-gray-500">Live data from subscription-intelligence APIs</p>
       </div>
 
       <SubscriptionIntelligence onOpenReminders={onOpenReminders} />

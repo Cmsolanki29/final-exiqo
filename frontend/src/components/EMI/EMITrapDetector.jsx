@@ -355,7 +355,7 @@ export default function EMITrapDetector({ userId }) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <HeroKpiTile label="Monthly EMI burden" value={inr(totalBurden)} caption="Committed outflow (detected)" accentHex={ACCENT} />
         <GlassCard surface="panel" padding="sm" className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-2xl">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-exiqo-glow/55">Debt-to-income</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Debt-to-income</p>
           <p className="mt-1 font-heading text-3xl font-bold tabular-nums" style={{ color: ratioColor }}>
             {ratio.toFixed(1)}%
           </p>
@@ -368,7 +368,7 @@ export default function EMITrapDetector({ userId }) {
               transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
             />
           </div>
-          <p className="mt-2 text-xs text-exiqo-glow/55">Guideline: keep EMIs under ~30% of income</p>
+          <p className="mt-2 text-xs text-gray-500">Guideline: keep EMIs under ~30% of income</p>
         </GlassCard>
         <HeroKpiTile
           label="Active EMIs"
@@ -390,9 +390,9 @@ export default function EMITrapDetector({ userId }) {
             <Sparkles className="h-6 w-6" aria-hidden />
           </div>
           <div className="min-w-0 flex-1 space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-exiqo-glow">AI debt advisor</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">AI debt advisor</p>
             {verdict ? <p className="text-sm font-medium text-white/90">{verdict}</p> : null}
-            <p className="text-sm leading-relaxed text-exiqo-glow/80">{advice}</p>
+            <p className="text-sm leading-relaxed text-gray-300">{advice}</p>
           </div>
         </div>
       </GlassCard>
@@ -400,7 +400,7 @@ export default function EMITrapDetector({ userId }) {
       <GlassCard surface="panel" padding="md" className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-2xl">
         <div className="mb-6 flex flex-col gap-3 border-b border-white/[0.06] pb-4 sm:flex-row sm:items-center sm:justify-between">
           <SectionTitle eyebrow="Detected" title="Active EMIs & loans" />
-          <p className="text-xs text-exiqo-glow/55">Auto-detected from recurring debit patterns</p>
+          <p className="text-xs text-gray-500">Auto-detected from recurring debit patterns</p>
         </div>
         {emis.length === 0 ? (
           <div className="py-14 text-center">
@@ -408,7 +408,7 @@ export default function EMITrapDetector({ userId }) {
               <CheckCircle2 className="h-9 w-9" aria-hidden />
             </div>
             <p className="font-heading text-lg font-semibold text-white">No EMIs detected</p>
-            <p className="mx-auto mt-2 max-w-md text-sm text-exiqo-glow/60">
+            <p className="mx-auto mt-2 max-w-md text-sm text-gray-400">
               No strong recurring loan pattern in the last six months — try Rescan after new bank data syncs.
             </p>
           </div>
@@ -425,7 +425,7 @@ export default function EMITrapDetector({ userId }) {
                   </span>
                   <div className="min-w-0">
                     <p className="truncate font-medium text-white">{emi.merchant}</p>
-                    <p className="text-xs text-exiqo-glow/55">
+                    <p className="text-xs text-gray-500">
                       {emi.emi_type} · typical debit ~day {emi.payment_date} · {emi.months_detected} mo. streak
                     </p>
                   </div>
@@ -433,7 +433,7 @@ export default function EMITrapDetector({ userId }) {
                 <div className="text-left sm:text-right">
                   <p className="font-heading text-xl font-bold tabular-nums text-white">
                     {inr(emi.amount)}
-                    <span className="text-sm font-normal text-exiqo-glow/50"> /mo</span>
+                    <span className="text-sm font-normal text-gray-500"> /mo</span>
                   </p>
                   <p className="mt-1 inline-block rounded-full border border-[#7C3AED]/30 bg-[#7C3AED]/10 px-2.5 py-0.5 text-[11px] font-medium text-exiqo-glow">
                     Next due ~{emi.next_due || "—"}
@@ -459,7 +459,7 @@ export default function EMITrapDetector({ userId }) {
               <span className="font-heading text-3xl font-bold tabular-nums" style={{ color: ratioColor }}>
                 {ratio.toFixed(1)}%
               </span>
-              <span className="text-[11px] text-exiqo-glow/50">of income</span>
+              <span className="text-[11px] text-gray-500">of income</span>
             </div>
           </div>
         </GlassCard>
@@ -468,14 +468,14 @@ export default function EMITrapDetector({ userId }) {
           <h3 className="mb-4 font-heading text-base font-semibold text-white">EMI share of income</h3>
           <div className="space-y-4">
             {emis.length === 0 ? (
-              <p className="text-sm text-exiqo-glow/55">No rows to chart yet.</p>
+              <p className="text-sm text-gray-500">No rows to chart yet.</p>
             ) : (
               emis.map((emi) => {
                 const pct = monthlyIncome > 0 ? (Number(emi.amount || 0) / monthlyIncome) * 100 : 0;
                 return (
                   <div key={emi.merchant}>
                     <div className="mb-1 flex justify-between text-xs">
-                      <span className="truncate text-exiqo-glow/70">{emi.merchant}</span>
+                      <span className="truncate text-gray-400">{emi.merchant}</span>
                       <span className="tabular-nums text-white/90">{pct.toFixed(1)}%</span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
@@ -510,7 +510,7 @@ export default function EMITrapDetector({ userId }) {
                     </span>
                     <div>
                       <p className="font-medium text-white">{emi.merchant}</p>
-                      <p className="text-xs text-exiqo-glow/55">
+                      <p className="text-xs text-gray-500">
                         {isToday ? "Typical debit day is today (estimated)" : `~${daysLeft > 0 ? `${daysLeft}d` : "Past"} vs today`}
                       </p>
                     </div>
@@ -527,7 +527,7 @@ export default function EMITrapDetector({ userId }) {
       {preCheck && !checkResult && (
         <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-xl">
           <div className="border-b border-white/[0.06] px-5 py-4">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-exiqo-glow/50">Before you add this EMI</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Before you add this EMI</p>
             <p className="font-heading text-base font-bold text-white">Here's your current picture</p>
           </div>
           <div className="grid gap-1 p-4 sm:grid-cols-2">
@@ -544,7 +544,7 @@ export default function EMITrapDetector({ userId }) {
                   <span className="text-base">{icon}</span>
                   <div className="min-w-0">
                     <p className="truncate text-sm text-white/80">{label}</p>
-                    {sub && <p className="truncate text-[10px] text-exiqo-glow/40">{sub}</p>}
+                    {sub && <p className="truncate text-[10px] text-gray-600">{sub}</p>}
                   </div>
                 </div>
                 <span className={`shrink-0 font-heading text-sm font-bold tabular-nums ${positive ? "text-emerald-300" : "text-white/70"}`}>
@@ -580,11 +580,11 @@ export default function EMITrapDetector({ userId }) {
         <SectionTitle
           eyebrow="Simulator"
           title="Can I take one more EMI?"
-          actions={<span className="hidden text-xs text-exiqo-glow/50 sm:inline">Deterministic check: RBI headroom + liquidity vs goals</span>}
+          actions={<span className="hidden text-xs text-gray-500 sm:inline">Deterministic check: RBI headroom + liquidity vs goals</span>}
         />
         <div className="mt-6 grid grid-cols-1 gap-8 md:grid-cols-2">
           <div className="space-y-4">
-            <p className="text-xs font-medium text-exiqo-glow/60">Quick amounts</p>
+            <p className="text-xs font-medium text-gray-400">Quick amounts</p>
             <div className="flex flex-wrap gap-2">
               {QUICK_EMI.map((q) => (
                 <button
@@ -599,7 +599,7 @@ export default function EMITrapDetector({ userId }) {
                 </button>
               ))}
             </div>
-            <label className="block text-sm font-medium text-exiqo-glow/70" htmlFor="new-emi-input-emi">
+            <label className="block text-sm font-medium text-gray-400" htmlFor="new-emi-input-emi">
               New monthly EMI (₹)
             </label>
             <div className="relative">
@@ -611,7 +611,7 @@ export default function EMITrapDetector({ userId }) {
                 value={newEmi}
                 onChange={(e) => { setNewEmi(e.target.value); setCalcError(""); }}
                 placeholder="e.g. 8500"
-                className="w-full rounded-xl border border-white/10 bg-[#070418]/80 py-3.5 pl-12 pr-4 text-lg font-semibold text-white placeholder:text-exiqo-glow/35 focus:border-exiqo-purple/50 focus:outline-none focus:ring-2 focus:ring-exiqo-purple/30"
+                className="w-full rounded-xl border border-white/10 bg-[#070418]/80 py-3.5 pl-12 pr-4 text-lg font-semibold text-white placeholder:text-gray-600 focus:border-exiqo-purple/50 focus:outline-none focus:ring-2 focus:ring-exiqo-purple/30"
               />
             </div>
             <button
@@ -639,7 +639,7 @@ export default function EMITrapDetector({ userId }) {
               <div className="space-y-3 py-6">
                 <div className="h-6 animate-pulse rounded-lg bg-white/[0.06]" />
                 <div className="h-24 animate-pulse rounded-xl bg-white/[0.06]" />
-                <p className="text-center text-xs text-exiqo-glow/50">Calculating…</p>
+                <p className="text-center text-xs text-gray-500">Calculating…</p>
               </div>
             ) : calcError ? (
               <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-4">
@@ -648,7 +648,7 @@ export default function EMITrapDetector({ userId }) {
                 <button
                   type="button"
                   onClick={() => { setCalcError(""); runCalculate(); }}
-                  className="mt-3 text-xs text-exiqo-glow/70 underline hover:text-white"
+                  className="mt-3 text-xs text-gray-400 underline hover:text-white"
                 >
                   Retry
                 </button>
@@ -679,7 +679,7 @@ export default function EMITrapDetector({ userId }) {
                     </div>
                     <div className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
                       <div className="text-center">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-exiqo-glow/50">Was</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Was</p>
                         <p className="mt-0.5 font-heading text-base font-bold text-white/80">
                           {successState.fromDate
                             ? new Date(successState.fromDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
@@ -723,7 +723,7 @@ export default function EMITrapDetector({ userId }) {
                   <button
                     type="button"
                     onClick={() => setSuccessState(null)}
-                    className="w-full rounded-xl border border-white/15 bg-white/[0.04] py-2.5 text-xs font-semibold text-exiqo-glow/80 transition hover:bg-white/[0.08]"
+                    className="w-full rounded-xl border border-white/15 bg-white/[0.04] py-2.5 text-xs font-semibold text-gray-300 transition hover:bg-white/[0.08]"
                   >
                     Run another check
                   </button>
@@ -774,11 +774,11 @@ export default function EMITrapDetector({ userId }) {
                       )}
                     </div>
                     <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-4">
-                      <p className="mb-3 text-xs font-semibold text-exiqo-glow/60">You have 2 options:</p>
+                      <p className="mb-3 text-xs font-semibold text-gray-400">You have 2 options:</p>
                       <div className="space-y-2">
                         <button type="button" onClick={() => setCheckResult(null)} className="w-full rounded-xl border border-white/15 bg-white/[0.04] px-4 py-3 text-left text-sm transition hover:bg-white/[0.07]">
                           <p className="font-semibold text-white">Option A — Wait, skip this EMI for now</p>
-                          <p className="mt-0.5 text-xs text-exiqo-glow/60">Your plans are protected. Try again when income improves.</p>
+                          <p className="mt-0.5 text-xs text-gray-400">Your plans are protected. Try again when income improves.</p>
                         </button>
                         <button type="button" onClick={() => setDismissSuggestion(false)} className="w-full rounded-xl border border-amber-500/30 bg-amber-500/8 px-4 py-3 text-left text-sm transition hover:bg-amber-500/15">
                           <p className="font-semibold text-amber-200">Option B — Review your plans</p>
@@ -804,7 +804,7 @@ export default function EMITrapDetector({ userId }) {
                     <p className="font-heading text-base font-semibold text-white">
                       {suggestion.primary_title || "You can still take this EMI if you move a purchase plan"}
                     </p>
-                    <p className="mt-1 text-sm leading-snug text-exiqo-glow/85">
+                    <p className="mt-1 text-sm leading-snug text-gray-300">
                       {suggestion.primary_body || suggestion.message}
                     </p>
                     {selectedEntry?.is_last_resort ? (
@@ -815,7 +815,7 @@ export default function EMITrapDetector({ userId }) {
 
                     {deferGoals.length > 1 ? (
                       <div className="mt-4 space-y-2">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-exiqo-glow/55">Pick a goal to move</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Pick a goal to move</p>
                         <div className="grid gap-2 sm:grid-cols-2">
                           {deferGoals.map((g) => {
                             const active = (selectedGoalId ?? deferGoals[0]?.goal_id) === g.goal_id;
@@ -832,7 +832,7 @@ export default function EMITrapDetector({ userId }) {
                                 }`}
                               >
                                 <span className="block font-semibold text-white">{g.item_name}</span>
-                                <span className="mt-0.5 block text-[11px] text-exiqo-glow/60">
+                                <span className="mt-0.5 block text-[11px] text-gray-400">
                                   Target {g.current_target_date} · pace {inr(g.monthly_target)}/mo · {g.priority}
                                 </span>
                               </button>
@@ -844,7 +844,7 @@ export default function EMITrapDetector({ userId }) {
 
                     {selectedEntry && !confirmPlan ? (
                       <>
-                        <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-exiqo-glow/55">Festival milestones (after current target)</p>
+                        <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Festival milestones (after current target)</p>
                         <div className="mt-2 grid gap-2 sm:grid-cols-2">
                           <button
                             type="button"
@@ -894,7 +894,7 @@ export default function EMITrapDetector({ userId }) {
                         {selectedEntry.generic_postpone_months != null ? (
                           <button
                             type="button"
-                            className="mt-3 w-full rounded-lg border border-dashed border-white/20 py-2 text-center text-[11px] font-medium text-exiqo-glow/75 transition hover:border-white/30 hover:text-white/90"
+                            className="mt-3 w-full rounded-lg border border-dashed border-white/20 py-2 text-center text-[11px] font-medium text-gray-400 transition hover:border-white/30 hover:text-white/90"
                             onClick={() =>
                               setConfirmPlan({
                                 kind: "generic",
@@ -932,7 +932,7 @@ export default function EMITrapDetector({ userId }) {
                             type="button"
                             disabled={postponing}
                             onClick={() => setConfirmPlan(null)}
-                            className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-exiqo-glow/80"
+                            className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-gray-300"
                           >
                             Cancel
                           </button>
@@ -945,22 +945,22 @@ export default function EMITrapDetector({ userId }) {
                         Linked context: {suggestion.linked_festival.name} · {suggestion.linked_festival.date}
                       </p>
                     ) : null}
-                    <ul className="mt-3 max-h-32 list-disc space-y-1 overflow-y-auto pl-4 text-[11px] text-exiqo-glow/70">
+                    <ul className="mt-3 max-h-32 list-disc space-y-1 overflow-y-auto pl-4 text-[11px] text-gray-400">
                       {(suggestion.rationale_lines || []).slice(0, 8).map((line, i) => (
                         <li key={i}>{line}</li>
                       ))}
                     </ul>
                     <div className="mt-4 grid grid-cols-2 gap-2 text-center text-xs">
                       <div className="rounded-lg border border-white/10 bg-white/[0.04] p-2">
-                        <p className="text-exiqo-glow/50">Goal pace (was)</p>
+                        <p className="text-gray-500">Goal pace (was)</p>
                         <p className="font-heading text-lg font-bold text-white">{inr(suggestion.old_monthly_target)}</p>
                       </div>
                       <div className="rounded-lg border border-white/10 bg-white/[0.04] p-2">
-                        <p className="text-exiqo-glow/50">Reference pace (default goal)</p>
+                        <p className="text-gray-500">Reference pace (default goal)</p>
                         <p className="font-heading text-lg font-bold text-emerald-200">{inr(suggestion.new_monthly_target)}</p>
                       </div>
                     </div>
-                    <p className="mt-2 text-center text-[11px] text-exiqo-glow/60">
+                    <p className="mt-2 text-center text-[11px] text-gray-400">
                       EMI shortfall modeled: <span className="font-semibold text-amber-200">{inr(checkResult.shortfall)}</span>/mo
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -968,7 +968,7 @@ export default function EMITrapDetector({ userId }) {
                         type="button"
                         onClick={() => setDismissSuggestion(true)}
                         aria-label="Dismiss purchase plan suggestions"
-                        className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.04] px-4 py-2 text-xs font-semibold text-exiqo-glow/80 transition hover:bg-white/[0.08]"
+                        className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.04] px-4 py-2 text-xs font-semibold text-gray-300 transition hover:bg-white/[0.08]"
                       >
                         <X className="h-4 w-4" aria-hidden />
                         Dismiss
@@ -977,7 +977,7 @@ export default function EMITrapDetector({ userId }) {
                   </div>
                   </div>
                 ) : showDismissed ? (
-                  <div className="rounded-xl border border-white/15 bg-white/[0.04] px-4 py-4 text-center text-sm text-exiqo-glow/75">
+                  <div className="rounded-xl border border-white/15 bg-white/[0.04] px-4 py-4 text-center text-sm text-gray-400">
                     Suggestion dismissed — timeline unchanged. Run another check with a different EMI if you like.
                   </div>
                 ) : (
@@ -986,7 +986,7 @@ export default function EMITrapDetector({ userId }) {
                     <p className="mt-2 text-xs leading-relaxed">
                       Shortfall vs safe headroom / liquidity: {inr(checkResult.shortfall)}.
                     </p>
-                    <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-exiqo-glow/75">
+                    <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-gray-400">
                       {(checkResult.rationale_lines || []).map((line, i) => (
                         <li key={i}>{line}</li>
                       ))}
@@ -997,18 +997,18 @@ export default function EMITrapDetector({ userId }) {
             ) : (
               <div className="space-y-4 py-4 text-center">
                 <TrendingDown className="mx-auto h-10 w-10 text-exiqo-glow/40" aria-hidden />
-                <p className="text-sm text-exiqo-glow/60">Enter an amount and run the impact check.</p>
+                <p className="text-sm text-gray-400">Enter an amount and run the impact check.</p>
                 <div className="space-y-2 border-t border-white/[0.06] pt-4 text-left text-sm">
                   <div className="flex justify-between">
-                    <span className="text-exiqo-glow/55">RBI new-EMI headroom</span>
+                    <span className="text-gray-500">RBI new-EMI headroom</span>
                     <span className="font-semibold text-white">{inr(maxNew)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-exiqo-glow/55">Income (basis)</span>
+                    <span className="text-gray-500">Income (basis)</span>
                     <span className="font-semibold text-white">{inr(monthlyIncome)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-exiqo-glow/55">Goals loaded</span>
+                    <span className="text-gray-500">Goals loaded</span>
                     <span className="font-semibold text-white">{cross.purchases?.goals?.length ?? "—"}</span>
                   </div>
                 </div>

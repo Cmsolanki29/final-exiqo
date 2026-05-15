@@ -189,11 +189,11 @@ function AdvancedPhasesPanel({ userId }) {
       className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-900/20 via-exiqo-dark/40 to-pink-900/10 p-5 backdrop-blur-sm"
     >
       <div className="flex items-center justify-between mb-4">
-        <p className="text-xs uppercase tracking-wider text-purple-300 font-semibold">
+        <p className="text-xs uppercase tracking-wider text-gray-500 font-semibold">
           2026 Parity Phases · Live Status
         </p>
         {loading && (
-          <span className="text-[10px] text-exiqo-glow/40 animate-pulse">Fetching…</span>
+          <span className="text-[10px] text-gray-600 animate-pulse">Fetching…</span>
         )}
       </div>
       <div className="space-y-3">
@@ -207,12 +207,12 @@ function AdvancedPhasesPanel({ userId }) {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-exiqo-glow/90">{label}</span>
+                <span className="text-sm font-medium text-gray-300">{label}</span>
                 <span className="text-[9px] font-bold bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded uppercase tracking-wider">
                   {badge}
                 </span>
               </div>
-              <p className="text-[11px] text-exiqo-glow/40 truncate">{detail}</p>
+              <p className="text-[11px] text-gray-600 truncate">{detail}</p>
             </div>
             <StatusPill ok={loading ? null : status} label={loading ? "…" : statusLabel} />
           </div>
@@ -290,12 +290,12 @@ const TrustCenter = ({ userId, onNavigate, journeyPhase = 1, journeyComplete = f
       >
         <div>
           <h2 className="text-2xl font-bold text-white">Trust Center</h2>
-          <p className="text-exiqo-glow/60 text-sm mt-1">
+          <p className="text-gray-400 text-sm mt-1">
             12-phase AI fraud protection — 2026 industry standard
           </p>
         </div>
         {version && (
-          <span className="text-xs text-exiqo-glow/40 bg-white/5 px-2 py-1 rounded-lg border border-white/10">
+          <span className="text-xs text-gray-600 bg-white/5 px-2 py-1 rounded-lg border border-white/10">
             v{version}
           </span>
         )}
@@ -311,45 +311,45 @@ const TrustCenter = ({ userId, onNavigate, journeyPhase = 1, journeyComplete = f
         transition={{ delay: 0.1 }}
         className="rounded-2xl border border-white/10 bg-gradient-to-br from-exiqo-purple/15 via-exiqo-dark/40 to-exiqo-pink/10 p-5 backdrop-blur-sm"
       >
-        <p className="text-xs uppercase tracking-wider text-exiqo-glow/60 font-semibold mb-3">
+        <p className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">
           Protection Summary · This Month
         </p>
         <div className="grid grid-cols-3 gap-3">
           <div className="text-center">
             <div className="flex items-center justify-center gap-1.5 mb-1">
               <ShieldCheck size={14} className="text-green-400" />
-              <p className="text-xs text-exiqo-glow/60 uppercase tracking-wide">Threats Blocked</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Threats Blocked</p>
             </div>
             {threatsBlocked != null ? (
               <p className="text-3xl font-bold text-green-400">{threatsBlocked}</p>
             ) : (
               <p className="text-3xl font-bold text-green-400/40 animate-pulse">—</p>
             )}
-            <p className="text-[10px] text-exiqo-glow/40 mt-0.5">fraud attempts detected</p>
+            <p className="text-[10px] text-gray-600 mt-0.5">fraud attempts detected</p>
           </div>
           <div className="text-center border-x border-white/10">
             <div className="flex items-center justify-center gap-1.5 mb-1">
               <DollarSign size={14} className="text-yellow-400" />
-              <p className="text-xs text-exiqo-glow/60 uppercase tracking-wide">Money Saved</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Money Saved</p>
             </div>
             {moneySaved != null ? (
               <p className="text-3xl font-bold text-yellow-400">{fmtCurrency(moneySaved)}</p>
             ) : (
               <p className="text-3xl font-bold text-yellow-400/40 animate-pulse">—</p>
             )}
-            <p className="text-[10px] text-exiqo-glow/40 mt-0.5">protected from fraud losses</p>
+            <p className="text-[10px] text-gray-600 mt-0.5">protected from fraud losses</p>
           </div>
           <div className="text-center">
             <div className="flex items-center justify-center gap-1.5 mb-1">
               <TrendingUp size={14} className="text-pink-400" />
-              <p className="text-xs text-exiqo-glow/60 uppercase tracking-wide">Safety Score</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Safety Score</p>
             </div>
             {detectionRate != null ? (
               <p className="text-3xl font-bold text-pink-400">{detectionRate}/100</p>
             ) : (
               <p className="text-3xl font-bold text-pink-400/40 animate-pulse">—</p>
             )}
-            <p className="text-[10px] text-exiqo-glow/40 mt-0.5">XGBoost + DNN + GNN</p>
+            <p className="text-[10px] text-gray-600 mt-0.5">XGBoost + DNN + GNN</p>
           </div>
         </div>
       </motion.div>
@@ -397,7 +397,7 @@ const TrustCenter = ({ userId, onNavigate, journeyPhase = 1, journeyComplete = f
 
       {/* Live ticker */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-        <p className="text-xs text-exiqo-glow/40 mb-2 uppercase tracking-wider">
+        <p className="text-xs text-gray-600 mb-2 uppercase tracking-wider">
           Live Transaction Feed
         </p>
         <RiskLiveTicker />

@@ -42,16 +42,16 @@ export default function PermissionModal({ open, appIds, onAllow, onDeny }) {
           <ShieldCheck className="h-7 w-7 text-white" aria-hidden />
         </div>
 
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-violet-300/90">Step 2</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">Step 2</p>
         <h2 id="perm-title" className="mt-1 font-heading text-xl font-semibold text-white">
           Permission access
         </h2>
-        <p className="mt-3 text-sm leading-relaxed text-exiqo-glow/75">
+        <p className="mt-3 text-sm leading-relaxed text-gray-400">
           SmartSpend wants permission to analyse subscription usage and billing behaviour for:{" "}
           <span className="font-medium text-white">{names.join(", ")}</span>.
         </p>
 
-        <ul className="mt-4 space-y-2 text-sm text-exiqo-glow/85">
+        <ul className="mt-4 space-y-2 text-sm text-gray-300">
           <li className="flex gap-2">
             <span className="text-emerald-400">✔</span> Usage access
           </li>

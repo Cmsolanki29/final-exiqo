@@ -78,7 +78,7 @@ function EventCard({ event, goals, onPostpone, onComplete, onDelete }) {
               <h3 className="font-heading text-base font-semibold text-white">{event.event_name}</h3>
               <StatusBadge status={event.status} />
             </div>
-            <div className="mt-1 flex flex-wrap gap-3 text-xs text-exiqo-glow/60">
+            <div className="mt-1 flex flex-wrap gap-3 text-xs text-gray-400">
               <span>
                 {event.status === "postponed" ? "Moved to" : "Planned"}:{" "}
                 <span className={`font-medium ${event.status === "postponed" ? "text-amber-300" : "text-white/80"}`}>
@@ -88,7 +88,7 @@ function EventCard({ event, goals, onPostpone, onComplete, onDelete }) {
                 </span>
               </span>
               {daysLeft !== null && event.status !== "completed" && event.status !== "cancelled" && (
-                <span className={daysLeft < 0 ? "text-rose-300" : daysLeft < 30 ? "text-amber-300" : "text-exiqo-glow/60"}>
+                <span className={daysLeft < 0 ? "text-rose-300" : daysLeft < 30 ? "text-amber-300" : "text-gray-400"}>
                   {daysLeft < 0 ? `${Math.abs(daysLeft)}d overdue` : `${daysLeft}d away`}
                 </span>
               )}
@@ -102,7 +102,7 @@ function EventCard({ event, goals, onPostpone, onComplete, onDelete }) {
             {event.postpone_reason && (
               <p className="mt-1 text-[11px] text-amber-100/60">Reason: {event.postpone_reason}</p>
             )}
-            {event.notes && <p className="mt-1 text-[11px] text-exiqo-glow/50">{event.notes}</p>}
+            {event.notes && <p className="mt-1 text-[11px] text-gray-500">{event.notes}</p>}
           </div>
         </div>
 
@@ -149,7 +149,7 @@ function EventCard({ event, goals, onPostpone, onComplete, onDelete }) {
               <p className="text-xs font-semibold text-white/70">Move event to new date</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-[11px] text-exiqo-glow/60">New date *</label>
+                  <label className="mb-1 block text-[11px] text-gray-400">New date *</label>
                   <input
                     type="date"
                     value={newDate}
@@ -159,18 +159,18 @@ function EventCard({ event, goals, onPostpone, onComplete, onDelete }) {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[11px] text-exiqo-glow/60">Reason (optional)</label>
+                  <label className="mb-1 block text-[11px] text-gray-400">Reason (optional)</label>
                   <input
                     type="text"
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                     placeholder="e.g. Budget constraint"
-                    className="w-full rounded-xl border border-white/10 bg-[#070418]/80 px-3 py-2 text-sm text-white placeholder:text-exiqo-glow/30 focus:border-exiqo-purple/50 focus:outline-none"
+                    className="w-full rounded-xl border border-white/10 bg-[#070418]/80 px-3 py-2 text-sm text-white placeholder:text-gray-600 focus:border-exiqo-purple/50 focus:outline-none"
                   />
                 </div>
               </div>
               {linkedGoal && (
-                <label className="flex cursor-pointer items-center gap-2 text-xs text-exiqo-glow/80">
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-gray-300">
                   <input
                     type="checkbox"
                     checked={cascadeGoal}
@@ -193,7 +193,7 @@ function EventCard({ event, goals, onPostpone, onComplete, onDelete }) {
                 <button
                   type="button"
                   onClick={() => setShowPostpone(false)}
-                  className="rounded-xl border border-white/10 px-3 py-2 text-xs text-exiqo-glow/70"
+                  className="rounded-xl border border-white/10 px-3 py-2 text-xs text-gray-400"
                 >
                   <X className="h-4 w-4" aria-hidden />
                 </button>
@@ -256,18 +256,18 @@ function AddEventModal({ userId, goals, onAdded, onClose }) {
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-xs text-exiqo-glow/60">Event name *</label>
+            <label className="mb-1 block text-xs text-gray-400">Event name *</label>
             <input
               type="text"
               value={form.event_name}
               onChange={(e) => setForm((f) => ({ ...f, event_name: e.target.value }))}
               placeholder="Family trip to Goa"
-              className="w-full rounded-xl border border-white/10 bg-[#070418]/80 px-3 py-2.5 text-sm text-white placeholder:text-exiqo-glow/30 focus:border-exiqo-purple/50 focus:outline-none"
+              className="w-full rounded-xl border border-white/10 bg-[#070418]/80 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:border-exiqo-purple/50 focus:outline-none"
             />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs text-exiqo-glow/60">Type</label>
+              <label className="mb-1 block text-xs text-gray-400">Type</label>
               <select
                 value={form.event_type}
                 onChange={(e) => setForm((f) => ({ ...f, event_type: e.target.value }))}
@@ -280,7 +280,7 @@ function AddEventModal({ userId, goals, onAdded, onClose }) {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs text-exiqo-glow/60">Planned date *</label>
+              <label className="mb-1 block text-xs text-gray-400">Planned date *</label>
               <input
                 type="date"
                 value={form.planned_date}
@@ -291,19 +291,19 @@ function AddEventModal({ userId, goals, onAdded, onClose }) {
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-xs text-exiqo-glow/60">Estimated cost (₹) *</label>
+            <label className="mb-1 block text-xs text-gray-400">Estimated cost (₹) *</label>
             <input
               type="number"
               value={form.estimated_cost}
               onChange={(e) => setForm((f) => ({ ...f, estimated_cost: e.target.value }))}
               placeholder="45000"
               min="0"
-              className="w-full rounded-xl border border-white/10 bg-[#070418]/80 px-3 py-2.5 text-sm text-white placeholder:text-exiqo-glow/30 focus:border-exiqo-purple/50 focus:outline-none"
+              className="w-full rounded-xl border border-white/10 bg-[#070418]/80 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:border-exiqo-purple/50 focus:outline-none"
             />
           </div>
           {goals.length > 0 && (
             <div>
-              <label className="mb-1 block text-xs text-exiqo-glow/60">
+              <label className="mb-1 block text-xs text-gray-400">
                 Link to purchase goal (optional — will cascade when postponed)
               </label>
               <select
@@ -319,13 +319,13 @@ function AddEventModal({ userId, goals, onAdded, onClose }) {
             </div>
           )}
           <div>
-            <label className="mb-1 block text-xs text-exiqo-glow/60">Notes (optional)</label>
+            <label className="mb-1 block text-xs text-gray-400">Notes (optional)</label>
             <input
               type="text"
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
               placeholder="Booking details, reminders…"
-              className="w-full rounded-xl border border-white/10 bg-[#070418]/80 px-3 py-2.5 text-sm text-white placeholder:text-exiqo-glow/30 focus:border-exiqo-purple/50 focus:outline-none"
+              className="w-full rounded-xl border border-white/10 bg-[#070418]/80 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:border-exiqo-purple/50 focus:outline-none"
             />
           </div>
           {error && <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{error}</p>}
@@ -437,9 +437,9 @@ export default function FamilyEventsPage({ userId }) {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-exiqo-glow/50">Family Finance</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Family Finance</p>
           <h1 className="font-heading text-2xl font-bold text-white">Trips &amp; Events</h1>
-          <p className="mt-1 text-sm text-exiqo-glow/60">
+          <p className="mt-1 text-sm text-gray-400">
             Postponing a trip auto-updates linked purchase plans. Every change recalculates your budget.
           </p>
         </div>
@@ -447,7 +447,7 @@ export default function FamilyEventsPage({ userId }) {
           <button
             type="button"
             onClick={load}
-            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-exiqo-glow/70 transition hover:bg-white/[0.08]"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-gray-400 transition hover:bg-white/[0.08]"
           >
             <RefreshCw className="h-3.5 w-3.5" aria-hidden />Refresh
           </button>
@@ -484,7 +484,7 @@ export default function FamilyEventsPage({ userId }) {
         <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] py-16 text-center">
           <CalendarDays className="mx-auto mb-3 h-12 w-12 text-exiqo-glow/30" aria-hidden />
           <p className="font-heading text-lg font-semibold text-white">No events planned</p>
-          <p className="mx-auto mt-2 max-w-sm text-sm text-exiqo-glow/50">
+          <p className="mx-auto mt-2 max-w-sm text-sm text-gray-500">
             Add a family trip or event and link it to a purchase goal — postponing one will auto-update the other.
           </p>
           <button
@@ -499,7 +499,7 @@ export default function FamilyEventsPage({ userId }) {
         <>
           {upcoming.length > 0 && (
             <div className="space-y-3">
-              <h2 className="flex items-center gap-2 text-sm font-semibold text-exiqo-glow/70">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-400">
                 <Clock className="h-4 w-4" aria-hidden />Upcoming ({upcoming.length})
               </h2>
               {upcoming.map((e) => (
@@ -517,7 +517,7 @@ export default function FamilyEventsPage({ userId }) {
 
           {done.length > 0 && (
             <div className="space-y-3">
-              <h2 className="flex items-center gap-2 text-sm font-semibold text-exiqo-glow/50">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-500">
                 <CheckCircle2 className="h-4 w-4" aria-hidden />Completed ({done.length})
               </h2>
               {done.map((e) => (

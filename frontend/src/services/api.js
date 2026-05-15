@@ -254,6 +254,15 @@ const request = async (promise) => {
 export const getUsers = async () => request(api.get("/users"));
 export const getUser = async (userId) => request(api.get(`/users/${userId}`));
 
+/**
+ * One-shot dashboard aggregate. Backend returns the user row, current-month
+ * income/expense/saved, recent anomalies, spending-by-category, 12-month trends,
+ * health score, unread-alert count, fraud_pending_count, last_synced (max
+ * across linked banks), and last_login.
+ */
+export const getDashboardSummary = async (userId) =>
+  request(api.get(`/dashboard/${userId}`));
+
 export const getTransactions = async (userId, params = {}) =>
   request(api.get(`/transactions/${userId}`, { params }));
 
@@ -283,7 +292,7 @@ export const getAnomalies = async (userId, severity = null) =>
   request(api.get(`/anomalies/${userId}`, { params: severity ? { severity } : {} }));
 
 export const getAnomalyStats = async (userId) =>
-  request(api.get(`/anomalies/${userId}/stats`));
+  request(api.get(`/anomalies/${userId}/stats`, { timeout: 30000 }));
 
 export const runMLDetection = async (userId) =>
   request(api.post(`/anomalies/${userId}/run-detection`));

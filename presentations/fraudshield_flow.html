@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartSpend — FraudShield AI Pipeline</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0A0612;
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 20px 72px;
+    }
+
+    /* ── Header ── */
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+      width: 100%;
+      max-width: 1400px;
+    }
+
+    .page-title {
+      color: #F43F5E;
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
+
+    .page-subtitle {
+      color: #8B5CF6;
+      font-size: 16px;
+      font-weight: 500;
+    }
+
+    /* ── Metrics bar ── */
+    .metrics-bar {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin: 28px 0 36px;
+      width: 100%;
+      max-width: 1400px;
+    }
+
+    .metric-card {
+      background: #15102A;
+      border: 1px solid #8B5CF6;
+      border-radius: 12px;
+      padding: 16px 32px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      min-width: 150px;
+      box-shadow: 0 0 20px rgba(139, 92, 246, 0.12);
+    }
+
+    .metric-label {
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .metric-value {
+      color: #8B5CF6;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    /* ── Diagram container ── */
+    .diagram-wrapper {
+      background: #0F0A1F;
+      border: 1px solid #2D2244;
+      border-radius: 20px;
+      padding: 60px 48px;
+      width: 100%;
+      max-width: 1400px;
+      box-shadow:
+        0 0 80px rgba(139, 92, 246, 0.07),
+        0 0 1px rgba(139, 92, 246, 0.3);
+      overflow-x: auto;
+    }
+
+    .mermaid {
+      display: flex;
+      justify-content: center;
+    }
+
+    .mermaid svg {
+      max-width: 100%;
+      height: auto;
+      font-family: 'Inter', sans-serif !important;
+    }
+
+    /* ── Footer ── */
+    .footer-note {
+      margin-top: 40px;
+      color: #374151;
+      font-size: 12px;
+      text-align: center;
+      letter-spacing: 0.4px;
+    }
+
+    /* ── Divider line under header ── */
+    .divider {
+      width: 100%;
+      max-width: 1400px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #2D2244 30%, #8B5CF6 50%, #2D2244 70%, transparent);
+      margin-bottom: 0;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1 class="page-title">SmartSpend — FraudShield: Complete AI Pipeline</h1>
+    <p class="page-subtitle">XGBoost + Deep Neural Network + GraphSAGE — 3 models, 1 verdict, &lt;800ms</p>
+  </div>
+
+  <div class="metrics-bar">
+    <div class="metric-card">
+      <span class="metric-label">ROC-AUC</span>
+      <span class="metric-value">0.933</span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Models in Ensemble</span>
+      <span class="metric-value">3</span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Features Engineered</span>
+      <span class="metric-value">28</span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Latency</span>
+      <span class="metric-value">&lt;800ms</span>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="diagram-wrapper">
+    <div class="mermaid">
+flowchart TD
+
+    %% ═══════════════════════════════════════════════
+    %% ENTRY — TWO WAYS FRAUDSHIELD CAN TRIGGER
+    %% ═══════════════════════════════════════════════
+
+    E1([👤 User manually enters\nUPI ID + Amount\nCheck Before You Pay])
+    E2([⚡ Incoming transaction\ndetected in real-time\nfrom bank feed])
+
+    E1 --> RAW
+    E2 --> RAW
+
+    %% ═══════════════════════════════════════════════
+    %% STEP 1 — RAW INPUT VALIDATION
+    %% ═══════════════════════════════════════════════
+
+    subgraph S1["📥 STEP 1 — Input Validation & Sanitization"]
+        RAW[Receive raw transaction data]
+        RAW --> V1[Validate required fields:\namount, merchant, upi_id,\ntimestamp, user_id]
+        V1 --> V2{All fields present\nand valid?}
+        V2 -->|NO — missing fields| ERR[❌ Return validation error\nto user with reason]
+        V2 -->|YES| V3[Normalize data:\nlowercase merchant names\nstrip special chars from UPI ID\nconvert amount to float]
+        V3 --> V4[Attach metadata:\ndevice fingerprint\nIP geolocation\napp session ID]
+    end
+
+    %% ═══════════════════════════════════════════════
+    %% STEP 2 — CONTEXT FETCH FROM DATABASE
+    %% ═══════════════════════════════════════════════
+
+    V4 --> S2_START
+
+    subgraph S2["🗄️ STEP 2 — Historical Context Fetch"]
+        S2_START[Query PostgreSQL\nfor this user's history]
+
+        S2_START --> S2A[Fetch last 90 days\nof transactions]
+        S2_START --> S2B[Fetch user profile:\nmonthly income\navg transaction size\nusual active hours]
+        S2_START --> S2C[Fetch merchant history:\nhave they paid this\nmerchant before?]
+        S2_START --> S2D[Fetch global blacklist:\nis this UPI ID\nflagged by any user?]
+
+        S2A --> CTX[Assemble Context Object\nuser_history + profile +\nmerchant_record + blacklist_hit]
+        S2B --> CTX
+        S2C --> CTX
+        S2D --> CTX
+    end
+
+    %% ═══════════════════════════════════════════════
+    %% STEP 3 — FEATURE ENGINEERING (28 FEATURES)
+    %% ═══════════════════════════════════════════════
+
+    CTX --> S3_START
+
+    subgraph S3["⚙️ STEP 3 — Feature Engineering — 28 features extracted from raw data + context"]
+
+        S3_START[Begin feature extraction pipeline]
+
+        subgraph F_TXN["💰 Transaction Features"]
+            FT1[amount_zscore:\nhow unusual is this amount\nfor this user?]
+            FT2[amount_to_income_ratio:\nwhat % of monthly income?]
+            FT3[is_round_number:\n₹1 ₹10 ₹100 — common\nin fraud traps]
+            FT4[transaction_hour:\n2AM txn = high risk]
+            FT5[is_weekend:\nfraud spikes on weekends]
+        end
+
+        subgraph F_MERCH["🏪 Merchant Features"]
+            FM1[merchant_seen_before:\n0 = never paid this merchant]
+            FM2[merchant_frequency:\nhow often user pays them]
+            FM3[merchant_avg_amount:\ndoes this amount match\npast payments?]
+            FM4[merchant_blacklist_score:\nglobal fraud reports\nfor this merchant]
+            FM5[upi_id_age:\nhow old is this UPI ID?\nnew = risky]
+        end
+
+        subgraph F_BEHAV["🧠 Behavioral Features"]
+            FB1[time_since_last_txn:\nunusually fast = scripted fraud]
+            FB2[txn_velocity_1hr:\nhow many transactions\nin last 1 hour?]
+            FB3[txn_velocity_24hr:\nhow many in last 24 hours?]
+            FB4[usual_hour_deviation:\nis this outside normal\nactive hours?]
+            FB5[device_match:\nsame device as usual?]
+            FB6[location_deviation:\npayment from unusual location?]
+        end
+
+        subgraph F_GRAPH["🕸️ Graph Features — GraphSAGE"]
+            FG1[user_merchant_edge_weight:\nstrength of relationship\nin transaction graph]
+            FG2[merchant_cluster_risk:\nare nearby merchants\nin the graph also fraudulent?]
+            FG3[shared_upi_connections:\nhow many users share\nthis UPI ID?]
+            FG4[graph_embedding_distance:\nhow far is this merchant\nfrom user's normal network?]
+        end
+
+        S3_START --> F_TXN
+        S3_START --> F_MERCH
+        S3_START --> F_BEHAV
+        S3_START --> F_GRAPH
+
+        F_TXN --> FEAT_VEC[🧮 28-dimensional\nFeature Vector assembled]
+        F_MERCH --> FEAT_VEC
+        F_BEHAV --> FEAT_VEC
+        F_GRAPH --> FEAT_VEC
+    end
+
+    %% ═══════════════════════════════════════════════
+    %% STEP 4 — THREE MODELS RUN IN PARALLEL
+    %% ═══════════════════════════════════════════════
+
+    FEAT_VEC --> S4_START
+
+    subgraph S4["🤖 STEP 4 — Three ML Models Run in Parallel"]
+
+        S4_START[Feature vector sent to\nall 3 models simultaneously]
+
+        subgraph MODEL1["🌲 Model 1 — XGBoost — fraud-xgboost-v0"]
+            M1A[Input: all 28 features\nas structured tabular data]
+            M1A --> M1B[300 decision trees\neach vote on fraud probability]
+            M1B --> M1C[Gradient boosting:\neach tree corrects\nthe previous one's errors]
+            M1C --> M1D[Trained on:\nIndia UPI patterns\nRBI fraud taxonomy\nfestival cycle spikes]
+            M1D --> M1OUT[📊 XGBoost Score: 0.0–1.0\nROC-AUC: 0.933\nBest at: structural patterns\nknown fraud signatures]
+        end
+
+        subgraph MODEL2["🧠 Model 2 — Deep Neural Network — behavior-dnn-v0"]
+            M2A[Input: sequential transaction\nhistory as time-series]
+            M2A --> M2B[LSTM layers:\nlearn user's normal\nspending rhythm]
+            M2B --> M2C[Dense layers:\ndetect deviation from\nlearned behavior]
+            M2C --> M2D[Trained on:\nbehavioral sequences\nanomaly patterns\ntemporal transaction flow]
+            M2D --> M2OUT[📊 DNN Score: 0.0–1.0\nBest at: behavioral anomaly\nunusual timing or velocity]
+        end
+
+        subgraph MODEL3["🕸️ Model 3 — GraphSAGE GNN — graph-sage-v0"]
+            M3A[Input: user-merchant\ntransaction graph\nas node embeddings]
+            M3A --> M3B[GraphSAGE aggregation:\nlearn embeddings from\nneighboring nodes]
+            M3B --> M3C[Node classification:\nis this merchant node\nin a risky cluster?]
+            M3C --> M3D[Trained on:\ntransaction relationship graphs\nmerchant network clusters\nknown fraud rings]
+            M3D --> M3OUT[📊 GNN Score: 0.0–1.0\nBest at: network-based fraud\nfake merchant rings]
+        end
+
+        S4_START --> M1A
+        S4_START --> M2A
+        S4_START --> M3A
+    end
+
+    %% ═══════════════════════════════════════════════
+    %% STEP 5 — ENSEMBLE LAYER
+    %% ═══════════════════════════════════════════════
+
+    M1OUT --> S5_START
+    M2OUT --> S5_START
+    M3OUT --> S5_START
+
+    subgraph S5["⚖️ STEP 5 — Ensemble Scoring Layer"]
+        S5_START[Collect 3 model scores]
+
+        S5_START --> S5A[Apply model weights:\nXGBoost → 45% weight\nDNN → 35% weight\nGraphSAGE → 20% weight]
+
+        S5A --> S5B[Weighted average:\nfinal_score = 0.45×XGB\n+ 0.35×DNN + 0.20×GNN]
+
+        S5B --> S5C[Apply India-specific rule overrides:\nIF amount == ₹1 → boost score +0.30\nIF upi_id_age < 7 days → boost +0.20\nIF 2AM–5AM → boost +0.15\nIF blacklist_hit == true → score = 1.0]
+
+        S5C --> FINAL_SCORE[🎯 Final Ensemble Score\n0.0 → 1.0]
+    end
+
+    %% ═══════════════════════════════════════════════
+    %% STEP 6 — RISK CLASSIFICATION
+    %% ═══════════════════════════════════════════════
+
+    FINAL_SCORE --> S6_START
+
+    subgraph S6["🚦 STEP 6 — Risk Classification & Verdict"]
+        S6_START{Final Score?}
+
+        S6_START -->|Score ≥ 0.80| HIGH["🔴 HIGH RISK\nVerdict: DO NOT PAY\nConfidence: Very High"]
+        S6_START -->|Score 0.50–0.79| MED["🟡 MEDIUM RISK\nVerdict: PROCEED WITH CAUTION\nConfidence: Moderate"]
+        S6_START -->|Score 0.20–0.49| LOW["🟢 LOW RISK\nVerdict: LIKELY SAFE\nConfidence: High"]
+        S6_START -->|Score < 0.20| SAFE["✅ SAFE\nVerdict: CLEAN TRANSACTION\nConfidence: Very High"]
+
+        HIGH --> REASON[Generate human-readable reason\nfrom top contributing features:\nThis UPI ID is 2 days old and\nthe ₹1 amount matches a known\nphishing trap pattern]
+        MED --> REASON
+        LOW --> REASON
+        SAFE --> REASON
+    end
+
+    %% ═══════════════════════════════════════════════
+    %% STEP 7 — EXPLAINABILITY LAYER
+    %% ═══════════════════════════════════════════════
+
+    REASON --> S7_START
+
+    subgraph S7["💡 STEP 7 — Explainability — Why did the model decide this?"]
+        S7_START[Run SHAP values\non XGBoost output]
+
+        S7_START --> S7A[Rank top 3 features\nthat influenced the score most]
+        S7A --> S7B[Convert feature names\nto plain English]
+        S7B --> S7C[Example output:\n🔴 UPI ID registered 2 days ago\n🔴 Amount ₹1 — classic trap\n🟡 Merchant never paid before]
+        S7C --> S7D[Attach fraud education tip:\nWhat is this type of fraud called?\nHow does the scam work?\nHow to protect yourself?]
+    end
+
+    %% ═══════════════════════════════════════════════
+    %% STEP 8 — RESPONSE BACK TO USER
+    %% ═══════════════════════════════════════════════
+
+    S7D --> S8_START
+
+    subgraph S8["📱 STEP 8 — Response Delivered to User"]
+        S8_START[Assemble final response\nunder 800ms total latency]
+
+        S8_START --> R1[🎨 Verdict card with color:\nRed / Yellow / Green / Clean]
+        S8_START --> R2[📊 Risk score meter\nvisual 0–100]
+        S8_START --> R3[🔍 Top 3 reasons\nin plain language]
+        S8_START --> R4[📚 Fraud type education\nThis is a UPI phishing trap]
+        S8_START --> R5[⚡ Quick action buttons:\nBlock Merchant\nReport Fraud\nProceed Anyway]
+    end
+
+    %% ═══════════════════════════════════════════════
+    %% STEP 9 — POST-VERDICT ACTIONS
+    %% ═══════════════════════════════════════════════
+
+    R5 --> S9_START
+
+    subgraph S9["🔄 STEP 9 — Post-Verdict Actions"]
+        S9_START{User action?}
+
+        S9_START -->|Block Merchant| BLK[Add to personal blacklist\nNever flag as safe again]
+        S9_START -->|Report Fraud| RPT[Submit to global\nfraud database\nhelps protect all users]
+        S9_START -->|Proceed Anyway| OVR[Log override decision\nwith timestamp\nfor model retraining]
+
+        BLK --> LOG_DB
+        RPT --> LOG_DB
+        OVR --> LOG_DB
+    end
+
+    %% ═══════════════════════════════════════════════
+    %% STEP 10 — MODEL FEEDBACK LOOP
+    %% ═══════════════════════════════════════════════
+
+    LOG_DB[(📦 Log to PostgreSQL:\ntxn_id + all 28 features\n+ final score + user action\n+ verdict)]
+
+    LOG_DB --> S10_START
+
+    subgraph S10["♻️ STEP 10 — Continuous Learning Loop"]
+        S10_START[Every 500 new labeled\ntransactions collected]
+
+        S10_START --> S10A[Check PSI score:\nhas data distribution drifted?\nCurrent PSI: 0.050 — Stable ✅]
+        S10A --> S10B{PSI > 0.25?}
+        S10B -->|YES — Model drift| RETRAIN[🔁 Trigger model retraining\nwith new India patterns]
+        S10B -->|NO — Still stable| MONITOR[📊 Continue monitoring\nlog metrics dashboard]
+
+        RETRAIN --> VALIDATE[Validate new model:\nROC-AUC must stay > 0.90\nbefore promoting to production]
+        VALIDATE --> DEPLOY[Deploy new version:\nfraud-xgboost-v1]
+        DEPLOY --> S10_START
+    end
+
+    %% ═══════════════════════════════════════════════
+    %% STYLES
+    %% ═══════════════════════════════════════════════
+
+    classDef default fill:#15102A,stroke:#8B5CF6,stroke-width:1px,color:#e2e8f0
+    classDef highRisk fill:#2a0a0a,stroke:#F43F5E,stroke-width:2px,color:#fff
+    classDef medRisk fill:#2a1a0a,stroke:#F59E0B,stroke-width:2px,color:#fff
+    classDef lowRisk fill:#0a1a0a,stroke:#10B981,stroke-width:2px,color:#fff
+    classDef safeRisk fill:#0a1a0a,stroke:#10B981,stroke-width:3px,color:#fff
+    classDef modelBox fill:#0a1525,stroke:#06B6D4,stroke-width:2px,color:#e2e8f0
+    classDef entryBox fill:#1a0a2a,stroke:#8B5CF6,stroke-width:3px,color:#fff
+    classDef dbBox fill:#0a0a1a,stroke:#6366F1,stroke-width:2px,color:#e2e8f0
+
+    class E1,E2 entryBox
+    class HIGH,REASON highRisk
+    class MED medRisk
+    class LOW,SAFE,MONITOR safeRisk
+    class MODEL1,MODEL2,MODEL3 modelBox
+    class LOG_DB dbBox
+    class FEAT_VEC,FINAL_SCORE default
+    </div>
+  </div>
+
+  <p class="footer-note">SmartSpend Analytics · FraudShield AI Pipeline · 10-step pipeline · 12 phases. 4 ML models in production. 1 unified user experience.</p>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      themeVariables: {
+        background:           '#0F0A1F',
+        mainBkg:              '#15102A',
+        nodeBorder:           '#8B5CF6',
+        clusterBkg:           '#0D0922',
+        clusterBorder:        '#2D2244',
+        titleColor:           '#E5E7EB',
+        edgeLabelBackground:  '#0F0A1F',
+        lineColor:            '#4B5563',
+        primaryColor:         '#15102A',
+        primaryTextColor:     '#F9FAFB',
+        primaryBorderColor:   '#8B5CF6',
+        secondaryColor:       '#0a1525',
+        secondaryTextColor:   '#e2e8f0',
+        secondaryBorderColor: '#06B6D4',
+        tertiaryColor:        '#0a1a0a',
+        tertiaryTextColor:    '#e2e8f0',
+        tertiaryBorderColor:  '#10B981',
+        fontFamily:           'Inter, sans-serif',
+        fontSize:             '13px',
+        labelBoxBkgColor:     '#15102A',
+        labelBoxBorderColor:  '#8B5CF6',
+        labelTextColor:       '#e2e8f0',
+        loopTextColor:        '#e2e8f0',
+        noteBorderColor:      '#8B5CF6',
+        noteBkgColor:         '#15102A',
+        noteTextColor:        '#e2e8f0',
+        activationBorderColor: '#8B5CF6',
+        activationBkgColor:   '#15102A',
+        sequenceNumberColor:  '#0F0A1F',
+      },
+      flowchart: {
+        curve:        'basis',
+        padding:      24,
+        nodeSpacing:  55,
+        rankSpacing:  65,
+        htmlLabels:   true,
+        useMaxWidth:  true,
+      },
+      securityLevel: 'loose',
+    });
+  </script>
+</body>
+</html>

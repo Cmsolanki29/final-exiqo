@@ -57,7 +57,7 @@ function ChatBubble({ title, body, icon: Icon, tone = "neutral", expanded, onTog
           {Icon ? <Icon className="h-5 w-5" aria-hidden /> : <Sparkles className="h-5 w-5" aria-hidden />}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-exiqo-glow/55">{title}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</p>
           <div className="mt-1 text-sm leading-relaxed text-white/90">{body}</div>
           {whyLines?.length ? (
             <div className="mt-2">
@@ -76,7 +76,7 @@ function ChatBubble({ title, body, icon: Icon, tone = "neutral", expanded, onTog
                     animate={{ height: "auto", opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
                     transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                    className="mt-2 space-y-1 overflow-hidden border-l-2 border-cyan-400/40 pl-3 text-xs text-exiqo-glow/80"
+                    className="mt-2 space-y-1 overflow-hidden border-l-2 border-cyan-400/40 pl-3 text-xs text-gray-300"
                   >
                     {whyLines.map((line, i) => (
                       <li key={i}>{line}</li>
@@ -179,7 +179,7 @@ const AIInsightsPanel = ({ userId, month, year, presentation = "default" }) => {
   if (state.loading) {
     return (
       <div>
-        <div className="mb-2 flex items-center gap-2 text-xs text-exiqo-glow/65">
+        <div className="mb-2 flex items-center gap-2 text-xs text-gray-400">
           <span
             className={`inline-block h-2 w-2 rounded-full bg-violet-400 ${state.streamingPulse ? "animate-pulse" : ""}`}
             aria-hidden
@@ -244,7 +244,7 @@ const AIInsightsPanel = ({ userId, month, year, presentation = "default" }) => {
           </motion.div>
         ))}
         <div className="flex items-center justify-between pt-1">
-          <p className="text-[11px] text-exiqo-glow/50">Last updated: {updatedAgo}</p>
+          <p className="text-[11px] text-gray-500">Last updated: {updatedAgo}</p>
           <button
             type="button"
             onClick={fetchInsights}
@@ -263,7 +263,7 @@ const AIInsightsPanel = ({ userId, month, year, presentation = "default" }) => {
       {/* ── Header ── */}
       <div className="mb-4 flex items-start justify-between gap-2">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-300/80">AI Insights</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">AI Insights</p>
           <h3 className="mt-0.5 font-heading text-base font-semibold text-white">Your Financial Overview</h3>
         </div>
         <button
@@ -308,7 +308,7 @@ const AIInsightsPanel = ({ userId, month, year, presentation = "default" }) => {
         <div className="mb-4">
           <div className="mb-2 flex items-center gap-2 border-l-2 border-violet-500/60 pl-2.5">
             <ListChecks className="h-3.5 w-3.5 text-violet-400" aria-hidden />
-            <span className="text-xs font-bold uppercase tracking-[0.1em] text-violet-300">Key Insights</span>
+            <span className="text-xs font-bold uppercase tracking-[0.1em] text-gray-500">Key Insights</span>
           </div>
           <ul className="space-y-1">
             {keyInsights.map((item, i) => (

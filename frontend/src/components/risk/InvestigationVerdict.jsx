@@ -35,7 +35,7 @@ export function InvestigationVerdict({ txnId, state, onRefresh, onTrigger }) {
     return (
       <div className="mt-0 flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
         <Loader2 size={12} className="animate-spin text-purple-300" />
-        <span className="text-[11px] text-exiqo-glow/60">Loading verdict…</span>
+        <span className="text-[11px] text-gray-400">Loading verdict…</span>
       </div>
     );
   }
@@ -43,7 +43,7 @@ export function InvestigationVerdict({ txnId, state, onRefresh, onTrigger }) {
   if (state === null) {
     return (
       <div className="mt-0 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
-        <span className="text-[11px] text-exiqo-glow/50 inline-flex items-center gap-1.5">
+        <span className="text-[11px] text-gray-500 inline-flex items-center gap-1.5">
           <Sparkles size={11} className="text-purple-300" />
           No Phase 9 investigation yet
         </span>
@@ -89,14 +89,14 @@ export function InvestigationVerdict({ txnId, state, onRefresh, onTrigger }) {
           {action}
         </span>
         {confidence != null && Number.isFinite(confidence) && (
-          <span className="text-[11px] text-exiqo-glow/50">{(confidence * 100).toFixed(1)}% confidence</span>
+          <span className="text-[11px] text-gray-500">{(confidence * 100).toFixed(1)}% confidence</span>
         )}
-        <span className="text-[11px] text-exiqo-glow/40">cost {fmtUsd4(cost)}</span>
+        <span className="text-[11px] text-gray-600">cost {fmtUsd4(cost)}</span>
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
             onClick={() => onRefresh(txnId)}
-            className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-exiqo-glow/60 transition hover:bg-white/[0.05] hover:text-exiqo-glow/90"
+            className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-gray-400 transition hover:bg-white/[0.05] hover:text-white/90"
             title="Re-fetch verdict"
           >
             <RefreshCw size={10} />
@@ -105,7 +105,7 @@ export function InvestigationVerdict({ txnId, state, onRefresh, onTrigger }) {
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-exiqo-glow/60 transition hover:bg-white/[0.05] hover:text-exiqo-glow/90"
+            className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-gray-400 transition hover:bg-white/[0.05] hover:text-white/90"
           >
             {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
             Details
@@ -128,16 +128,16 @@ export function InvestigationVerdict({ txnId, state, onRefresh, onTrigger }) {
         <div className="space-y-2 border-t border-white/[0.06] px-3 pb-3 pt-1">
           {reasoning ? (
             <div>
-              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-exiqo-glow/40">Reasoning</p>
-              <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-exiqo-glow/70">{reasoning}</p>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">Reasoning</p>
+              <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-gray-400">{reasoning}</p>
             </div>
           ) : null}
           {evidence.length > 0 && (
             <div>
-              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-exiqo-glow/40">Evidence</p>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">Evidence</p>
               <ul className="space-y-0.5">
                 {evidence.map((e, i) => (
-                  <li key={i} className="flex gap-1.5 text-[11px] leading-snug text-exiqo-glow/60">
+                  <li key={i} className="flex gap-1.5 text-[11px] leading-snug text-gray-400">
                     <span className="mt-0.5 shrink-0 text-purple-400">&#8226;</span>
                     {e}
                   </li>
@@ -154,7 +154,7 @@ export function InvestigationVerdict({ txnId, state, onRefresh, onTrigger }) {
             </div>
           )}
           {!reasoning && evidence.length === 0 && !recommendation && (
-            <p className="text-[11px] italic text-exiqo-glow/40">Agent did not return a textual narrative.</p>
+            <p className="text-[11px] italic text-gray-600">Agent did not return a textual narrative.</p>
           )}
         </div>
       )}

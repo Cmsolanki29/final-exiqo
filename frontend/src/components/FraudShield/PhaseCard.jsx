@@ -25,8 +25,8 @@ export function PhaseCard({ phase, Icon, index }) {
         <Ico className="h-4 w-4 shrink-0" aria-hidden />
         <span className="text-sm font-semibold leading-tight tracking-tight text-white">{phase.name}</span>
       </div>
-      <p className="text-[11px] leading-snug text-exiqo-glow/65">{phase.blurb}</p>
-      <p className="mt-2 max-h-0 overflow-hidden text-[10px] leading-snug text-exiqo-glow/55 transition-all duration-300 group-hover:max-h-20">
+      <p className="text-[11px] leading-snug text-white/70">{phase.blurb}</p>
+      <p className="mt-2 max-h-0 overflow-hidden text-[10px] leading-snug text-white/55 transition-all duration-300 group-hover:max-h-20">
         {phase.hoverDetail || `Phase ${phase.n} — ${phase.name} — live on your transaction graph.`}
       </p>
     </motion.div>

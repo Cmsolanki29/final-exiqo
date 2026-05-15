@@ -32,7 +32,7 @@ export function LocationPatternMap({ locations = [], embedded = true }) {
           : "rounded-2xl border border-gray-100 bg-white p-4 shadow-sm"
       }
     >
-      <p className={embedded ? "mb-2 text-[10px] font-semibold uppercase tracking-wider text-exiqo-glow/45" : "mb-2 text-[10px] font-semibold uppercase text-gray-500"}>
+      <p className={embedded ? "mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500" : "mb-2 text-[10px] font-semibold uppercase text-gray-500"}>
         Your geography pattern
       </p>
       <svg viewBox="0 0 100 100" className="mx-auto h-36 w-full max-w-[240px]" aria-hidden>
@@ -67,7 +67,7 @@ export function LocationPatternMap({ locations = [], embedded = true }) {
             key={p.city}
             className={
               embedded
-                ? "rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] text-exiqo-glow/70"
+                ? "rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] text-gray-400"
                 : "rounded-full border border-gray-100 bg-gray-50 px-2 py-0.5 text-[10px] text-gray-600"
             }
           >

@@ -1,3 +1,29 @@
+/**
+ * ════════════════════════════════════════════════════════════════════
+ * DESIGN RULE — TEXT COLOR HIERARCHY  (enforced app-wide)
+ * ════════════════════════════════════════════════════════════════════
+ *
+ * PURPLE IS AN ACCENT COLOR. PURPLE IS **NEVER** BODY TEXT.
+ *
+ * ❌ NEVER use text-purple-* / text-violet-* / text-exiqo-glow for:
+ *    paragraphs · descriptions · labels · subtitles · placeholders ·
+ *    captions · metadata · empty states · helper text · tooltips
+ *
+ * ✅ Use the gray hierarchy for ALL prose:
+ *    text-white      — page titles, hero numbers, card headings
+ *    text-gray-300   — body paragraphs, descriptions
+ *    text-gray-400   — subtitles, secondary info
+ *    text-gray-500   — labels (UPPERCASE), captions, timestamps
+ *    text-gray-600   — placeholder text
+ *    text-gray-700   — disabled text
+ *
+ * ✅ Purple is OK ONLY for:
+ *    single-word badges · active tab indicator · accent word in white text ·
+ *    hover:text-violet-* states · decorative gradient lines
+ *
+ * See src/lib/design-tokens.ts for the full token reference.
+ * ════════════════════════════════════════════════════════════════════
+ */
 import React, { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import OnboardingPage from "./app/onboarding/page";
 import Dashboard from "./components/Dashboard/Dashboard";
@@ -227,11 +253,14 @@ const App = () => {
         >
           <TopBar
             userName={selectedUser?.name || user?.name || user?.email || "User"}
+            userEmail={user?.email}
             userId={selectedUserId}
             month={month}
             year={year}
             onMonthChange={setMonth}
             onYearChange={setYear}
+            onTabChange={setActiveTab}
+            onLogout={logout}
           />
 
           <div className="p-4 pb-28 pt-4 sm:p-5 md:pb-7 lg:p-7">
@@ -256,7 +285,6 @@ const App = () => {
                     year={year}
                     onMonthChange={setMonth}
                     onYearChange={setYear}
-                    userName={selectedUser?.name}
                     setActiveTab={setActiveTab}
                   />
                 )}

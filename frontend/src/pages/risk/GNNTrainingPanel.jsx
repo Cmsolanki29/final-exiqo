@@ -47,13 +47,13 @@ function ConfirmDialog({ open, title, message, onCancel, onConfirm, busy }) {
         className="max-w-md w-full rounded-2xl border border-white/10 bg-exiqo-dark/90 backdrop-blur-md p-6"
       >
         <h3 className="text-lg font-semibold text-white">{title}</h3>
-        <p className="text-sm text-exiqo-glow/70 mt-2">{message}</p>
+        <p className="text-sm text-gray-300 mt-2">{message}</p>
         <div className="flex justify-end gap-2 mt-5">
           <button
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="px-3 py-1.5 text-sm rounded-lg border border-white/10 text-exiqo-glow/80 hover:bg-white/[0.05] disabled:opacity-50"
+            className="px-3 py-1.5 text-sm rounded-lg border border-white/10 text-gray-300 hover:bg-white/[0.05] disabled:opacity-50"
           >
             Cancel
           </button>
@@ -75,11 +75,11 @@ function ConfirmDialog({ open, title, message, onCancel, onConfirm, busy }) {
 function InfoTile({ label, value, hint }) {
   return (
     <div className="rounded-lg border border-white/5 bg-black/20 p-3">
-      <p className="text-[10px] uppercase tracking-wider text-exiqo-glow/40 font-semibold mb-1">
+      <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1">
         {label}
       </p>
       <p className="text-sm font-bold text-white">{value ?? "—"}</p>
-      {hint && <p className="text-[10px] text-exiqo-glow/40 mt-0.5">{hint}</p>}
+      {hint && <p className="text-[10px] text-gray-500 mt-0.5">{hint}</p>}
     </div>
   );
 }
@@ -172,7 +172,7 @@ const GNNTrainingPanel = () => {
               Phase 10 · 2026
             </span>
           </div>
-          <p className="text-exiqo-glow/60 text-sm mt-1">
+          <p className="text-gray-300 text-sm mt-1">
             GraphSAGE builds a 64-dim embedding per user from transaction relationships.
             Embeddings feed the orchestrator as a context signal.
           </p>
@@ -181,7 +181,7 @@ const GNNTrainingPanel = () => {
         <button
           type="button"
           onClick={fetchAll}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-white/10 bg-white/[0.03] text-exiqo-glow/80 hover:bg-white/[0.07] transition"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-white/10 bg-white/[0.03] text-gray-300 hover:bg-white/[0.07] transition"
         >
           <RefreshCw size={12} />
           Refresh
@@ -226,7 +226,7 @@ const GNNTrainingPanel = () => {
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex-1 min-w-0">
             <h3 className="text-lg font-semibold text-white">Train GNN now</h3>
-            <p className="text-sm text-exiqo-glow/70 mt-1">
+            <p className="text-sm text-gray-300 mt-1">
               Runs pure-PyTorch GraphSAGE across all users from the last{" "}
               <span className="text-white font-semibold">{health?.training_days ?? 90}</span> days
               of transactions and persists fresh embeddings to Redis + Postgres.
@@ -244,7 +244,7 @@ const GNNTrainingPanel = () => {
         </div>
 
         {training && (
-          <div className="mt-4 flex items-center gap-2 text-sm text-purple-200">
+          <div className="mt-4 flex items-center gap-2 text-sm text-gray-300">
             <Loader2 size={14} className="animate-spin" />
             Training GraphSAGE embeddings… this usually takes 5-20 seconds.
           </div>
@@ -277,7 +277,7 @@ const GNNTrainingPanel = () => {
               <InfoTile label="Final loss"        value={lastResult.final_loss ? Number(lastResult.final_loss).toFixed(4) : "—"} />
             </div>
             {lastResult.hint && (
-              <p className="text-[11px] text-exiqo-glow/50 mt-2 italic">{lastResult.hint}</p>
+              <p className="text-[11px] text-gray-500 mt-2 italic">{lastResult.hint}</p>
             )}
           </motion.div>
         )}
@@ -344,7 +344,7 @@ const GNNTrainingPanel = () => {
         </p>
       )}
 
-      <p className="text-[11px] text-exiqo-glow/40 inline-flex items-center gap-1">
+      <p className="text-[11px] text-gray-500 inline-flex items-center gap-1">
         <Clock size={11} />
         GNN embeddings have a TTL of {health?.embed_ttl_sec ?? 86400}s in Redis. The DB copy is durable.
       </p>

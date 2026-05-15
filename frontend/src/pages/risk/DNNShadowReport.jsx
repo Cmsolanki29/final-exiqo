@@ -48,12 +48,12 @@ function fmtNumber(v, digits = 3) {
 function MetricRow({ label, value, hint }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-2 border-b border-white/5 last:border-0">
-      <span className="text-[11px] uppercase tracking-wider text-exiqo-glow/40 font-semibold">
+      <span className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
         {label}
       </span>
       <div className="text-right">
         <span className="text-sm font-bold text-white tabular-nums">{value ?? "—"}</span>
-        {hint && <p className="text-[10px] text-exiqo-glow/40">{hint}</p>}
+        {hint && <p className="text-[10px] text-gray-500">{hint}</p>}
       </div>
     </div>
   );
@@ -79,13 +79,13 @@ function ConfirmDialog({ open, title, message, onCancel, onConfirm, busy }) {
         className="max-w-md w-full rounded-2xl border border-white/10 bg-exiqo-dark/90 backdrop-blur-md p-6"
       >
         <h3 className="text-lg font-semibold text-white">{title}</h3>
-        <p className="text-sm text-exiqo-glow/70 mt-2">{message}</p>
+        <p className="text-sm text-gray-300 mt-2">{message}</p>
         <div className="flex justify-end gap-2 mt-5">
           <button
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="px-3 py-1.5 text-sm rounded-lg border border-white/10 text-exiqo-glow/80 hover:bg-white/[0.05] disabled:opacity-50"
+            className="px-3 py-1.5 text-sm rounded-lg border border-white/10 text-gray-300 hover:bg-white/[0.05] disabled:opacity-50"
           >
             Cancel
           </button>
@@ -186,7 +186,7 @@ const DNNShadowReport = () => {
               Phase 11 · 2026
             </span>
           </div>
-          <p className="text-exiqo-glow/60 text-sm mt-1">
+          <p className="text-gray-400 text-sm mt-1">
             Multi-branch DNN running in shadow alongside XGBoost — promoted only after the
             24-hour regression check passes.
           </p>
@@ -196,7 +196,7 @@ const DNNShadowReport = () => {
           <button
             type="button"
             onClick={fetchAll}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-white/10 bg-white/[0.03] text-exiqo-glow/80 hover:bg-white/[0.07] transition"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-white/10 bg-white/[0.03] text-gray-300 hover:bg-white/[0.07] transition"
           >
             <RefreshCw size={12} />
             Refresh
@@ -232,7 +232,7 @@ const DNNShadowReport = () => {
           <p className={`text-sm font-semibold ${promoted ? "text-emerald-200" : "text-amber-200"}`}>
             {promoted ? "PROMOTED" : "Shadow mode"}
           </p>
-          <p className="text-xs text-exiqo-glow/60 mt-0.5">
+          <p className="text-xs text-gray-400 mt-0.5">
             {promoted
               ? "DNN is blending into production scores."
               : "DNN score is logged only, not served to users. Set PHASE_11_DNN_PROMOTED=true in .env to promote."}
@@ -291,7 +291,7 @@ const DNNShadowReport = () => {
             {/* Fallback: show model test-set ROC/PR AUC until live shadow logging accumulates */}
             {!shadowMetrics.accuracy && (status?.metrics?.test_roc_auc || status?.metrics?.test_pr_auc) && (
               <div className="mt-2 pt-2 border-t border-white/[0.06]">
-                <p className="text-[10px] text-exiqo-glow/30 mb-1 uppercase tracking-wider">Test-set (no live shadow yet)</p>
+                <p className="text-[10px] text-gray-600 mb-1 uppercase tracking-wider">Test-set (no live shadow yet)</p>
                 <MetricRow label="Test ROC AUC" value={fmtNumber(status?.metrics?.test_roc_auc)} hint="from training run" />
                 <MetricRow label="Test PR AUC"  value={fmtNumber(status?.metrics?.test_pr_auc)}  hint="from training run" />
               </div>
@@ -350,7 +350,7 @@ const DNNShadowReport = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wider text-exiqo-glow/40 border-b border-white/10">
+                <tr className="text-left text-[11px] uppercase tracking-wider text-gray-500 border-b border-white/10">
                   <th className="py-2 pr-3 font-semibold">Run</th>
                   <th className="py-2 pr-3 font-semibold">Started</th>
                   <th className="py-2 pr-3 font-semibold">Epochs</th>
@@ -362,18 +362,18 @@ const DNNShadowReport = () => {
                 {status.recent_runs.map((r, i) => (
                   <tr key={r.run_id ?? i} className="border-b border-white/5 last:border-0">
                     <td className="py-2 pr-3 font-mono text-xs text-white">{r.run_id ?? `run-${i + 1}`}</td>
-                    <td className="py-2 pr-3 text-exiqo-glow/70">{r.started_at ? fmtRelativeTime(r.started_at) : "—"}</td>
-                    <td className="py-2 pr-3 text-exiqo-glow/70">{r.epochs ?? "—"}</td>
-                    <td className="py-2 pr-3 text-exiqo-glow/70 tabular-nums">{fmtNumber(r.final_loss ?? r.loss)}</td>
-                    <td className="py-2 pr-3 text-exiqo-glow/70 tabular-nums">{r.duration_sec ? `${Number(r.duration_sec).toFixed(1)}s` : "—"}</td>
+                    <td className="py-2 pr-3 text-gray-400">{r.started_at ? fmtRelativeTime(r.started_at) : "—"}</td>
+                    <td className="py-2 pr-3 text-gray-400">{r.epochs ?? "—"}</td>
+                    <td className="py-2 pr-3 text-gray-400 tabular-nums">{fmtNumber(r.final_loss ?? r.loss)}</td>
+                    <td className="py-2 pr-3 text-gray-400 tabular-nums">{r.duration_sec ? `${Number(r.duration_sec).toFixed(1)}s` : "—"}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <p className="text-sm text-exiqo-glow/40 py-4 text-center">
-            No training runs recorded yet. Click <span className="font-semibold text-exiqo-glow/70">Trigger retraining</span> to run a fresh DNN training.
+          <p className="text-sm text-gray-500 py-4 text-center">
+            No training runs recorded yet. Click <span className="font-semibold text-gray-300">Trigger retraining</span> to run a fresh DNN training.
           </p>
         )}
       </motion.div>
@@ -400,7 +400,7 @@ const DNNShadowReport = () => {
 function InfoTile({ label, value }) {
   return (
     <div className="rounded-lg border border-white/5 bg-black/20 p-3 min-h-[64px]">
-      <p className="text-[10px] uppercase tracking-wider text-exiqo-glow/40 font-semibold mb-1">
+      <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1">
         {label}
       </p>
       <p className="text-sm font-bold text-white">{value ?? "—"}</p>

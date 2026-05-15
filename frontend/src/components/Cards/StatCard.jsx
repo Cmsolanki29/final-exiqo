@@ -9,7 +9,7 @@ const VARIANTS = {
     border: "border-exiqo-purple/35",
     glow: "shadow-exiqo-card hover:shadow-purple-glow",
     iconBg: "from-exiqo-purple to-exiqo-dark-purple",
-    accent: "text-exiqo-glow",
+    accent: "text-gray-300",
   },
   success: {
     gradient:
@@ -88,7 +88,7 @@ export default function StatCard({
       </div>
 
       <div className="relative z-10">
-        <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-exiqo-glow/70">
+        <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
           {title}
         </p>
         <h3 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">

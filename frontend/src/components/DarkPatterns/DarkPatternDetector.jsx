@@ -397,7 +397,7 @@ const DarkPatternDetector = ({ userId }) => {
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold text-white">Upcoming charge alerts</h2>
-            <p className="mt-1 max-w-2xl text-sm text-exiqo-glow/70">
+            <p className="mt-1 max-w-2xl text-sm text-gray-400">
               Predicted from your real debits (trials, renewals, ₹1 verification follow-ups). Snooze, dismiss, or add a
               calendar reminder before the charge date.
             </p>
@@ -425,17 +425,17 @@ const DarkPatternDetector = ({ userId }) => {
         {proactiveSavings?.savings?.this_month ? (
           <div className="mb-4 grid gap-2 sm:grid-cols-3">
             <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm">
-              <p className="text-exiqo-glow/55">Prevented (month)</p>
+              <p className="text-gray-500">Prevented (month)</p>
               <p className="font-semibold text-emerald-300">
                 {inr(proactiveSavings.savings.this_month.amount_saved || 0)}
               </p>
             </div>
             <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm">
-              <p className="text-exiqo-glow/55">Count (month)</p>
+              <p className="text-gray-500">Count (month)</p>
               <p className="font-semibold text-white">{proactiveSavings.savings.this_month.patterns_prevented || 0}</p>
             </div>
             <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm">
-              <p className="text-exiqo-glow/55">All-time saved</p>
+              <p className="text-gray-500">All-time saved</p>
               <p className="font-semibold text-cyan-200">
                 {inr(proactiveSavings.savings.all_time?.amount_saved || 0)}
               </p>
@@ -443,9 +443,9 @@ const DarkPatternDetector = ({ userId }) => {
           </div>
         ) : null}
         {proactiveLoading ? (
-          <p className="text-sm text-exiqo-glow/60">Loading proactive alerts…</p>
+          <p className="text-sm text-gray-400">Loading proactive alerts…</p>
         ) : !proactive?.counts?.total ? (
-          <p className="text-sm text-exiqo-glow/65">
+          <p className="text-sm text-gray-400">
             No upcoming alerts right now. Run <strong>Predict & refresh</strong> after migrations are applied, or when you
             have new subscription-like debits.
           </p>
@@ -463,7 +463,7 @@ const DarkPatternDetector = ({ userId }) => {
                   <div className="mb-3 flex items-center gap-2">
                     <Icon className="h-4 w-4 text-white/80" />
                     <h3 className="text-sm font-bold uppercase tracking-wide text-white/90">{label}</h3>
-                    <span className="text-xs text-exiqo-glow/60">({list.length})</span>
+                    <span className="text-xs text-gray-400">({list.length})</span>
                   </div>
                   <ul className="space-y-3">
                     {list.map((a) => (
@@ -473,7 +473,7 @@ const DarkPatternDetector = ({ userId }) => {
                       >
                         <div>
                           <p className="font-semibold text-white">{a.merchant_name}</p>
-                          <p className="text-xs text-exiqo-glow/65">
+                          <p className="text-xs text-gray-400">
                             {(a.pattern_type || "").replaceAll("_", " ")} · {inr(a.charge_amount)} on{" "}
                             {a.charge_date ? new Date(a.charge_date).toLocaleDateString("en-IN") : "—"} ·{" "}
                             <span className="text-amber-200/90">{a.days_until_charge}d left</span>
@@ -512,7 +512,7 @@ const DarkPatternDetector = ({ userId }) => {
                             type="button"
                             disabled={proactiveBusy}
                             onClick={() => onProactiveSnooze(a.id)}
-                            className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-exiqo-glow/80 hover:bg-white/5 disabled:opacity-50"
+                            className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/5 disabled:opacity-50"
                           >
                             Snooze 24h
                           </button>
@@ -528,7 +528,7 @@ const DarkPatternDetector = ({ userId }) => {
                             type="button"
                             disabled={proactiveBusy}
                             onClick={() => onProactiveDismiss(a.id)}
-                            className="rounded-lg px-3 py-1.5 text-xs text-exiqo-glow/50 hover:text-white/70 disabled:opacity-50"
+                            className="rounded-lg px-3 py-1.5 text-xs text-gray-500 hover:text-white/70 disabled:opacity-50"
                           >
                             Dismiss
                           </button>
@@ -594,7 +594,7 @@ const DarkPatternDetector = ({ userId }) => {
             <Clock className="h-6 w-6 shrink-0 text-exiqo-purple" />
             Fraud detection timeline
           </h2>
-          <span className="text-sm text-exiqo-glow/60">Recent signals (newest first)</span>
+          <span className="text-sm text-gray-400">Recent signals (newest first)</span>
         </div>
 
         {!timelineEvents.length ? (
@@ -646,9 +646,9 @@ const DarkPatternDetector = ({ userId }) => {
                           <span className="text-sm font-bold capitalize text-white">{ev.title}</span>
                         </div>
                         <p className="truncate text-xs font-semibold text-white/85">{ev.subtitle}</p>
-                        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-exiqo-glow/65">{ev.description}</p>
+                        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-gray-400">{ev.description}</p>
                         {ev.sortDate ? (
-                          <p className="mt-2 text-[11px] font-medium uppercase tracking-wider text-exiqo-glow/45">
+                          <p className="mt-2 text-[11px] font-medium uppercase tracking-wider text-gray-500">
                             {ev.sortDate}
                           </p>
                         ) : null}
@@ -687,7 +687,7 @@ const DarkPatternDetector = ({ userId }) => {
                             </span>
                           </div>
                           <h3 className="text-lg font-bold capitalize text-white sm:text-xl">{selectedEvent.title}</h3>
-                          <p className="mt-1 text-sm font-semibold text-exiqo-glow/80">{selectedEvent.subtitle}</p>
+                          <p className="mt-1 text-sm font-semibold text-gray-300">{selectedEvent.subtitle}</p>
                         </div>
                       </div>
 
@@ -723,7 +723,7 @@ const DarkPatternDetector = ({ userId }) => {
                             </div>
                           ) : null}
                           {selectedEvent.trap.english_explanation ? (
-                            <p className="text-sm text-exiqo-glow/70">{selectedEvent.trap.english_explanation}</p>
+                            <p className="text-sm text-gray-400">{selectedEvent.trap.english_explanation}</p>
                           ) : null}
                         </div>
                       ) : null}
@@ -731,7 +731,7 @@ const DarkPatternDetector = ({ userId }) => {
                       {selectedEvent.kind === "pattern" && selectedEvent.pattern ? (
                         <div className="mb-5 grid gap-4 border-y border-white/10 py-4 sm:grid-cols-3">
                           <div>
-                            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-exiqo-glow/50">
+                            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
                               Amount involved
                             </p>
                             <p className="text-lg font-bold tabular-nums text-white">
@@ -739,7 +739,7 @@ const DarkPatternDetector = ({ userId }) => {
                             </p>
                           </div>
                           <div>
-                            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-exiqo-glow/50">
+                            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
                               Refund possible
                             </p>
                             <p className="text-lg font-bold tabular-nums text-green-400">
@@ -749,7 +749,7 @@ const DarkPatternDetector = ({ userId }) => {
                             </p>
                           </div>
                           <div className="sm:col-span-1">
-                            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-exiqo-glow/50">
+                            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
                               Next step
                             </p>
                             <p className="text-sm font-semibold leading-snug text-orange-300">
@@ -770,7 +770,7 @@ const DarkPatternDetector = ({ userId }) => {
                               copyEvidence(selectedEvent.trap, "rupee");
                             }
                           }}
-                          className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-exiqo-purple/45 bg-exiqo-dark/60 px-4 py-2.5 text-sm font-semibold text-exiqo-glow transition hover:bg-exiqo-purple/20 hover:text-white disabled:opacity-50 sm:flex-initial sm:min-w-[140px]"
+                          className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-exiqo-purple/45 bg-exiqo-dark/60 px-4 py-2.5 text-sm font-semibold text-gray-300 transition hover:bg-exiqo-purple/20 hover:text-white disabled:opacity-50 sm:flex-initial sm:min-w-[140px]"
                         >
                           {copiedId ===
                           (selectedEvent.kind === "pattern" && selectedEvent.pattern
@@ -846,11 +846,11 @@ const DarkPatternDetector = ({ userId }) => {
                       {p.severity}
                     </span>
                   </div>
-                  <p className="mb-1 text-xs font-bold uppercase tracking-wide text-exiqo-glow/55">
+                  <p className="mb-1 text-xs font-bold uppercase tracking-wide text-gray-500">
                     {(p.pattern_type || "").replaceAll("_", " ")}
                   </p>
                   <p className="mb-2 line-clamp-2 text-base font-bold text-white">{p.merchant}</p>
-                  <p className="line-clamp-2 text-xs leading-relaxed text-exiqo-glow/65">{p.description}</p>
+                  <p className="line-clamp-2 text-xs leading-relaxed text-gray-400">{p.description}</p>
                   <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3 text-sm">
                     <span className="font-bold tabular-nums text-red-200">{apiUtils.formatINR(p.amount_involved || 0)}</span>
                     {p.refund_amount ? (
@@ -858,7 +858,7 @@ const DarkPatternDetector = ({ userId }) => {
                         Up to {apiUtils.formatINR(p.refund_amount)}
                       </span>
                     ) : (
-                      <span className="text-xs text-exiqo-glow/50">Review</span>
+                      <span className="text-xs text-gray-500">Review</span>
                     )}
                   </div>
                 </button>

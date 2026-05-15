@@ -66,7 +66,7 @@ export function GuardianPill({ label, sub, icon: Icon, glow, onClick, disabled, 
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-semibold text-white">{label}</p>
-            <p className="truncate text-[11px] text-exiqo-glow/65">{sub}</p>
+            <p className="truncate text-[11px] text-gray-400">{sub}</p>
           </div>
           <ChevronRight className="h-4 w-4 shrink-0 text-exiqo-glow/40 transition group-hover:translate-x-0.5 group-hover:text-exiqo-glow" aria-hidden />
         </div>

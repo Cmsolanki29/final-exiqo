@@ -27,8 +27,8 @@ function NotifItem({ n, onMarkRead }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className={`text-xs font-semibold text-white ${!n.is_read ? "" : "opacity-80"}`}>{n.title}</p>
-        <p className="mt-0.5 text-[11px] leading-relaxed text-exiqo-glow/75">{n.body}</p>
-        <p className="mt-1 text-[10px] text-exiqo-glow/40">{ts}</p>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-gray-400">{n.body}</p>
+        <p className="mt-1 text-[10px] text-gray-600">{ts}</p>
       </div>
       {!n.is_read && (
         <button
@@ -147,7 +147,7 @@ export default function NotificationsBell({ userId }) {
                 <button
                   type="button"
                   onClick={handleMarkAll}
-                  className="text-[11px] text-exiqo-glow/55 underline transition hover:text-white"
+                  className="text-[11px] text-gray-500 underline transition hover:text-white"
                 >
                   Mark all read
                 </button>
@@ -162,7 +162,7 @@ export default function NotificationsBell({ userId }) {
                 </div>
               )}
               {!loading && notifs.length === 0 && (
-                <div className="py-8 text-center text-sm text-exiqo-glow/50">
+                <div className="py-8 text-center text-sm text-gray-500">
                   <Bell className="mx-auto mb-2 h-8 w-8 opacity-30" aria-hidden />
                   No notifications yet
                 </div>

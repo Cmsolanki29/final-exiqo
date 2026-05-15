@@ -83,11 +83,11 @@ export default function AdminDiagnostics({ onExit }) {
           </span>
           <div>
             <h1 className="text-lg font-bold tracking-tight text-white">Engine diagnostics</h1>
-            <p className="text-xs text-exiqo-glow/60">Internal ML consoles — not part of the banking workspace.</p>
+            <p className="text-xs text-gray-400">Internal ML consoles — not part of the banking workspace.</p>
           </div>
         </div>
         <form onSubmit={tryUnlock} className="space-y-4">
-          <label className="block text-[11px] font-semibold uppercase tracking-wider text-exiqo-glow/50" htmlFor="admin-pass">
+          <label className="block text-[11px] font-semibold uppercase tracking-wider text-gray-500" htmlFor="admin-pass">
             Passphrase
           </label>
           <input
@@ -96,7 +96,7 @@ export default function AdminDiagnostics({ onExit }) {
             autoComplete="current-password"
             value={password}
             onChange={(ev) => setPassword(ev.target.value)}
-            className="w-full rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-sm text-white outline-none ring-0 placeholder:text-exiqo-glow/35 focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-400/30"
+            className="w-full rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-sm text-white outline-none ring-0 placeholder:text-gray-600 focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-400/30"
             placeholder="Admin token"
           />
           {error ? <p className="text-xs text-rose-300/90">{error}</p> : null}
@@ -111,7 +111,7 @@ export default function AdminDiagnostics({ onExit }) {
             <button
               type="button"
               onClick={() => onExit?.()}
-              className="rounded-xl border border-white/15 px-4 py-2.5 text-sm font-medium text-exiqo-glow/80 hover:bg-white/[0.06] hover:text-white"
+              className="rounded-xl border border-white/15 px-4 py-2.5 text-sm font-medium text-gray-300 hover:bg-white/[0.06] hover:text-white"
             >
               Back
             </button>
@@ -135,13 +135,13 @@ export default function AdminDiagnostics({ onExit }) {
           </button>
           <div>
             <h1 className="text-xl font-bold tracking-tight text-white">Engine diagnostics</h1>
-            <p className="text-xs text-exiqo-glow/55">Session unlocked on this device only.</p>
+            <p className="text-xs text-gray-500">Session unlocked on this device only.</p>
           </div>
         </div>
         <button
           type="button"
           onClick={lock}
-          className="rounded-xl border border-white/15 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-exiqo-glow/75 hover:bg-white/[0.06] hover:text-white"
+          className="rounded-xl border border-white/15 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-400 hover:bg-white/[0.06] hover:text-white"
         >
           Lock
         </button>
@@ -156,7 +156,7 @@ export default function AdminDiagnostics({ onExit }) {
             className={`rounded-xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40 ${
               tab === t.id
                 ? "bg-gradient-to-r from-violet-600 to-blue-600 text-white shadow-[0_0_20px_-8px_rgba(124,58,237,0.5)]"
-                : "text-exiqo-glow/75 hover:bg-white/[0.06] hover:text-white"
+                : "text-gray-400 hover:bg-white/[0.06] hover:text-white"
             }`}
           >
             {t.label}

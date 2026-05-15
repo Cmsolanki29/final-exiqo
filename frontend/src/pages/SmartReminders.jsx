@@ -448,7 +448,7 @@ export default function SmartReminders({ onBack }) {
           <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
           Back to intelligence hub
         </button>
-        <nav className="text-xs text-exiqo-glow/55" aria-label="Breadcrumb">
+        <nav className="text-xs text-gray-500" aria-label="Breadcrumb">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-white/50">Intelligence hub</span>
             <span className="text-white/25" aria-hidden>
@@ -460,7 +460,7 @@ export default function SmartReminders({ onBack }) {
       </div>
 
       <GlassCard surface="panel" padding="md" className="border-violet-500/20">
-        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-300/90">Smart subscription reminder system</p>
+        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">Smart subscription reminder system</p>
         <p className="mt-2 text-sm text-white/70">
           Billing &amp; renewal tracking, T-10 / T-3 / T-1 cadences (denser T-15→T-1 after escalation), snooze 24h
           without a note on <strong className="text-white/90">tier 1</strong>, mandatory short reason on{" "}

@@ -130,7 +130,7 @@ function TypicalPatternCard({ login_patterns, locations, embedded }) {
         <Sparkles className={embedded ? "h-4 w-4 text-cyan-300" : "h-4 w-4 text-indigo-500"} aria-hidden />
         <h3 className={embedded ? "text-sm font-bold text-white" : "text-sm font-bold text-gray-800"}>Your typical pattern</h3>
       </div>
-      <p className={embedded ? "text-sm leading-relaxed text-exiqo-glow/80" : "text-sm leading-relaxed text-gray-600"}>
+      <p className={embedded ? "text-sm leading-relaxed text-gray-300" : "text-sm leading-relaxed text-gray-600"}>
         {chunks.map((chunk, i) =>
           i % 2 === 1 ? (
             <strong key={i} className={embedded ? "font-semibold text-white" : "font-semibold text-indigo-900"}>
@@ -151,7 +151,7 @@ function LoginPatternsChart({ data, embedded, highlightHours }) {
     ? "rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-xl"
     : "rounded-2xl border border-gray-100 bg-white p-5 shadow-sm";
   const title = embedded ? "text-sm font-semibold text-white" : "text-sm font-semibold text-gray-700";
-  const sub = embedded ? "text-xs text-exiqo-glow/55" : "text-xs text-gray-400";
+  const sub = embedded ? "text-xs text-gray-500" : "text-xs text-gray-400";
 
   const barFill = (entry) => {
     const h = entry.hour;
@@ -229,7 +229,7 @@ function LocationRow({ loc, index, embedded }) {
         <p className={embedded ? "text-sm font-medium text-white" : "text-sm font-medium text-gray-900"}>
           {loc.city}, {loc.country}
         </p>
-        <p className={embedded ? "text-xs text-exiqo-glow/50" : "text-xs text-gray-400"}>
+        <p className={embedded ? "text-xs text-gray-500" : "text-xs text-gray-400"}>
           {loc.count} sessions · last {fmtRelativeTime(loc.last_seen)}
         </p>
       </div>
@@ -275,7 +275,7 @@ function AnomalyRow({ anomaly, index, embedded }) {
       </div>
       <div className="min-w-0 flex-1">
         <p className={embedded ? "text-sm font-medium text-white" : "text-sm font-medium text-gray-900"}>{anomaly.description}</p>
-        <p className={embedded ? "text-xs text-exiqo-glow/50" : "text-xs text-gray-400"}>{fmtRelativeTime(anomaly.ts)}</p>
+        <p className={embedded ? "text-xs text-gray-500" : "text-xs text-gray-400"}>{fmtRelativeTime(anomaly.ts)}</p>
       </div>
       <span
         className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold"
@@ -307,12 +307,12 @@ function ActivityRow({ item, index, embedded }) {
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className={`text-xs font-medium ${item.ok ? (embedded ? "text-exiqo-glow/85" : "text-gray-700") : embedded ? "text-rose-200" : "text-red-600"}`}>
+        <p className={`text-xs font-medium ${item.ok ? (embedded ? "text-gray-300" : "text-gray-700") : embedded ? "text-rose-200" : "text-red-600"}`}>
           {item.action}
         </p>
-        <p className={embedded ? "text-[10px] text-exiqo-glow/45" : "text-[10px] text-gray-400"}>{item.channel}</p>
+        <p className={embedded ? "text-[10px] text-gray-500" : "text-[10px] text-gray-400"}>{item.channel}</p>
       </div>
-      <span className={embedded ? "shrink-0 text-[10px] text-exiqo-glow/40" : "shrink-0 text-[10px] text-gray-300"}>
+      <span className={embedded ? "shrink-0 text-[10px] text-gray-600" : "shrink-0 text-[10px] text-gray-300"}>
         {fmtRelativeTime(item.ts)}
       </span>
     </motion.div>
@@ -376,7 +376,7 @@ const BehaviorProfile = ({ userId = 1, onNavigate, embedded = false }) => {
                 Behavior profile
               </h2>
             </div>
-            <p className="ml-8 mt-1 text-sm text-exiqo-glow/60">Phase 2 — Feature store · 200+ behavioural signals</p>
+            <p className="ml-8 mt-1 text-sm text-gray-400">Phase 2 — Feature store · 200+ behavioural signals</p>
           </div>
         </motion.div>
       )}
@@ -386,7 +386,7 @@ const BehaviorProfile = ({ userId = 1, onNavigate, embedded = false }) => {
           <button
             type="button"
             onClick={() => onNavigate("trust-center")}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-1.5 text-xs font-medium text-exiqo-glow/70 transition hover:bg-white/[0.06] hover:text-white"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-1.5 text-xs font-medium text-gray-400 transition hover:bg-white/[0.06] hover:text-white"
           >
             <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
             Overview

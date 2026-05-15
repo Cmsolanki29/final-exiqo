@@ -22,10 +22,10 @@ function Bar({ feature, index, dark }) {
     feature.feature_value != null ? String(feature.feature_value).slice(0, 8) : "";
 
   const nameCls = dark
-    ? "w-32 shrink-0 truncate text-right text-exiqo-glow/75"
+    ? "w-32 shrink-0 truncate text-right text-gray-400"
     : "w-32 shrink-0 truncate text-gray-600 text-right";
   const trackCls = dark ? "relative flex-1 h-4 overflow-hidden rounded-sm bg-white/[0.08]" : "relative flex-1 h-4 rounded-sm overflow-hidden bg-gray-100";
-  const valCls = dark ? "w-14 shrink-0 text-right text-exiqo-glow/55" : "w-14 shrink-0 text-gray-400 text-right";
+  const valCls = dark ? "w-14 shrink-0 text-right text-gray-500" : "w-14 shrink-0 text-gray-400 text-right";
   const shapCls = dark ? "w-14 shrink-0 text-right font-mono font-medium" : "w-14 shrink-0 font-mono font-medium text-right";
 
   return (
@@ -85,7 +85,7 @@ export function ShapExplanationBars({
           </p>
         );
       }
-      return <p className="text-xs text-exiqo-glow/50">No SHAP data available</p>;
+      return <p className="text-xs text-gray-500">No SHAP data available</p>;
     }
     return (
       <RiskStatePlaceholder
@@ -98,8 +98,8 @@ export function ShapExplanationBars({
   }
 
   const top = topFeatures(features, maxBars);
-  const legendMuted = dark ? "text-exiqo-glow/45" : "text-gray-400";
-  const headerMuted = dark ? "text-exiqo-glow/40" : "text-gray-400";
+  const legendMuted = dark ? "text-gray-500" : "text-gray-400";
+  const headerMuted = dark ? "text-gray-600" : "text-gray-400";
 
   return (
     <div className="space-y-2">

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { ALL_SUBSCRIPTION_APPS, INITIAL_CONNECT_APP_IDS, getAddableAppIds } from "../../constants/subscriptionApps";
 
@@ -21,6 +21,9 @@ export default function AppSelectionModal({ open, variant, connectedIds = [], on
   }, [variant, connectedIds]);
 
   const [selected, setSelected] = useState(() => new Set());
+  // Track which app logo images failed to load so we can show the letter fallback.
+  const [imgErrors, setImgErrors] = useState({});
+  const onImgError = useCallback((id) => setImgErrors((prev) => ({ ...prev, [id]: true })), []);
 
   useEffect(() => {
     if (!open) return;
@@ -75,19 +78,19 @@ export default function AppSelectionModal({ open, variant, connectedIds = [], on
           <h2 id="app-select-title" className="mt-1 font-heading text-xl font-semibold text-white">
             {title}
           </h2>
-          <p className="mt-2 text-sm text-exiqo-glow/70">{subtitle}</p>
+          <p className="mt-2 text-sm text-gray-400">{subtitle}</p>
         </div>
 
         <div className="max-h-[min(52vh,420px)] space-y-2 overflow-y-auto px-4 py-4">
           {pool.length === 0 ? (
-            <p className="py-8 text-center text-sm text-exiqo-glow/60">All available apps are already connected.</p>
+            <p className="py-8 text-center text-sm text-gray-400">All available apps are already connected.</p>
           ) : (
             pool.map((app) => {
               const on = selected.has(app.id);
               return (
                 <label
                   key={app.id}
-                  className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition ${
+                  className={`flex cursor-pointer items-center gap-4 rounded-xl border px-4 py-3 transition ${
                     on ? "border-cyan-400/50 bg-cyan-500/10" : "border-white/10 bg-white/[0.03] hover:border-white/20"
                   }`}
                 >
@@ -97,9 +100,24 @@ export default function AppSelectionModal({ open, variant, connectedIds = [], on
                     onChange={() => toggle(app.id)}
                     className="h-4 w-4 shrink-0 rounded border-white/20 bg-black/40 text-cyan-500 focus:ring-cyan-400/60"
                   />
-                  <span className="text-xl" aria-hidden>
-                    {app.emoji}
-                  </span>
+                  <div
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04]"
+                    aria-hidden
+                  >
+                    {app.logo && !imgErrors[app.id] ? (
+                      <img
+                        src={`https://cdn.simpleicons.org/${app.logo.slug}/${app.logo.color}`}
+                        alt=""
+                        className="h-5 w-5 object-contain"
+                        onError={() => onImgError(app.id)}
+                      />
+                    ) : (
+                      // Original emoji shown when CDN image fails to load
+                      <span className="text-base leading-none" aria-hidden>
+                        {app.emoji}
+                      </span>
+                    )}
+                  </div>
                   <span className="text-sm font-medium text-white">{app.label}</span>
                 </label>
               );

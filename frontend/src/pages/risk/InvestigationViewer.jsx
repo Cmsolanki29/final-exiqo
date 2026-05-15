@@ -113,7 +113,7 @@ function InvestigationCard({ txn, investigation, busy, onRun, error }) {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] uppercase tracking-wider text-exiqo-glow/40 font-semibold">
+            <span className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
               Transaction
             </span>
             <span className="font-mono text-sm text-white">#{txn.transaction_id ?? txn.id}</span>
@@ -122,10 +122,10 @@ function InvestigationCard({ txn, investigation, busy, onRun, error }) {
           <h3 className="text-base font-semibold text-white mt-1 truncate">
             {txn.merchant || "Unknown merchant"}
           </h3>
-          <p className="text-sm text-exiqo-glow/60">
+          <p className="text-sm text-gray-400">
             {fmtCurrency(txn.amount)}
             {txn.created_at && (
-              <span className="text-exiqo-glow/30"> · {fmtRelativeTime(txn.created_at)}</span>
+              <span className="text-gray-600"> · {fmtRelativeTime(txn.created_at)}</span>
             )}
           </p>
         </div>
@@ -159,7 +159,7 @@ function InvestigationCard({ txn, investigation, busy, onRun, error }) {
           {/* Recommended action */}
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <p className="text-[11px] uppercase tracking-wider text-exiqo-glow/40 font-semibold">
+              <p className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
                 Recommended action
               </p>
               <div className="mt-1">
@@ -168,7 +168,7 @@ function InvestigationCard({ txn, investigation, busy, onRun, error }) {
             </div>
             {Number.isFinite(investigation.cost_usd) && (
               <div className="text-right">
-                <p className="text-[11px] uppercase tracking-wider text-exiqo-glow/40 font-semibold">
+                <p className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
                   Cost
                 </p>
                 <p className="inline-flex items-center gap-1 text-sm text-white">
@@ -187,7 +187,7 @@ function InvestigationCard({ txn, investigation, busy, onRun, error }) {
                 onClick={() => setReasonExpanded((v) => !v)}
                 className="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-left"
               >
-                <span className="text-xs uppercase tracking-wider text-exiqo-glow/60 font-semibold">
+                <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold">
                   Agent reasoning
                 </span>
                 <motion.span animate={{ rotate: reasonExpanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
@@ -202,7 +202,7 @@ function InvestigationCard({ txn, investigation, busy, onRun, error }) {
                     exit={{ height: 0, opacity: 0 }}
                     transition={{ duration: 0.2 }}
                   >
-                    <div className="px-4 pb-4 pt-1 text-sm text-exiqo-glow/80 whitespace-pre-wrap leading-relaxed font-mono">
+                    <div className="px-4 pb-4 pt-1 text-sm text-gray-300 whitespace-pre-wrap leading-relaxed font-mono">
                       {reasoning}
                     </div>
                   </motion.div>
@@ -212,7 +212,7 @@ function InvestigationCard({ txn, investigation, busy, onRun, error }) {
           )}
 
           {/* Meta footer */}
-          <div className="flex items-center gap-4 flex-wrap text-[11px] text-exiqo-glow/50">
+          <div className="flex items-center gap-4 flex-wrap text-[11px] text-gray-500">
             {investigation.model_used && (
               <span className="inline-flex items-center gap-1">
                 <Bot size={11} /> {investigation.model_used}
@@ -365,7 +365,7 @@ const InvestigationViewer = ({ userId }) => {
               Phase 9 · 2026
             </span>
           </div>
-          <p className="text-exiqo-glow/60 text-sm mt-1">
+          <p className="text-gray-400 text-sm mt-1">
             LLM agent reads each high-risk transaction, runs tool calls, and recommends an action.
           </p>
         </div>
@@ -373,7 +373,7 @@ const InvestigationViewer = ({ userId }) => {
         <button
           type="button"
           onClick={loadQueue}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-white/10 bg-white/[0.03] text-exiqo-glow/80 hover:bg-white/[0.07] transition"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-white/10 bg-white/[0.03] text-gray-300 hover:bg-white/[0.07] transition"
         >
           <RefreshCw size={12} />
           Refresh queue
@@ -383,19 +383,19 @@ const InvestigationViewer = ({ userId }) => {
       {/* Stat strip */}
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-          <p className="text-[11px] uppercase tracking-wider text-exiqo-glow/40 font-semibold">
+          <p className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
             In review queue
           </p>
           <p className="text-2xl font-bold text-white mt-1">{queue.length}</p>
         </div>
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-          <p className="text-[11px] uppercase tracking-wider text-exiqo-glow/40 font-semibold">
+          <p className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
             Investigations loaded
           </p>
           <p className="text-2xl font-bold text-purple-300 mt-1">{totalInvestigations}</p>
         </div>
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-          <p className="text-[11px] uppercase tracking-wider text-exiqo-glow/40 font-semibold">
+          <p className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
             Data source
           </p>
           <p className="text-sm font-semibold mt-1.5">
@@ -415,7 +415,7 @@ const InvestigationViewer = ({ userId }) => {
           <SkeletonCard lines={3} height={120} />
         </div>
       ) : queue.length === 0 ? (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center text-exiqo-glow/60">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center text-gray-400">
           Review queue is empty. New high-risk transactions will appear here automatically.
         </div>
       ) : (

@@ -266,8 +266,10 @@ export default function SmartSpendChatbot({ onNavigate }) {
   const token = () => localStorage.getItem(TOKEN_ACCESS_KEY) || "";
   const authHeaders = () => ({ Authorization: `Bearer ${token()}` });
 
-  // Auto-scroll
+  // Auto-scroll — only when there are messages; skip on initial mount to avoid
+  // scrolling the page down to the chat section before the user has interacted.
   useEffect(() => {
+    if (messages.length === 0) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 

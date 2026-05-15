@@ -11,6 +11,11 @@ const ACCENT = "#A78BFA";
 
 /** `setActiveTab` — same tab switcher as Sidebar (CRA has no react-router-dom). */
 export default function InsightsTab({ userId, month, year, setActiveTab }) {
+  // Always land at the top of the page when this tab is entered.
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, []);
+
   const [health, setHealth] = useState(null);
   const [healthLoading, setHealthLoading] = useState(true);
   const [healthError, setHealthError] = useState(false);
@@ -132,7 +137,7 @@ export default function InsightsTab({ userId, month, year, setActiveTab }) {
 
       <div className="mt-8">
         <div className="mb-4">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-300/80">AI Financial Partner</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">AI Financial Partner</p>
           <h3 className="mt-0.5 font-heading text-base font-semibold text-white">Ask your Financial Partner</h3>
           <p className="mt-1 text-sm text-white/50">
             Grounded in your real transaction data. Ask in any language.
