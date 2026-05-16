@@ -76,6 +76,7 @@ from routes import (
     subscription_graveyard,
     subscription_intelligence,
     transactions,
+    trip_planner,
 )
 from services.ml_model import ml_detector
 from services.scorer import calculate_health_score
@@ -269,6 +270,7 @@ app.include_router(purchase_planner.router, prefix="/api")
 app.include_router(financial_state.router, prefix="/api")
 app.include_router(pattern_alerts.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
+app.include_router(trip_planner.router, prefix="/api")
 
 # ── Phase 1-8 routers ──────────────────────────────────────────────────────
 if _RISK_ENGINE_OK:

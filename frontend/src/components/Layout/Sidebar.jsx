@@ -10,6 +10,7 @@ import {
   Lightbulb,
   LogOut,
   Menu,
+  Plane,
   Receipt,
   Shield,
   ShoppingBag,
@@ -41,6 +42,11 @@ const NAV_SECTIONS = [
       { id: "fraud", label: "FraudShield", icon: Shield },
       { id: "dark-patterns", label: "Dark Patterns", icon: AlertTriangle },
     ],
+  },
+  {
+    id: "ai-actions",
+    label: "AI Actions",
+    items: [{ id: "trip-planner", label: "Trip Planner", icon: Plane, newBadge: true }],
   },
   {
     id: "financial",
@@ -115,11 +121,21 @@ const Sidebar = ({ collapsed, onToggle, activeTab, onTabChange, onLogout, fraudB
         {!collapsed && item.badge ? (
           <span className="rounded-md bg-exiqo-pink px-2 py-0.5 text-xs font-bold text-white shadow-pink-glow">{item.badge}</span>
         ) : null}
+        {!collapsed && item.newBadge ? (
+          <span className="rounded-md border border-purple-500/40 bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-200">
+            New
+          </span>
+        ) : null}
         {collapsed ? (
           <span className="pointer-events-none absolute left-full z-50 ml-2 whitespace-nowrap rounded-xl border border-white/10 bg-[#0a0e27]/95 px-3 py-2 text-sm text-white opacity-0 shadow-2xl backdrop-blur-xl transition-opacity group-hover:opacity-100">
             {item.label}
             {item.badge ? (
               <span className="ml-2 rounded-md bg-exiqo-pink px-1.5 py-0.5 text-xs text-white">{item.badge}</span>
+            ) : null}
+            {item.newBadge ? (
+              <span className="ml-2 rounded-md border border-purple-500/40 bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-200">
+                New
+              </span>
             ) : null}
           </span>
         ) : null}

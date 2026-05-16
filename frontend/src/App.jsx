@@ -49,6 +49,7 @@ import { getUsers } from "./services/api";
 
 const TransactionsTab = lazy(() => import("./components/app-tabs/TransactionsTab"));
 const InsightsTab = lazy(() => import("./components/app-tabs/InsightsTab"));
+const TripPlannerPage = lazy(() => import("./pages/AIActions/TripPlannerPage"));
 /** Legacy `activeTab === "simulator"` only (sidebar tab removed); renders Insights. */
 const SimulatorTab = lazy(() => import("./components/app-tabs/SimulatorTab"));
 const SettingsTab = lazy(() => import("./components/app-tabs/SettingsTab"));
@@ -400,6 +401,11 @@ const App = () => {
                 {activeTab === "purchase" && <PurchasePlanner userId={selectedUserId} />}
                 {activeTab === "festival" && <FestivalPredictor userId={selectedUserId} />}
                 {activeTab === "family-events" && <FamilyEventsPage userId={selectedUserId} />}
+                {activeTab === "trip-planner" && (
+                  <Suspense fallback={<SkeletonCard lines={4} height={120} />}>
+                    <TripPlannerPage />
+                  </Suspense>
+                )}
 
                 </div>
               </>
