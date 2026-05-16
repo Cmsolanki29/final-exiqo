@@ -37,10 +37,11 @@ import MonthlyTrendChart from "../Charts/MonthlyTrendChart";
 import SpendingPieChart from "../Charts/SpendingPieChart";
 import { ErrorCard } from "../common/ErrorCard";
 import { GlassCard } from "../intro/GlassCard";
-import { ShieldMark } from "../intro/ShieldMark";
 import { SkeletonStats } from "../common/SkeletonCard";
-import GuardianPill from "./shared/GuardianPill";
-import { KPITile } from "./shared/KPITile";
+import DashboardGreeting from "./DashboardGreeting";
+import KPICard from "./shared/KPICard";
+import QuickActionCard from "./shared/QuickActionCard";
+import PremiumCard from "./shared/PremiumCard";
 import NerveCentreCard from "./NerveCentreCard";
 import AIFinancialCommandCenter, { type CommandCard } from "./AIFinancialCommandCenter";
 import LiveInsightsFeed, { type FeedItem } from "./LiveInsightsFeed";
@@ -324,14 +325,6 @@ export default function Dashboard({
     };
   }, [canLiveIntel, authUser?.id]);
 
-  const displayName = (userName || "there").trim() || "there";
-
-  const greeting = useMemo(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) return "Good morning";
-    if (hour < 17) return "Good afternoon";
-    return "Good evening";
-  }, []);
 
   const trendRow = useMemo(() => {
     const key = monthKey(year, month);
@@ -350,6 +343,8 @@ export default function Dashboard({
     if (fromTrend > 0) return fromTrend;
     return (Array.isArray(spending) ? spending : []).reduce((acc: number, row: { total_amount?: number }) => acc + Number(row.total_amount || 0), 0);
   }, [trendRow, spending]);
+
+  const monthIncome = useMemo(() => Number(trendRow?.income || 0), [trendRow]);
 
   const netMonth = useMemo(() => {
     if (!trendRow) return 0;
@@ -636,11 +631,6 @@ export default function Dashboard({
     );
   }
 
-  const festSub =
-    intel.nextFest != null
-      ? `${intel.nextFest.name} is in ${intel.nextFest.days_remaining} days`
-      : "Your money is calm today.";
-
   const fadeIn = { initial: reduce ? false : { opacity: 0, y: 14 }, animate: { opacity: 1, y: 0 } };
 
   return (
@@ -680,11 +670,14 @@ export default function Dashboard({
           </button>
         </div>
       ) : null}
-      <p className="mb-4 text-sm leading-relaxed text-white/60">
-        <span className="font-semibold text-white">{greeting}, {displayName}</span>
-        <span className="text-white/35"> · </span>
-        <span>{festSub}</span>
-      </p>
+      <DashboardGreeting
+        lastSync={lastRefresh}
+        loading={loading}
+        monthSpend={monthSpend}
+        monthIncome={monthIncome}
+        fraudPending={intel.fraudPending}
+        savedYtd={savedYtd}
+      />
 
       <AIFinancialCommandCenter
         signalCount={aiSignalCount}
@@ -696,81 +689,85 @@ export default function Dashboard({
       {/* Row 1 — KPIs + health */}
       <section className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-12 xl:gap-6">
         <div className="space-y-4 xl:col-span-7">
-          <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:grid sm:grid-cols-3 sm:overflow-visible [&::-webkit-scrollbar]:hidden">
-            <div className="min-w-[min(100%,280px)] shrink-0 snap-center sm:min-w-0">
-              <KPITile
-                title="Available balance (MTD)"
-                value={apiUtils.formatINR(netMonth)}
-                subtitle="Net of credits − debits this month"
-                icon={Wallet}
-                trendPct={netDeltaPct}
-                sparklineValues={sparkExpense}
-                delay={0}
-              />
-            </div>
-            <div className="min-w-[min(100%,280px)] shrink-0 snap-center sm:min-w-0">
-              <KPITile
-                title="This month spend"
-                value={apiUtils.formatINR(monthSpend)}
-                subtitle={`${month}/${year}`}
-                icon={Receipt}
-                trendPct={spendDeltaPct}
-                sparklineValues={sparkExpense}
-                delay={reduce ? 0 : 0.08}
-              />
-            </div>
-            <div className="min-w-[min(100%,280px)] shrink-0 snap-center sm:min-w-0">
-              <KPITile
-                title="Saved this year"
-                value={apiUtils.formatINR(savedYtd)}
-                subtitle="Sum of monthly savings in calendar year"
-                icon={PiggyBank}
-                sparklineValues={savedSpark}
-                delay={reduce ? 0 : 0.16}
-              />
-            </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <KPICard
+              variant="purple"
+              label="Available Balance"
+              value={netMonth}
+              formatValue={(n) => apiUtils.formatINR(n)}
+              subtitle="Net of credits − debits this month"
+              icon={Wallet}
+              trendPct={netDeltaPct}
+              sparkline={sparkExpense}
+              delay={0}
+            />
+            <KPICard
+              variant="rose"
+              label="This Month Spend"
+              value={monthSpend}
+              formatValue={(n) => apiUtils.formatINR(n)}
+              subtitle={`${month}/${year}`}
+              icon={Receipt}
+              trendPct={spendDeltaPct}
+              sparkline={sparkExpense}
+              delay={reduce ? 0 : 0.08}
+            />
+            <KPICard
+              variant="emerald"
+              label="Saved This Year"
+              value={savedYtd}
+              formatValue={(n) => apiUtils.formatINR(n)}
+              subtitle="Sum of monthly savings in calendar year"
+              icon={PiggyBank}
+              sparkline={savedSpark}
+              delay={reduce ? 0 : 0.16}
+            />
           </div>
           <SourceBreakdownCard userId={userId} />
         </div>
 
-        <div className="relative space-y-4 xl:col-span-5">
-          <motion.div
-            className="pointer-events-none absolute right-2 top-4 opacity-[0.08]"
-            aria-hidden
-            animate={reduce ? undefined : { rotate: 360 }}
-            transition={{ duration: 120, repeat: Infinity, ease: "linear" }}
-          >
-            <ShieldMark stage="complete" size={200} />
-          </motion.div>
+        <div className="space-y-4 xl:col-span-5">
           <HealthScoreGauge healthData={health ?? {}} narration={healthNarrationLine} variant="hero" />
           {Object.keys(healthComp).length > 0 ? (
-            <div className="grid grid-cols-2 gap-3 rounded-2xl border border-white/[0.08] bg-black/20 p-4 md:grid-cols-4">
-              {[
-                ["Savings", healthComp.savings_points, 30],
-                ["Security", healthComp.anomaly_points, 20],
-                ["Expense ratio", healthComp.expense_points, 25],
-                ["Consistency", healthComp.consistency_points, 15],
-              ].map(([label, val, max]) => (
-                <div key={String(label)} className="text-center">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-white/45">{label}</p>
-                  <p className="mt-1 font-heading text-xl font-bold tabular-nums text-white">
-                    {Math.round((Number(val || 0) / Number(max || 1)) * 100)}%
-                  </p>
-                  <p className="text-[10px] text-white/35">
-                    {Number(val || 0).toFixed(0)}/{max}
-                  </p>
-                </div>
-              ))}
-            </div>
+            <PremiumCard variant="purple" interactive={false} padding="compact">
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                {[
+                  ["Savings", healthComp.savings_points, 30],
+                  ["Security", healthComp.anomaly_points, 20],
+                  ["Expense Ratio", healthComp.expense_points, 25],
+                  ["Consistency", healthComp.consistency_points, 15],
+                ].map(([label, val, max]) => (
+                  <div key={String(label)} className="text-center">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">
+                      {label}
+                    </p>
+                    <p className="mt-1.5 text-xl font-bold tabular-nums text-white">
+                      {Math.round((Number(val || 0) / Number(max || 1)) * 100)}%
+                    </p>
+                    <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/[0.06]">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-purple-500 to-fuchsia-400"
+                        style={{ width: `${Math.round((Number(val || 0) / Number(max || 1)) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="mt-1 text-[10px] text-gray-600">
+                      {Number(val || 0).toFixed(0)}/{max}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </PremiumCard>
           ) : null}
         </div>
       </section>
 
-      <LiveInsightsFeed
-        items={feedItems}
-        loading={Boolean(canLiveIntel && aiIntel.loading && feedItems.length === 0)}
-        onViewAll={() => setActiveTab?.("insights")}
-      />
+      <div className="mt-6">
+        <LiveInsightsFeed
+          items={feedItems}
+          loading={Boolean(canLiveIntel && aiIntel.loading && feedItems.length === 0)}
+          onViewAll={() => setActiveTab?.("insights")}
+        />
+      </div>
 
       <motion.section
         className="mt-6"
@@ -778,53 +775,47 @@ export default function Dashboard({
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: reduce ? 0 : 0.12, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       >
-        <NerveCentreCard userId={userId} setActiveTab={setActiveTab} />
+        <PremiumCard variant="purple" className="!p-0" interactive={false}>
+          <NerveCentreCard userId={userId} setActiveTab={setActiveTab} />
+        </PremiumCard>
       </motion.section>
 
-      {/* Row 2 — Guardian strip */}
-      <motion.section
-        className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
-        initial={reduce ? false : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: reduce ? 0 : 0.2, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-      >
-        <GuardianPill
-          label="FraudShield"
-          sub={`${intel.fraudPending} pending alerts`}
+      {/* Row 2 — Quick action cards */}
+      <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <QuickActionCard
+          variant="emerald"
           icon={Shield}
-          glow={intel.fraudPending > 0 ? "rose" : "violet"}
-          disabled={intel.loading}
-          delay={0}
+          title="FraudShield"
+          status={`${intel.fraudPending} pending alerts`}
+          badge={intel.fraudPending > 0 ? intel.fraudPending : undefined}
           onClick={() => setActiveTab?.("fraud")}
+          delay={0}
         />
-        <GuardianPill
-          label="Subscriptions"
-          sub={intel.monthlyWaste > 0 ? `${apiUtils.formatINR(intel.monthlyWaste)} wasted/mo` : "No obvious waste"}
+        <QuickActionCard
+          variant="purple"
           icon={Sparkles}
-          glow={intel.monthlyWaste > 0 ? "amber" : "cyan"}
-          disabled={intel.loading}
-          delay={reduce ? 0 : 0.06}
+          title="Subscriptions AI"
+          status={intel.monthlyWaste > 0 ? `${apiUtils.formatINR(intel.monthlyWaste)} wasted/mo` : "No obvious waste"}
           onClick={() => setActiveTab?.("subscriptions")}
+          delay={reduce ? 0 : 0.06}
         />
-        <GuardianPill
-          label="Dark Patterns"
-          sub={`${intel.darkCount} caught this month`}
+        <QuickActionCard
+          variant="amber"
           icon={Landmark}
-          glow="violet"
-          disabled={intel.loading}
-          delay={reduce ? 0 : 0.12}
+          title="Dark Patterns"
+          status={`${intel.darkCount} caught this month`}
           onClick={() => setActiveTab?.("dark-patterns")}
+          delay={reduce ? 0 : 0.12}
         />
-        <GuardianPill
-          label="EMI Tracker"
-          sub={`${intel.emiCount} active EMIs tracked`}
+        <QuickActionCard
+          variant="cyan"
           icon={Receipt}
-          glow="cyan"
-          disabled={intel.loading}
-          delay={reduce ? 0 : 0.18}
+          title="EMI Tracker"
+          status={`${intel.emiCount} active EMIs tracked`}
           onClick={() => setActiveTab?.("emi")}
+          delay={reduce ? 0 : 0.18}
         />
-      </motion.section>
+      </div>
 
       {/* Row 3 — Spending story */}
       <motion.section

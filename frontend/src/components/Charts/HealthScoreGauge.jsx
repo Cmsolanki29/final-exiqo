@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowDownRight, ArrowUpRight, Minus, RefreshCw } from "lucide-react";
 import { GlassCard } from "../intro/GlassCard";
+import PremiumCard from "../Dashboard/shared/PremiumCard";
 
 // ── Grade palette ──────────────────────────────────────────────────────────
 const gradeColor = {
@@ -311,7 +312,7 @@ const HealthScoreGauge = ({
   // ── Hero variant (used on Dashboard hero) ───────────────────────────────
   if (variant === "hero") {
     return (
-      <GlassCard padding="md" surface="panel" className="relative overflow-hidden border-white/[0.1]">
+      <PremiumCard variant="purple" topAccent interactive={false}>
         <div className="mb-2 flex items-center justify-between gap-2">
           <h3 className="font-heading text-sm font-semibold text-white sm:text-base">Financial health</h3>
           <TrendBadge trend={trend} />
@@ -320,7 +321,7 @@ const HealthScoreGauge = ({
         {narration && (
           <p className="mt-2 text-center text-sm leading-relaxed text-white/70 line-clamp-4">{narration}</p>
         )}
-      </GlassCard>
+      </PremiumCard>
     );
   }
 
