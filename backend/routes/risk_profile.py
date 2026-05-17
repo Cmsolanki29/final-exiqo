@@ -25,6 +25,7 @@ from fastapi import APIRouter, HTTPException
 
 from core.db import get_pool
 from core.config import get_settings
+from services.dashboard_scope import normalize_dashboard_mode, transaction_scope_sql
 
 router = APIRouter(prefix="/risk", tags=["risk-profile"])
 
@@ -73,13 +74,21 @@ async def get_behavior_profile(user_id: int) -> dict[str, Any]:
     cutoff = datetime.now(timezone.utc) - timedelta(days=90)
 
     async with pool.acquire() as conn:
+        mode_row = await conn.fetchrow(
+            "SELECT COALESCE(dashboard_mode, 'merged') FROM users WHERE id = $1",
+            user_id,
+        )
+        mode = normalize_dashboard_mode(str(mode_row[0]) if mode_row else "merged")
+        scope = transaction_scope_sql("t", mode)
+
         # 1. Hourly activity distribution (24 buckets)
         hourly_rows = await conn.fetch(
-            """
+            f"""
             SELECT COALESCE(hour_of_day, EXTRACT(HOUR FROM transaction_time)::int) AS hr,
                    COUNT(*) AS cnt
-            FROM transactions
-            WHERE user_id = $1 AND transaction_date >= $2::date
+            FROM transactions t
+            WHERE t.user_id = $1 AND t.transaction_date >= $2::date
+              AND ({scope})
             GROUP BY hr
             ORDER BY hr
             """,
@@ -93,13 +102,14 @@ async def get_behavior_profile(user_id: int) -> dict[str, Any]:
 
         # 2. Distinct locations with risk flags
         loc_rows = await conn.fetch(
-            """
+            f"""
             SELECT location,
                    COUNT(*)                                     AS cnt,
                    MAX(transaction_date)                        AS last_seen,
                    SUM(CASE WHEN anomaly_flag THEN 1 ELSE 0 END) AS anomaly_cnt
-            FROM transactions
-            WHERE user_id = $1 AND location IS NOT NULL AND location != ''
+            FROM transactions t
+            WHERE t.user_id = $1 AND t.location IS NOT NULL AND t.location != ''
+              AND ({scope})
             GROUP BY location
             ORDER BY cnt DESC
             LIMIT 10
@@ -124,11 +134,12 @@ async def get_behavior_profile(user_id: int) -> dict[str, Any]:
 
         # 3. Detected anomalies
         anom_rows = await conn.fetch(
-            """
+            f"""
             SELECT id, merchant, amount, transaction_date, transaction_time,
                    risk_level, anomaly_reason
-            FROM transactions
-            WHERE user_id = $1 AND anomaly_flag = TRUE
+            FROM transactions t
+            WHERE t.user_id = $1 AND t.anomaly_flag = TRUE
+              AND ({scope})
             ORDER BY transaction_date DESC, transaction_time DESC
             LIMIT 20
             """,
@@ -150,11 +161,12 @@ async def get_behavior_profile(user_id: int) -> dict[str, Any]:
 
         # 4. Recent activity timeline (last 10 transactions)
         recent_rows = await conn.fetch(
-            """
+            f"""
             SELECT id, merchant, amount, payment_method,
                    transaction_date, transaction_time, anomaly_flag, type
-            FROM transactions
-            WHERE user_id = $1
+            FROM transactions t
+            WHERE t.user_id = $1
+              AND ({scope})
             ORDER BY transaction_date DESC, transaction_time DESC
             LIMIT 10
             """,
@@ -177,12 +189,13 @@ async def get_behavior_profile(user_id: int) -> dict[str, Any]:
 
         # 5. Composite risk score
         stats = await conn.fetchrow(
-            """
+            f"""
             SELECT AVG(risk_score)::float                        AS avg_score,
                    SUM(CASE WHEN anomaly_flag THEN 1 ELSE 0 END) AS anom_count,
                    COUNT(*)                                       AS total
-            FROM transactions
-            WHERE user_id = $1 AND transaction_date >= $2::date
+            FROM transactions t
+            WHERE t.user_id = $1 AND t.transaction_date >= $2::date
+              AND ({scope})
             """,
             user_id, cutoff.date(),
         )
@@ -228,8 +241,14 @@ async def get_devices(user_id: int) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="Database pool not available")
 
     async with pool.acquire() as conn:
+        mode_row = await conn.fetchrow(
+            "SELECT COALESCE(dashboard_mode, 'merged') FROM users WHERE id = $1",
+            user_id,
+        )
+        mode = normalize_dashboard_mode(str(mode_row[0]) if mode_row else "merged")
+        scope = transaction_scope_sql("t", mode)
         rows = await conn.fetch(
-            """
+            f"""
             SELECT payment_method,
                    location,
                    COUNT(*)                                      AS uses,
@@ -237,8 +256,9 @@ async def get_devices(user_id: int) -> dict[str, Any]:
                    MAX(transaction_date)                         AS last_seen,
                    SUM(CASE WHEN anomaly_flag THEN 1 ELSE 0 END) AS anom_count,
                    AVG(risk_score)::float                        AS avg_risk
-            FROM transactions
-            WHERE user_id = $1 AND payment_method IS NOT NULL
+            FROM transactions t
+            WHERE t.user_id = $1 AND t.payment_method IS NOT NULL
+              AND ({scope})
             GROUP BY payment_method, location
             ORDER BY uses DESC
             LIMIT 12
@@ -378,6 +398,7 @@ async def get_feedback_stats(user_id: int) -> dict[str, Any]:
 async def get_enriched_review_queue(
     status: str = "pending",
     limit: int = 20,
+    user_id: int | None = None,
 ) -> dict[str, Any]:
     """
     Phase 8 — Enriched review queue with transaction details joined in.
@@ -394,7 +415,22 @@ async def get_enriched_review_queue(
         status = "pending"
 
     async with pool.acquire() as conn:
-        where = "WHERE rq.status = $2" if status != "all" else ""
+        params: list[Any] = [limit]
+        clauses = []
+        if status != "all":
+            clauses.append(f"rq.status = ${len(params) + 1}")
+            params.append(status)
+        if user_id is not None:
+            clauses.append(f"t.user_id = ${len(params) + 1}")
+            params.append(user_id)
+            mode_row = await conn.fetchrow(
+                "SELECT COALESCE(dashboard_mode, 'merged') FROM users WHERE id = $1",
+                user_id,
+            )
+            mode = normalize_dashboard_mode(str(mode_row[0]) if mode_row else "merged")
+            scope = transaction_scope_sql("t", mode)
+            clauses.append(f"({scope})")
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         rows = await conn.fetch(
             f"""
             SELECT
@@ -409,7 +445,7 @@ async def get_enriched_review_queue(
             ORDER BY rq.priority DESC, rq.score DESC, rq.created_at DESC
             LIMIT $1
             """,
-            limit, *([] if status == "all" else [status]),
+            *params,
         )
 
     items = []

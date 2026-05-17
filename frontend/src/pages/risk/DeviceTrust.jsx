@@ -458,16 +458,17 @@ const DeviceTrust = ({ userId = 1, onNavigate, embedded = false }) => {
               }))
             );
           } else {
-            setDevices(DEMO_DEVICES);
-            setUsingDemo(true);
+            setDevices([]);
+            setUsingDemo(false);
           }
           setLoading(false);
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setDevices(DEMO_DEVICES);
-          setUsingDemo(true);
+          setDevices([]);
+          setUsingDemo(false);
+          setError("Could not load payment channels.");
           setLoading(false);
         }
       });
@@ -538,23 +539,14 @@ const DeviceTrust = ({ userId = 1, onNavigate, embedded = false }) => {
         </div>
       )}
 
-      {usingDemo && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className={
-            embedded
-              ? "flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-100/90"
-              : "flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-700"
-          }
-        >
-          <AlertTriangle size={14} />
-          Demo device graph — connect your account to see live fingerprints.
-        </motion.div>
-      )}
-
       {loading ? (
         <RiskStatePlaceholder loading />
+      ) : devices.length === 0 ? (
+        <RiskStatePlaceholder
+          empty
+          title="No payment channels yet"
+          message="Channels are derived from your real transactions (UPI, card, netbanking). Upload a statement to populate this view."
+        />
       ) : (
         <>
           <SummaryStats devices={devices} embedded={embedded} />

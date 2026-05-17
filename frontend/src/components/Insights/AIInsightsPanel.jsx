@@ -8,7 +8,9 @@ import {
   ListChecks,
   RefreshCcw,
   Sparkles,
+  Target,
   ThumbsUp,
+  Zap,
 } from "lucide-react";
 import { fetchInsightsSse } from "../../services/api";
 import { ErrorCard } from "../common/ErrorCard";
@@ -92,8 +94,9 @@ function ChatBubble({ title, body, icon: Icon, tone = "neutral", expanded, onTog
   );
 }
 
-const AIInsightsPanel = ({ userId, month, year, presentation = "default" }) => {
+const AIInsightsPanel = ({ userId, month, year, scope = "merged", presentation = "default" }) => {
   const reduce = useReducedMotion();
+  const abortRef = React.useRef(null);
   const [state, setState] = useState({
     data: null,
     loading: true,
@@ -105,6 +108,10 @@ const AIInsightsPanel = ({ userId, month, year, presentation = "default" }) => {
   const [whyOpen, setWhyOpen] = useState(false);
 
   const fetchInsights = useCallback(async () => {
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
     setState((prev) => ({
       ...prev,
       loading: true,
@@ -119,7 +126,7 @@ const AIInsightsPanel = ({ userId, month, year, presentation = "default" }) => {
     const runOnce = async () =>
       fetchInsightsSse(userId, month, year, (e) => {
         onEvent(e);
-      });
+      }, { scope, signal: ctrl.signal });
 
     try {
       const data = await runOnce();
@@ -155,10 +162,11 @@ const AIInsightsPanel = ({ userId, month, year, presentation = "default" }) => {
         }));
       }
     }
-  }, [userId, month, year]);
+  }, [userId, month, year, scope]);
 
   useEffect(() => {
     fetchInsights();
+    return () => abortRef.current?.abort();
   }, [fetchInsights]);
 
   useEffect(() => {
@@ -181,6 +189,15 @@ const AIInsightsPanel = ({ userId, month, year, presentation = "default" }) => {
   const warnings = Array.isArray(insight.warnings) ? insight.warnings : [];
   const recommendations = Array.isArray(insight.recommendations) ? insight.recommendations : [];
   const positives = Array.isArray(insight.positive_highlights) ? insight.positive_highlights : [];
+  const priorityActions = Array.isArray(insight.priority_actions) ? insight.priority_actions : [];
+  const quickWins = Array.isArray(insight.quick_wins) ? insight.quick_wins : [];
+  const budgetSuggestion =
+    insight.budget_suggestion && typeof insight.budget_suggestion === "object"
+      ? insight.budget_suggestion
+      : {};
+  const budgetEntries = Object.entries(budgetSuggestion).filter(
+    ([k, v]) => k && v != null && !Number.isNaN(Number(v))
+  );
 
   if (state.loading) {
     return (
@@ -352,6 +369,94 @@ const AIInsightsPanel = ({ userId, month, year, presentation = "default" }) => {
                 <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-rose-400/80" aria-hidden />
                 {item}
               </motion.li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* ── Priority actions ── */}
+      {priorityActions.length > 0 && (
+        <div className="mb-4">
+          <div className="mb-2 flex items-center gap-2 border-l-2 border-cyan-400/60 pl-2.5">
+            <Target className="h-3.5 w-3.5 text-cyan-400" aria-hidden />
+            <span className="text-xs font-bold uppercase tracking-[0.1em] text-cyan-200">Priority actions</span>
+          </div>
+          <div className="space-y-2">
+            {priorityActions.map((item, i) => {
+              const action =
+                typeof item === "string"
+                  ? item
+                  : item?.action || item?.title || "Review this action";
+              const saving =
+                typeof item === "object" && item?.potential_saving != null
+                  ? `Save ₹${Number(item.potential_saving).toLocaleString("en-IN")}`
+                  : null;
+              const difficulty = typeof item === "object" ? item?.difficulty : null;
+              return (
+                <motion.div
+                  key={i}
+                  className="flex gap-3 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5"
+                  initial={reduce ? false : { opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.04 * i, duration: 0.3 }}
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-500/10 text-cyan-300">
+                    <Target className="h-4 w-4" aria-hidden />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-white/90">{action}</p>
+                    <p className="mt-0.5 text-[11px] text-white/45">
+                      {[saving, difficulty, typeof item === "object" ? item?.category : null]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Quick wins ── */}
+      {quickWins.length > 0 && (
+        <div className="mb-4">
+          <div className="mb-2 flex items-center gap-2 border-l-2 border-emerald-500/60 pl-2.5">
+            <Zap className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
+            <span className="text-xs font-bold uppercase tracking-[0.1em] text-emerald-300">Quick wins</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {quickWins.map((item, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-100"
+              >
+                <Zap className="h-3 w-3 opacity-80" aria-hidden />
+                {typeof item === "string" ? item : item?.action || String(item)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Budget suggestion ── */}
+      {budgetEntries.length > 0 && (
+        <div className="mb-4">
+          <div className="mb-2 flex items-center gap-2 border-l-2 border-violet-400/60 pl-2.5">
+            <ListChecks className="h-3.5 w-3.5 text-violet-400" aria-hidden />
+            <span className="text-xs font-bold uppercase tracking-[0.1em] text-violet-300">Suggested monthly budget</span>
+          </div>
+          <ul className="space-y-1.5">
+            {budgetEntries.map(([category, amount]) => (
+              <li
+                key={category}
+                className="flex items-center justify-between rounded-lg bg-white/[0.03] px-3 py-1.5 text-sm text-white/80"
+              >
+                <span>{category}</span>
+                <span className="tabular-nums font-semibold text-white">
+                  ₹{Number(amount).toLocaleString("en-IN")}
+                </span>
+              </li>
             ))}
           </ul>
         </div>

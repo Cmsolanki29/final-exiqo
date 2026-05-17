@@ -22,9 +22,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowRightLeft, Brain, Clock, CreditCard,
   EyeOff, LayoutDashboard, Loader2,
-  RefreshCw, Search, Settings, ShieldAlert,
+  RefreshCw, Search, Settings, ShieldAlert, ShieldCheck,
   ShoppingCart, Sparkles, TrendingDown, TrendingUp,
-  Users, X,
+  X,
 } from "lucide-react";
 import { getTransactions } from "../../services/api";
 import useEscapeKey from "../../hooks/useEscapeKey";
@@ -38,12 +38,12 @@ const NAV_ITEMS = [
   { id: "fraud",         label: "FraudShield",       icon: ShieldAlert,     group: "AI Intelligence", description: "Fraud detection · 12-phase AI stack"    },
   { id: "dark-patterns", label: "Dark Patterns",     icon: EyeOff,          group: "AI Intelligence", description: "Spot predatory pricing & dark UX"       },
   { id: "emi",           label: "EMI Tracker",       icon: CreditCard,      group: "Financial OS",    description: "EMI trap detection & schedule"          },
-  { id: "festival",      label: "Festival Planner",  icon: Sparkles,        group: "Planning",        description: "Budget for Diwali, Holi & more"         },
+  { id: "festival",      label: "Festivals & Event Planner", icon: Sparkles, group: "Planning",        description: "Budget for Diwali, Holi & more"         },
   { id: "purchase",      label: "Purchase Planner",  icon: ShoppingCart,    group: "Planning",        description: "Plan large purchases with AI help"      },
-  { id: "family-events", label: "Family Events",     icon: Users,           group: "Planning",        description: "Track family event expenses"            },
+  { id: "cybersafe-connect", label: "CyberSafe Connect", icon: ShieldCheck, group: "Risk Awareness", description: "Report fraud to Cybercell · 24hr window" },
   { id: "settings",      label: "Settings",          icon: Settings,        group: "System",          description: "App preferences & configuration"        },
 ];
-const GROUP_ORDER = ["Workspace", "AI Intelligence", "Financial OS", "Planning", "System"];
+const GROUP_ORDER = ["Workspace", "AI Intelligence", "Financial OS", "Planning", "Risk Awareness", "System"];
 
 const RECENT_KEY = "ss_cmd_recent";
 const MAX_RECENT = 5;

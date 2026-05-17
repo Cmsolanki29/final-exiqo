@@ -339,8 +339,9 @@ const BehaviorProfile = ({ userId = 1, onNavigate, embedded = false }) => {
       })
       .catch(() => {
         if (!cancelled) {
-          setData(DEMO);
-          setUsingDemo(true);
+          setData(null);
+          setUsingDemo(false);
+          setError("Could not load behavior profile. Check that the API is running.");
           setLoading(false);
         }
       });
@@ -350,7 +351,7 @@ const BehaviorProfile = ({ userId = 1, onNavigate, embedded = false }) => {
     };
   }, [userId]);
 
-  const d = data ?? DEMO;
+  const d = data;
   const highlightHours = useMemo(() => anomalyHighlightHours(d.anomalies), [d.anomalies]);
 
   const outer = embedded ? "mx-auto max-w-6xl space-y-5 pb-4" : "mx-auto max-w-3xl space-y-6 pb-8";
@@ -394,23 +395,14 @@ const BehaviorProfile = ({ userId = 1, onNavigate, embedded = false }) => {
         </div>
       )}
 
-      {usingDemo && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className={
-            embedded
-              ? "flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-100/95 backdrop-blur-md"
-              : "flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-700"
-          }
-        >
-          <AlertTriangle size={14} />
-          Showing demo data — behavior-profile endpoint not yet available on this backend.
-        </motion.div>
-      )}
-
       {loading ? (
         <RiskStatePlaceholder loading />
+      ) : !d ? (
+        <RiskStatePlaceholder
+          empty
+          title="No behavior data yet"
+          message="Upload transactions or switch dashboard mode. Patterns are built from your real spending history."
+        />
       ) : (
         <>
           <div className="grid gap-4 lg:grid-cols-2">

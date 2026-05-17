@@ -255,7 +255,10 @@ async def _dashboard_payload_from_request(request: Request) -> DashboardModeBody
         ) from exc
 
 
-_ALLOWED_EXTENSIONS = {"pdf", "csv", "xlsx", "xls", "txt"}
+_ALLOWED_EXTENSIONS = {
+    "pdf", "csv", "xlsx", "xls", "txt",
+    "jpg", "jpeg", "png", "tiff", "bmp", "webp",
+}
 _MAX_FILE_MB = 20
 
 
@@ -269,6 +272,7 @@ async def upload_statement(
     source_type: str = Form(...),
     institution_name: str = Form(...),
     account_number_masked: Optional[str] = Form(None),
+    added_via: Optional[str] = Form("settings_upload"),
     conn=Depends(get_db),
 ):
     """Upload bank/credit-card statement PDF or CSV and extract transactions."""
@@ -284,7 +288,7 @@ async def upload_statement(
     if ext not in _ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"File type '.{ext}' not supported. Use PDF, CSV, or XLSX.",
+            detail=f"File type '.{ext}' not supported. Use PDF, CSV, Excel, images, or TXT.",
         )
 
     file_bytes = await file.read()
@@ -304,12 +308,17 @@ async def upload_statement(
         size_kb,
     )
 
+    via = (added_via or "settings_upload").strip()[:50]
+    if via not in ("settings_upload", "onboarding_upload"):
+        via = "settings_upload"
+
     source_id = _upsert_source(
         conn,
         user_id=user_id,
         source_type=raw,
         institution_name=institution_name.strip()[:100],
         account_number_masked=account_number_masked,
+        added_via=via,
     )
 
     doc_id = _create_document_record(
@@ -356,6 +365,16 @@ async def upload_statement(
 
     result["document_id"] = doc_id
     result["source_id"] = source_id
+    if result.get("success"):
+        try:
+            from datetime import date as _date
+
+            from services.openai_service import invalidate_insight_cache
+
+            today = _date.today()
+            invalidate_insight_cache(conn, user_id, today.month, today.year)
+        except Exception:
+            logger.exception("[upload] insight cache invalidation failed user_id=%s", user_id)
     logger.warning(
         "[upload] ok document_id=%s source_id=%s success=%s imported=%s",
         doc_id,
@@ -631,6 +650,7 @@ def _upsert_source(
     institution_name: str,
     account_number_masked: str | None = None,
     is_primary: bool = False,
+    added_via: str = "settings_upload",
 ) -> int:
     """Insert or return existing connected_source id."""
     with conn.cursor() as cur:
@@ -639,13 +659,14 @@ def _upsert_source(
             INSERT INTO connected_sources
               (user_id, source_type, institution_name, account_number_masked, is_primary,
                is_visible_on_dashboard, added_via, status)
-            VALUES (%s, %s, %s, %s, %s, TRUE, 'settings_upload', 'active')
+            VALUES (%s, %s, %s, %s, %s, TRUE, %s, 'active')
             ON CONFLICT ON CONSTRAINT connected_sources_user_inst_type_key DO UPDATE
               SET account_number_masked = COALESCE(EXCLUDED.account_number_masked, connected_sources.account_number_masked),
-                  status = 'active'
+                  status = 'active',
+                  is_visible_on_dashboard = TRUE
             RETURNING id
             """,
-            (user_id, source_type, institution_name, account_number_masked, is_primary),
+            (user_id, source_type, institution_name, account_number_masked, is_primary, added_via),
         )
         return cur.fetchone()[0]
 

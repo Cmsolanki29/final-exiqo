@@ -29,6 +29,7 @@ import FraudAlertsList from "./FraudAlertsList";
 import FraudStats from "./FraudStats";
 import TransactionChecker from "./TransactionChecker";
 import FraudShieldLiveEventsTab from "./FraudShieldLiveEventsTab";
+import RealTimeFraudFeed from "./RealTimeFraudFeed";
 import InvestigationConsole from "./InvestigationConsole";
 import { PhaseCard } from "./PhaseCard";
 import { PhaseFlowBackdrop } from "./PhaseFlowBackdrop";
@@ -53,6 +54,7 @@ const ICON_MAP = {
 
 const TABS = [
   { id: "overview", label: "Overview", Icon: Shield },
+  { id: "realtime", label: "Real-Time Detection", Icon: Zap },
   { id: "alerts", label: "Alerts", Icon: Bell },
   { id: "behavior", label: "Behavior", Icon: UserCircle },
   { id: "devices", label: "Devices", Icon: MapPin },
@@ -309,9 +311,8 @@ const FraudShieldPage = ({ userId, userName }) => {
   const safetyScore = stats?.safety_score ?? 0;
   const blocked = stats?.threats_blocked ?? 0;
   const saved = stats?.money_saved_total ?? 0;
-
   return (
-    <div className="mx-auto max-w-6xl space-y-6 pb-8">
+    <motion.div className="mx-auto max-w-6xl space-y-6 pb-8">
       <PhaseShowcase />
 
       <StatStrip
@@ -354,8 +355,10 @@ const FraudShieldPage = ({ userId, userName }) => {
           transition={{ duration: 0.22 }}
           className="rounded-3xl border border-white/[0.08] bg-white/[0.02] p-5 shadow-[0_0_50px_-24px_rgba(124,58,237,0.35)] backdrop-blur-xl sm:p-7"
         >
+          {tab === "realtime" && <RealTimeFraudFeed userId={userId} />}
+
           {tab === "overview" && (
-            <div className="space-y-8">
+            <motion.div className="space-y-8">
               <div>
                 <div className="mb-4 flex items-center gap-2">
                   <ShieldCheck className="h-5 w-5 text-emerald-300" aria-hidden />
@@ -411,7 +414,7 @@ const FraudShieldPage = ({ userId, userName }) => {
                   </div>
                 ) : null}
               </div>
-            </div>
+            </motion.div>
           )}
 
           {tab === "alerts" && (
@@ -468,7 +471,7 @@ const FraudShieldPage = ({ userId, userName }) => {
           {tab === "live" && (
             <div className="space-y-4">
               <h2 className="text-lg font-bold text-white">Live events</h2>
-              <p className="text-sm text-gray-400">Stream of scored events — demo ticker until WebSocket feed lands.</p>
+              <p className="text-sm text-gray-400">Stream of scored events from your uploaded transactions.</p>
               <FraudShieldLiveEventsTab userId={userId} />
             </div>
           )}
@@ -478,7 +481,7 @@ const FraudShieldPage = ({ userId, userName }) => {
       {analyze?.summary ? (
         <p className="text-center text-[11px] text-gray-600">Analysis hint: {String(analyze.summary).slice(0, 160)}…</p>
       ) : null}
-    </div>
+    </motion.div>
   );
 };
 

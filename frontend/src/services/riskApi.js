@@ -112,8 +112,15 @@ export const reportFraud = (txnId, notes = "") =>
   riskClient.post(`/transactions/${txnId}/report-fraud`, { notes }).then(d);
 
 // Enriched review queue — includes merchant, amount, reason joined from transactions
-export const getEnrichedReviewQueue = (status = "pending", limit = 20) =>
-  riskClient.get("/risk/review-queue", { params: { status, limit } }).then(d);
+export const getEnrichedReviewQueue = (status = "pending", limit = 20, userId = null) =>
+  riskClient
+    .get("/risk/review-queue", {
+      params: { status, limit, ...(userId != null ? { user_id: userId } : {}) },
+    })
+    .then(d);
+
+export const getFraudShieldLiveEvents = (userId, limit = 20) =>
+  riskClient.get(`/fraud-shield/${userId}/live-events`, { params: { limit } }).then(d);
 
 export const getReviewQueue = (params = {}) =>
   adminClient.get("/admin/review-queue", { params }).then(d);

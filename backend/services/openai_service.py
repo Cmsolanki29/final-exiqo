@@ -5,11 +5,15 @@ from __future__ import annotations
 import json
 import os
 import time
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
+
+from db import get_connection
+from services.dashboard_scope import normalize_dashboard_mode
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 load_dotenv(dotenv_path=_PROJECT_ROOT / ".env")
@@ -191,21 +195,117 @@ def call_dashboard_json_openai_then_groq(
 
 
 # ---------------------------------------------------------------------------
-# In-memory cache (1 hour default)
+# Postgres insight cache (6 hours default)
 # ---------------------------------------------------------------------------
 
-_cache: dict[str, dict[str, Any]] = {}
+_INSIGHT_CACHE_TTL_HOURS = 6
+
+
+def _insight_cache_identity(user_data: dict[str, Any]) -> tuple[int, int, int, str]:
+    uid = int(user_data.get("user_id") or 0)
+    m = int(user_data.get("insight_month") or date.today().month)
+    y = int(user_data.get("insight_year") or date.today().year)
+    scope = normalize_dashboard_mode(user_data.get("insight_scope"))
+    return uid, m, y, scope
+
+
+def get_cached_insight(conn, user_id: int, month: int, year: int, scope: str) -> Any | None:
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT payload
+            FROM insight_cache
+            WHERE user_id = %s AND month = %s AND year = %s AND scope = %s
+              AND generated_at > NOW() - INTERVAL '6 hours';
+            """,
+            (user_id, month, year, normalize_dashboard_mode(scope)),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        payload = row[0]
+        if isinstance(payload, str):
+            return json.loads(payload)
+        return payload
+    except Exception as exc:
+        print(f"[get_cached_insight] {exc}")
+        return None
+    finally:
+        cur.close()
+
+
+def set_cached_insight(
+    conn,
+    user_id: int,
+    month: int,
+    year: int,
+    scope: str,
+    data: Any,
+) -> None:
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO insight_cache (user_id, month, year, scope, payload, generated_at)
+            VALUES (%s, %s, %s, %s, %s::jsonb, NOW())
+            ON CONFLICT (user_id, month, year, scope)
+            DO UPDATE SET payload = EXCLUDED.payload, generated_at = NOW();
+            """,
+            (
+                user_id,
+                month,
+                year,
+                normalize_dashboard_mode(scope),
+                json.dumps(data, default=str),
+            ),
+        )
+        conn.commit()
+    except Exception as exc:
+        print(f"[set_cached_insight] {exc}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    finally:
+        cur.close()
+
+
+def invalidate_insight_cache(
+    conn,
+    user_id: int,
+    month: int | None = None,
+    year: int | None = None,
+) -> None:
+    """Delete cached insights for a user; optional month/year narrows the delete."""
+    cur = conn.cursor()
+    try:
+        if month is not None and year is not None:
+            cur.execute(
+                "DELETE FROM insight_cache WHERE user_id = %s AND month = %s AND year = %s;",
+                (user_id, month, year),
+            )
+        else:
+            cur.execute("DELETE FROM insight_cache WHERE user_id = %s;", (user_id,))
+        conn.commit()
+    except Exception as exc:
+        print(f"[invalidate_insight_cache] {exc}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    finally:
+        cur.close()
 
 
 def get_cached(key: str) -> Any | None:
-    entry = _cache.get(key)
-    if entry and entry["expires_at"] > time.time():
-        return entry["data"]
+    """Legacy in-memory helper (unused by insight card; kept for compatibility)."""
     return None
 
 
 def set_cached(key: str, data: Any, ttl_seconds: int = 3600) -> None:
-    _cache[key] = {"data": data, "expires_at": time.time() + ttl_seconds}
+    """Legacy in-memory helper (no-op)."""
+    return
 
 
 # ---------------------------------------------------------------------------
@@ -279,13 +379,14 @@ def _normalize_llm_insight_minimal(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def generate_monthly_insights(user_data: dict[str, Any]) -> dict[str, Any]:
-    cache_key = (
-        f"insights_card_v5_openai_primary_{user_data.get('user_id')}_"
-        f"{user_data.get('current_month')}"
-    )
-    cached = get_cached(cache_key)
-    if cached is not None:
-        return cached
+    uid, m, y, scope = _insight_cache_identity(user_data)
+    conn = get_connection()
+    try:
+        cached = get_cached_insight(conn, uid, m, y, scope)
+        if cached is not None:
+            return cached
+    finally:
+        conn.close()
 
     system_prompt = """You are a financial analyst. Given transaction data, return a JSON object with these exact keys:
 {
@@ -342,7 +443,11 @@ All text must be in plain English. Be specific with numbers. Return only valid J
         merged = _normalize_llm_insight_minimal(result)
         result = _coerce_insight_card(merged, user_data)
 
-    set_cached(cache_key, result, ttl_seconds=3600)
+    conn = get_connection()
+    try:
+        set_cached_insight(conn, uid, m, y, scope, result)
+    finally:
+        conn.close()
     return result
 
 

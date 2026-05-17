@@ -201,6 +201,17 @@ def calculate_fraud_risk_score(
         score += 15
         risk_factors.append("International or unknown location — high-risk origin")
 
+    payee_low = payee.lower()
+    if any(k in payee_low for k in ("ireland", "offshore", "intl", "foreign", "international")):
+        score += 18
+        risk_factors.append("International merchant on your statement — verify before paying")
+    if 0 < amount <= 10:
+        score += 22
+        risk_factors.append("Micro charge (₹1–10) — often used to test a stolen card")
+    elif amount >= 4000:
+        score += 12
+        risk_factors.append("High-value charge — confirm you authorized this merchant")
+
     # Large-amount IMPS/NEFT risk (wire transfer methods)
     if payment_method in ("imps", "neft", "rtgs") and amount >= 50000:
         score += 10
@@ -546,6 +557,12 @@ def list_fraud_patterns(conn=Depends(get_db)):
 
 @router.get("/{user_id}/alerts")
 def list_alerts(user_id: int, severity: str | None = None, conn=Depends(get_db)):
+    from services.fraud_from_transactions import (
+        merge_alerts,
+        score_scoped_transactions,
+        scoped_db_fraud_alerts,
+    )
+
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM users WHERE id = %s;", (user_id,))
     if not cur.fetchone():
@@ -555,56 +572,12 @@ def list_alerts(user_id: int, severity: str | None = None, conn=Depends(get_db))
     valid_severities = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
     sev_filter = severity.upper() if severity and severity.upper() in valid_severities else None
 
-    # fraud_alerts has no DB column "severity" — derive from risk_score (schema: fraud_schema.sql).
-    _sev = """CASE
-        WHEN COALESCE(risk_score, 0) >= 85 THEN 'CRITICAL'
-        WHEN COALESCE(risk_score, 0) >= 65 THEN 'HIGH'
-        WHEN COALESCE(risk_score, 0) >= 35 THEN 'MEDIUM'
-        ELSE 'LOW'
-    END"""
-
+    db_alerts = scoped_db_fraud_alerts(cur, user_id)
+    txn_alerts = score_scoped_transactions(cur, user_id)
+    alerts = merge_alerts(db_alerts, txn_alerts)
     if sev_filter:
-        cur.execute(
-            f"""
-            SELECT id, pattern_matched, risk_score, amount_at_risk, warning_message,
-                   hinglish_explanation, user_action, money_saved, created_at,
-                   ({_sev}) AS severity
-            FROM fraud_alerts
-            WHERE user_id = %s AND ({_sev}) = %s
-            ORDER BY risk_score DESC NULLS LAST, created_at DESC;
-            """,
-            (user_id, sev_filter),
-        )
-    else:
-        cur.execute(
-            f"""
-            SELECT id, pattern_matched, risk_score, amount_at_risk, warning_message,
-                   hinglish_explanation, user_action, money_saved, created_at,
-                   ({_sev}) AS severity
-            FROM fraud_alerts
-            WHERE user_id = %s
-            ORDER BY risk_score DESC NULLS LAST, created_at DESC;
-            """,
-            (user_id,),
-        )
-    rows = cur.fetchall()
+        alerts = [a for a in alerts if (a.get("severity") or "").upper() == sev_filter]
     cur.close()
-    alerts = []
-    for r in rows:
-        alerts.append(
-            {
-                "id": r[0],
-                "pattern_matched": r[1],
-                "risk_score": int(r[2] or 0),
-                "amount_at_risk": float(r[3] or 0),
-                "warning_message": r[4],
-                "hinglish_explanation": r[5],
-                "user_action": r[6],
-                "money_saved": float(r[7] or 0),
-                "created_at": r[8].isoformat() if r[8] else None,
-                "severity": r[9] or "MEDIUM",
-            }
-        )
     return {"alerts": alerts, "cybercrime_url": CYBER_CRIME_URL, "helpline": HELPLINE_1930}
 
 
@@ -662,71 +635,43 @@ def alert_action(user_id: int, alert_id: int, body: AlertActionRequest, conn=Dep
 
 @router.get("/{user_id}/stats")
 def fraud_stats(user_id: int, conn=Depends(get_db)):
+    from services.fraud_from_transactions import (
+        merge_alerts,
+        score_scoped_transactions,
+        scoped_db_fraud_alerts,
+    )
+
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM users WHERE id = %s;", (user_id,))
     if not cur.fetchone():
         cur.close()
         raise HTTPException(404, "User not found")
 
-    cur.execute(
-        "SELECT COUNT(*) FROM fraud_alerts WHERE user_id = %s;",
-        (user_id,),
+    alerts = merge_alerts(scoped_db_fraud_alerts(cur, user_id), score_scoped_transactions(cur, user_id))
+    attempts = len(alerts)
+    threats_blocked = sum(1 for a in alerts if (a.get("user_action") or "").upper() == "BLOCKED")
+    money_saved_total = sum(float(a.get("money_saved") or 0) for a in alerts if (a.get("user_action") or "").upper() == "BLOCKED")
+    money_lost_total = sum(
+        float(a.get("amount_at_risk") or 0) for a in alerts if (a.get("user_action") or "").upper() == "ALLOWED"
     )
-    attempts = int(cur.fetchone()[0] or 0)
+    pending = [a for a in alerts if (a.get("user_action") or "PENDING").upper() == "PENDING"]
 
-    cur.execute(
-        "SELECT COALESCE(SUM(money_saved), 0) FROM fraud_alerts WHERE user_id = %s;",
-        (user_id,),
-    )
-    money_saved_total = float(cur.fetchone()[0] or 0)
+    patterns: dict[str, int] = {}
+    for a in alerts:
+        p = a.get("pattern_matched") or "UNUSUAL"
+        patterns[p] = patterns.get(p, 0) + 1
+    most_common = max(patterns, key=patterns.get) if patterns else "—"
 
-    cur.execute(
-        "SELECT COUNT(*) FROM fraud_alerts WHERE user_id = %s AND user_action = 'BLOCKED';",
-        (user_id,),
-    )
-    threats_blocked = int(cur.fetchone()[0] or 0)
-
-    cur.execute(
-        """
-        SELECT COALESCE(SUM(amount_at_risk), 0) FROM fraud_alerts
-        WHERE user_id = %s AND user_action = 'ALLOWED';
-        """,
-        (user_id,),
-    )
-    money_lost_total = float(cur.fetchone()[0] or 0)
-
-    cur.execute(
-        """
-        SELECT pattern_matched, COUNT(*) c FROM fraud_alerts
-        WHERE user_id = %s
-        GROUP BY pattern_matched ORDER BY c DESC LIMIT 1;
-        """,
-        (user_id,),
-    )
-    row = cur.fetchone()
-    most_common = row[0] if row else "—"
-
-    cur.execute(
-        """
-        SELECT COALESCE(MAX(created_at)::date, CURRENT_DATE) FROM fraud_alerts
-        WHERE user_id = %s AND user_action = 'ALLOWED';
-        """,
-        (user_id,),
-    )
-    last_loss = cur.fetchone()[0]
-    fraud_free_days = (date.today() - last_loss).days if last_loss else 999
-
-    cur.execute(
-        "SELECT COALESCE(MAX(risk_score), 0) FROM fraud_alerts WHERE user_id = %s;",
-        (user_id,),
-    )
-    max_risk = int(cur.fetchone()[0] or 0)
-    # Safety score = % of threats caught; if all blocked → ~94-96%; lost money pulls it down
+    max_risk = max((int(a.get("risk_score") or 0) for a in alerts), default=0)
     if attempts > 0:
-        detection_rate = threats_blocked / attempts
-        safety_score = min(99, int(detection_rate * 96 - (2 if money_lost_total > 0 else 0)))
+        reviewed = threats_blocked + sum(1 for a in alerts if (a.get("user_action") or "").upper() in ("ALLOWED", "REPORTED"))
+        detection_rate = threats_blocked / max(reviewed, 1)
+        safety_score = min(99, int(88 + detection_rate * 10 - (money_lost_total / 500)))
+        safety_score = max(35, safety_score - max(0, len(pending) - 3) * 4)
     else:
-        safety_score = max(0, min(100, 100 - max_risk // 2 - (5 if attempts > 3 else 0)))
+        safety_score = 94
+
+    fraud_free_days = 999 if money_lost_total <= 0 else 0
 
     if money_lost_total <= 0 and attempts and money_saved_total > 0:
         badge = "VIGILANT"
@@ -735,7 +680,7 @@ def fraud_stats(user_id: int, conn=Depends(get_db)):
     elif money_lost_total >= 5000:
         badge = "AT_RISK" if money_lost_total < 25000 else "VULNERABLE"
     else:
-        badge = "CAREFUL" if attempts else "VIGILANT"
+        badge = "CAREFUL" if pending else "VIGILANT"
 
     cur.close()
 
@@ -746,10 +691,11 @@ def fraud_stats(user_id: int, conn=Depends(get_db)):
         "money_lost_total": round(money_lost_total, 2),
         "most_common_fraud_type": most_common,
         "fraud_free_days": int(fraud_free_days),
-        "safety_score": safety_score,
+        "safety_score": int(safety_score),
         "badge": badge,
         "cybercrime_url": CYBER_CRIME_URL,
         "helpline": HELPLINE_1930,
+        "pending_count": len(pending),
     }
 
 
@@ -776,31 +722,13 @@ def analyze_fraud(user_id: int, conn=Depends(get_db)):
     )
     total_transactions_analyzed = int(cur.fetchone()[0] or 0)
 
-    cur.execute(
-        """
-        SELECT id, pattern_matched, risk_score, amount_at_risk, warning_message,
-               hinglish_explanation, user_action, money_saved, created_at
-        FROM fraud_alerts WHERE user_id = %s
-        ORDER BY risk_score DESC, created_at DESC;
-        """,
-        (user_id,),
+    from services.fraud_from_transactions import (
+        merge_alerts,
+        score_scoped_transactions,
+        scoped_db_fraud_alerts,
     )
-    rows = cur.fetchall()
-    alerts = []
-    for r in rows:
-        alerts.append(
-            {
-                "id": r[0],
-                "pattern_matched": r[1],
-                "risk_score": int(r[2] or 0),
-                "amount_at_risk": float(r[3] or 0),
-                "warning_message": r[4],
-                "hinglish_explanation": r[5],
-                "user_action": r[6],
-                "money_saved": float(r[7] or 0),
-                "created_at": r[8].isoformat() if r[8] else None,
-            }
-        )
+
+    alerts = merge_alerts(scoped_db_fraud_alerts(cur, user_id), score_scoped_transactions(cur, user_id))
 
     fraud_alerts_found = len(alerts)
     high_risk_count = sum(1 for a in alerts if a["risk_score"] >= 60)
@@ -1150,3 +1078,40 @@ def check_transaction(user_id: int, body: TransactionCheckRequest, conn=Depends(
             },
         },
     }
+
+
+@router.get("/{user_id}/live-events")
+def live_fraud_events(user_id: int, limit: int = 20, conn=Depends(get_db)):
+    """Recent in-scope transactions scored for the live feed (no simulated ticker)."""
+    from services.fraud_from_transactions import score_scoped_transactions
+    from services.dashboard_scope import fetch_dashboard_mode
+
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM users WHERE id = %s;", (user_id,))
+    if not cur.fetchone():
+        cur.close()
+        raise HTTPException(404, "User not found")
+    mode = fetch_dashboard_mode(cur, user_id)
+    scored = score_scoped_transactions(cur, user_id, limit=limit, min_risk=0)
+    cur.close()
+    events = []
+    for a in scored:
+        risk = int(a.get("risk_score") or 0)
+        if risk >= 65:
+            st = "BLOCKED"
+        elif risk >= 35:
+            st = "REVIEW"
+        else:
+            st = "APPROVED"
+        events.append(
+            {
+                "id": a.get("id"),
+                "transaction_id": a.get("transaction_id"),
+                "merchant": a.get("merchant") or a.get("pattern_matched"),
+                "amount": a.get("amount_at_risk"),
+                "status": st,
+                "score": risk,
+                "ts": a.get("created_at"),
+            }
+        )
+    return {"events": events, "dashboard_mode": mode, "source": "transactions"}

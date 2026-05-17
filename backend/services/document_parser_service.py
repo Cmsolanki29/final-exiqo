@@ -1,16 +1,21 @@
 """
-Document Parser Service — extracts transactions from uploaded PDF / CSV / TXT files.
+Document Parser Service — extracts transactions from uploaded PDF / CSV / TXT / Excel / images.
 
-Uses OpenAI when OPENAI_API_KEY is set, otherwise Groq (same JSON extraction prompt).
-pdfplumber is optional — if not installed, PDFs return a helpful message.
+Monster pipeline: chunked LLM extraction (no transaction cap), validation, categorization.
+Legacy ``extract_text_from_bytes`` / ``classify_and_extract`` kept for compatibility.
 """
 from __future__ import annotations
 
 import io
 import json
+import logging
+import re
 from typing import Any
 
 from services.ai_llm_provider import get_chat_client, get_chat_model, preferred_provider
+from services.llm_router import get_llm_router
+
+logger = logging.getLogger(__name__)
 
 
 def _pdfplumber():
@@ -149,3 +154,158 @@ Document text (first 4000 chars):
             "summary": f"Parse failed: {str(e)[:100]}",
             "transactions": [],
         }
+
+
+# ── Monster LLM pipeline (chunked, no 30-txn cap) ─────────────────────────────
+
+
+def _safe_parse_json(raw: str) -> Any:
+    if not raw:
+        return None
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        parts = cleaned.split("```")
+        cleaned = parts[1] if len(parts) > 1 else cleaned
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:]
+    cleaned = cleaned.strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        m = re.search(r"\[[\s\S]*\]", cleaned)
+        if m:
+            try:
+                return json.loads(m.group(0))
+            except json.JSONDecodeError:
+                pass
+        m = re.search(r"\{[\s\S]*\}", cleaned)
+        if m:
+            try:
+                return json.loads(m.group(0))
+            except json.JSONDecodeError:
+                pass
+    return None
+
+
+def _normalize_deterministic_transactions(tables: list) -> list[dict[str, Any]]:
+    if not tables:
+        return []
+    first = tables[0]
+    if not isinstance(first, list) or not first:
+        return []
+    out: list[dict[str, Any]] = []
+    for row in first:
+        if not isinstance(row, dict):
+            continue
+        if row.get("date") and row.get("amount"):
+            out.append(row)
+            continue
+        if row.get("transaction_date") and row.get("amount"):
+            d = row["transaction_date"]
+            date_str = d.isoformat() if hasattr(d, "isoformat") else str(d)[:10]
+            out.append({
+                "date": date_str,
+                "description": row.get("description") or row.get("merchant") or "Unknown",
+                "amount": float(row["amount"]),
+                "type": "credit" if str(row.get("type", "")).upper() == "CREDIT" else "debit",
+                "category": row.get("category", "other"),
+            })
+    return out
+
+
+def classify_and_extract_monster(
+    text: str,
+    filename: str = "",
+    tables: list | None = None,
+) -> dict[str, Any]:
+    """Chunked extraction with validation and Indian category taxonomy."""
+    deterministic = _normalize_deterministic_transactions(tables or [])
+    if deterministic:
+        categorized = _categorize_transactions_llm(deterministic)
+        return {
+            "institution": "",
+            "document_type": "bank_statement",
+            "date_range": None,
+            "transactions": categorized,
+            "total_extracted": len(categorized),
+            "method": "deterministic",
+            "llm_model": None,
+        }
+
+    router = get_llm_router(required=True)
+    if router is None:
+        return {
+            "institution": "unknown",
+            "document_type": "other",
+            "date_range": None,
+            "transactions": [],
+            "total_extracted": 0,
+            "method": "none",
+            "llm_model": None,
+        }
+
+    doc_info = router.understand_document(text[:8000])
+    transactions = _extract_with_router(router, text, doc_info)
+
+    validation = router.validate_extraction(text, doc_info, transactions)
+    validation_issues: list[str] = []
+    if not validation.get("is_complete", True):
+        transactions, validation_issues = router.apply_validation_result(transactions, validation)
+
+    transactions = router.categorize_transactions(transactions)
+
+    return {
+        "institution": doc_info.get("institution_name", "unknown"),
+        "document_type": doc_info.get("document_type", "other"),
+        "date_range": doc_info.get("statement_period"),
+        "transactions": transactions,
+        "total_extracted": len(transactions),
+        "method": "chunked_llm",
+        "llm_model": router.usage_summary(),
+        "doc_info": doc_info,
+        "validation_issues": validation_issues,
+    }
+
+
+def _extract_with_router(
+    router: Any,
+    text: str,
+    doc_info: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Single-chunk or multi-chunk extraction via Groq-primary router."""
+    if len(text) <= 5000:
+        return router.extract_transactions_bulk(text, doc_info, 0, 1)
+
+    chunk_size = 4000
+    overlap = 500
+    chunks: list[str] = []
+    start = 0
+    while start < len(text):
+        end = min(start + chunk_size, len(text))
+        if end < len(text):
+            newline = text.rfind("\n", start + chunk_size - overlap, end)
+            if newline > start:
+                end = newline
+        chunks.append(text[start:end])
+        start = end - overlap if end < len(text) else end
+
+    all_transactions: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for i, chunk in enumerate(chunks):
+        chunk_txns = router.extract_transactions_bulk(chunk, doc_info, i, len(chunks))
+        for txn in chunk_txns:
+            key = f"{txn['date']}|{txn.get('amount', 0)}|{str(txn.get('description', ''))[:20]}"
+            if key not in seen_keys:
+                seen_keys.add(key)
+                all_transactions.append(txn)
+
+    all_transactions.sort(key=lambda x: x.get("date", ""))
+    return all_transactions
+
+
+def _categorize_transactions_llm(transactions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Legacy helper — delegates to LLM router."""
+    router = get_llm_router(required=False)
+    if router is None:
+        return transactions
+    return router.categorize_transactions(transactions)

@@ -24,6 +24,7 @@ import {
   getEmiReport,
   getFestivals,
   getFraudShieldAlerts,
+  getDashboardSummary,
   getHealthNarrative,
   getSubscriptions,
 } from "../../services/api";
@@ -237,6 +238,7 @@ export default function Dashboard({
 
   const [narration, setNarration] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date>(() => new Date());
+  const [statementSpend, setStatementSpend] = useState<number | null>(null);
 
   const row3Ref = useRef<HTMLElement | null>(null);
   const r3 = useInView(row3Ref, { once: true, amount: 0.2 });
@@ -275,10 +277,38 @@ export default function Dashboard({
   }, [loadIntel]);
 
   useEffect(() => {
-    const handler = () => loadIntel();
+    let cancelled = false;
+    (async () => {
+      try {
+        const dash = (await getDashboardSummary(userId)) as {
+          statement_period_spend?: number;
+        };
+        if (!cancelled) {
+          const sp = Number(dash?.statement_period_spend ?? 0);
+          setStatementSpend(sp > 0 ? sp : null);
+        }
+      } catch {
+        if (!cancelled) setStatementSpend(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    const handler = () => {
+      loadIntel();
+      getDashboardSummary(userId)
+        .then((dash: { statement_period_spend?: number }) => {
+          const sp = Number(dash?.statement_period_spend ?? 0);
+          setStatementSpend(sp > 0 ? sp : null);
+        })
+        .catch(() => setStatementSpend(null));
+    };
     window.addEventListener("dashboardModeChanged", handler);
     return () => window.removeEventListener("dashboardModeChanged", handler);
-  }, [loadIntel]);
+  }, [loadIntel, userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -339,10 +369,13 @@ export default function Dashboard({
   }, [trendList, month, year]);
 
   const monthSpend = useMemo(() => {
+    if (authUser?.dashboard_mode === "credit_card_only" && statementSpend != null) {
+      return statementSpend;
+    }
     const fromTrend = Number(trendRow?.expense || 0);
     if (fromTrend > 0) return fromTrend;
     return (Array.isArray(spending) ? spending : []).reduce((acc: number, row: { total_amount?: number }) => acc + Number(row.total_amount || 0), 0);
-  }, [trendRow, spending]);
+  }, [trendRow, spending, authUser?.dashboard_mode, statementSpend]);
 
   const monthIncome = useMemo(() => Number(trendRow?.income || 0), [trendRow]);
 
@@ -703,10 +736,14 @@ export default function Dashboard({
             />
             <KPICard
               variant="rose"
-              label="This Month Spend"
+              label={authUser?.dashboard_mode === "credit_card_only" ? "Card Statement Spend" : "This Month Spend"}
               value={monthSpend}
               formatValue={(n) => apiUtils.formatINR(n)}
-              subtitle={`${month}/${year}`}
+              subtitle={
+                authUser?.dashboard_mode === "credit_card_only"
+                  ? "Total on uploaded card statement(s)"
+                  : `${month}/${year}`
+              }
               icon={Receipt}
               trendPct={spendDeltaPct}
               sparkline={sparkExpense}
@@ -727,7 +764,17 @@ export default function Dashboard({
         </div>
 
         <div className="space-y-4 xl:col-span-5">
-          <HealthScoreGauge healthData={health ?? {}} narration={healthNarrationLine} variant="hero" />
+          <HealthScoreGauge
+            userId={userId}
+            month={month}
+            year={year}
+            healthData={health ?? {}}
+            narration={healthNarrationLine}
+            variant="hero"
+            showRecommendations={false}
+            showNarrative
+            showHistory={false}
+          />
           {Object.keys(healthComp).length > 0 ? (
             <PremiumCard variant="purple" interactive={false} padding="compact">
               <div className="grid grid-cols-2 gap-4 md:grid-cols-4">

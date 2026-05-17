@@ -84,31 +84,35 @@ def _append_card_statement_burden(
     cur.execute(
         f"""
         SELECT cs.institution_name, cs.source_type,
-               COALESCE(SUM(t.amount), 0)::float AS month_spend
+               COALESCE(SUM(t.amount), 0)::float AS statement_spend,
+               MIN(t.transaction_date) AS period_start,
+               MAX(t.transaction_date) AS period_end
         FROM transactions t
         JOIN connected_sources cs ON cs.id = t.connected_source_id AND cs.user_id = t.user_id
         WHERE t.user_id = %s
-          AND t.type = 'DEBIT'
+          AND UPPER(t.type) = 'DEBIT'
           AND cs.source_type = 'credit_card'
-          AND t.transaction_date >= DATE_TRUNC('month', CURRENT_DATE)
           AND ({scope})
         GROUP BY cs.id, cs.institution_name, cs.source_type
-        HAVING COALESCE(SUM(t.amount), 0) >= 1000
-        ORDER BY month_spend DESC;
+        HAVING COALESCE(SUM(t.amount), 0) >= 100
+        ORDER BY statement_spend DESC;
         """,
         (user_id,),
     )
     existing_sources = {e.get("source_name", "").lower() for e in emi_entries}
-    for institution, source_type, month_spend in cur.fetchall():
+    for institution, source_type, statement_spend, period_start, period_end in cur.fetchall():
         label = _source_label(institution, source_type)
         if label.lower() in existing_sources:
             continue
-        spend = float(month_spend or 0)
-        if spend < 1000:
+        spend = float(statement_spend or 0)
+        if spend < 100:
             continue
+        period_lbl = ""
+        if period_start and period_end:
+            period_lbl = f" ({period_start} – {period_end})"
         emi_entries.append(
             {
-                "merchant": f"{institution} — card spend (this month)",
+                "merchant": f"{institution} — card statement total{period_lbl}",
                 "amount": round(spend, 2),
                 "payment_date": 1,
                 "category": "credit_card",

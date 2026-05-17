@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from db import get_db
 from models.schemas import HealthScoreResponse
+from services.openai_service import invalidate_insight_cache
 from services.scorer import calculate_health_score
 
 router = APIRouter(prefix="/health-score", tags=["health-score"])
@@ -19,13 +20,20 @@ def get_health_score(
     user_id: int,
     month: Optional[int] = Query(None, ge=1, le=12),
     year: Optional[int] = Query(None, ge=2000, le=2100),
+    scope: Optional[str] = Query(
+        None,
+        description="bank_only | credit_card_only | merged | all (defaults to user dashboard_mode)",
+    ),
+    force: bool = Query(False, description="Invalidate insight cache before recalculating"),
     conn=Depends(get_db),
 ):
     today = date.today()
     m = month or today.month
     y = year or today.year
     try:
-        return calculate_health_score(conn, user_id, m, y)
+        if force:
+            invalidate_insight_cache(conn, user_id, m, y)
+        return calculate_health_score(conn, user_id, m, y, scope=scope)
     except Exception as e:
         raise HTTPException(500, str(e)) from e
 

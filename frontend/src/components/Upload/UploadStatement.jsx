@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { getApiBaseUrl } from "../../services/apiBaseUrl";
+import UploadResultSummary from "./UploadResultSummary";
+import { UPLOAD_ACCEPT, UPLOAD_HINT, uploadFinancialDocument } from "../../services/documentUpload";
 
 const SOURCE_TYPES = [
   { id: "credit_card", label: "Credit Card", icon: "💳" },
@@ -64,26 +66,16 @@ export default function UploadStatement({ userId, initialSourceType }) {
     setResult(null);
     setError(null);
 
-    const form = new FormData();
-    form.append("file", file);
-    form.append("user_id", userId);
-    form.append("source_type", sourceType);
-    form.append("institution_name", bankName.trim());
-    if (accountNo.trim()) form.append("account_number_masked", accountNo.trim());
-
     try {
-      const res = await fetch(`${API}/documents/upload`, { method: "POST", body: form });
-      let data;
-      try {
-        data = await res.json();
-      } catch {
-        throw new Error("Server returned a non-JSON response. Is the API running on the proxy port?");
-      }
-      if (!res.ok) throw new Error(data.detail || data.message || "Upload failed");
-      if (data && data.success === false) {
-        const msg = data.error || data.detail || "Upload saved but extraction failed.";
-        throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
-      }
+      const data = await uploadFinancialDocument({
+        file,
+        userId,
+        sourceType,
+        institutionName: bankName,
+        accountNumberMasked: accountNo,
+        addedVia: "settings_upload",
+        apiBase: API,
+      });
       setResult(data);
       setFile(null);
       if (fileRef.current) fileRef.current.value = "";
@@ -192,11 +184,11 @@ export default function UploadStatement({ userId, initialSourceType }) {
             <input
               ref={fileRef}
               type="file"
-              accept=".pdf,.csv,.xlsx,.xls,.txt"
+              accept={UPLOAD_ACCEPT}
               onChange={(e) => setFile(e.target.files[0] || null)}
               className="w-full cursor-pointer rounded-xl border border-dashed border-white/20 bg-white/[0.04] px-4 py-3 text-sm text-white/70 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-600/40 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-white hover:border-violet-500/50"
             />
-            <p className="mt-1 text-xs text-white/30">Supports PDF, CSV, Excel — max 20 MB</p>
+            <p className="mt-1 text-xs text-white/30">{UPLOAD_HINT}</p>
             {file && (
               <p className="mt-1 text-xs text-emerald-400">
                 ✓ {file.name} ({(file.size / 1024).toFixed(1)} KB)
@@ -227,7 +219,7 @@ export default function UploadStatement({ userId, initialSourceType }) {
             <p className="text-center text-xs text-white/35">
               {!bankName.trim()
                 ? "Enter a card or bank name, then choose a PDF/CSV file to enable upload."
-                : "Choose a file (PDF, CSV, or Excel) to enable upload — max 20 MB."}
+                : "Choose a file (PDF, CSV, Excel, or image) to enable upload — max 20 MB."}
             </p>
           ) : null}
           {error && (
@@ -238,31 +230,10 @@ export default function UploadStatement({ userId, initialSourceType }) {
 
           {/* Success result */}
           {result?.success && (
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-2">
-              <p className="font-semibold text-emerald-300">
-                ✓ Upload Complete — {result.institution || "Document"} processed
-              </p>
-              {result.date_range && (
-                <p className="text-xs text-white/50">Period: {result.date_range}</p>
-              )}
-              <div className="grid grid-cols-3 gap-3 mt-3">
-                {[
-                  { label: "Extracted", value: result.extracted, color: "text-white" },
-                  { label: "Imported", value: result.imported, color: "text-emerald-300" },
-                  { label: "Duplicates Skipped", value: result.duplicates, color: "text-amber-300" },
-                ].map((s) => (
-                  <div key={s.label} className="rounded-xl border border-white/10 bg-white/[0.04] p-3 text-center">
-                    <p className={`text-xl font-bold ${s.color}`}>{s.value ?? 0}</p>
-                    <p className="text-[11px] text-white/50">{s.label}</p>
-                  </div>
-                ))}
-              </div>
-              {result.internal_transfers_skipped > 0 && (
-                <p className="text-xs text-white/40">
-                  {result.internal_transfers_skipped} internal transfer(s) excluded from import.
-                </p>
-              )}
-            </div>
+            <UploadResultSummary
+              result={result}
+              onViewTransactions={() => setTab("history")}
+            />
           )}
         </div>
       )}

@@ -255,7 +255,7 @@ const AlertsCenter = ({ userId }) => {
   // Fetch enriched queue (has merchant, amount, reason)
   const fetchQueue = useCallback(() => {
     setQLoading(true);
-    getEnrichedReviewQueue("pending", 20)
+    getEnrichedReviewQueue("pending", 20, userId)
       .then((res) => {
         const items = res?.items ?? (Array.isArray(res) ? res : []);
         setEnrichedQueue(items);
@@ -263,14 +263,14 @@ const AlertsCenter = ({ userId }) => {
       })
       .catch(() => setQError(true))
       .finally(() => setQLoading(false));
-  }, []);
+  }, [userId]);
 
   React.useEffect(() => { fetchQueue(); }, [fetchQueue]);
 
-  const usingDemo = qError || (!qLoading && (!enrichedQueue || enrichedQueue.length === 0));
+  const usingDemo = false;
 
   const queue = useMemo(() => {
-    const base = usingDemo ? DEMO_QUEUE : enrichedQueue;
+    const base = enrichedQueue || [];
     return (base || []).map((item) =>
       localDecisions[item.id] ? { ...item, status: localDecisions[item.id] } : item
     );
@@ -412,22 +412,14 @@ const AlertsCenter = ({ userId }) => {
         </button>
       </motion.div>
 
-      {/* Demo/real data banner */}
-      {usingDemo ? (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs"
-        >
-          <AlertTriangle size={14} />
-          Showing demo queue — real flagged transactions from your account will appear here automatically.
-        </motion.div>
-      ) : (
+      {!qLoading && queue.length > 0 ? (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs"
         >
           <CheckCircle size={14} />
-          Showing {enrichedQueue?.length} real flagged transactions — sorted by risk score. Use Confirm / Dismiss to label them and improve the model.
+          Showing {queue.length} flagged transaction(s) from your current dashboard view.
         </motion.div>
-      )}
+      ) : null}
 
       {/* Feedback stats banner */}
       {stats && (

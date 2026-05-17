@@ -1,32 +1,108 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { getHealthScore, getQuickSummary } from "../../services/api";
+import { useAuth } from "../../context/AuthContext";
+import { getHealthScore } from "../../services/api";
 import { PageHeader } from "../Dashboard/shared/PageHeader";
 import { HeroKpiTile } from "../Dashboard/shared/HeroKpiTile";
 import AIInsightsPanel from "../Insights/AIInsightsPanel";
 import HealthScoreGauge from "../Charts/HealthScoreGauge";
-import { GlassCard } from "../intro/GlassCard";
 import SmartSpendChatbot from "../AIChat/SmartSpendChatbot";
 
 const ACCENT = "#A78BFA";
 
+function resolveDashboardMode(user, event) {
+  const fromEvent = event?.detail?.mode;
+  if (fromEvent && String(fromEvent).trim()) return String(fromEvent).trim();
+  return user?.dashboard_mode || "merged";
+}
+
 /** `setActiveTab` — same tab switcher as Sidebar (CRA has no react-router-dom). */
 export default function InsightsTab({ userId, month, year, setActiveTab }) {
-  // Always land at the top of the page when this tab is entered.
+  const { user } = useAuth();
+  const [dashboardMode, setDashboardMode] = useState(() => user?.dashboard_mode || "merged");
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
   }, []);
 
+  useEffect(() => {
+    setDashboardMode(user?.dashboard_mode || "merged");
+  }, [user?.dashboard_mode]);
+
+  useEffect(() => {
+    const handler = (e) => setDashboardMode(resolveDashboardMode(user, e));
+    window.addEventListener("dashboardModeChanged", handler);
+    return () => window.removeEventListener("dashboardModeChanged", handler);
+  }, [user]);
+
   const [health, setHealth] = useState(null);
   const [healthLoading, setHealthLoading] = useState(true);
   const [healthError, setHealthError] = useState(false);
-  const [summary, setSummary] = useState(null);
-  const [summaryLoading, setSummaryLoading] = useState(true);
+
+  const fetchHealth = useCallback(() => {
+    setHealthLoading(true);
+    setHealthError(false);
+    return getHealthScore(userId, month, year, dashboardMode)
+      .then((h) => setHealth(h))
+      .catch(() => setHealthError(true))
+      .finally(() => setHealthLoading(false));
+  }, [userId, month, year, dashboardMode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setHealthLoading(true);
+    setHealthError(false);
+    getHealthScore(userId, month, year, dashboardMode)
+      .then((h) => {
+        if (!cancelled) setHealth(h);
+      })
+      .catch(() => {
+        if (!cancelled) setHealthError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setHealthLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, month, year, dashboardMode]);
+
+  useEffect(() => {
+    const handler = () => fetchHealth();
+    window.addEventListener("dashboardModeChanged", handler);
+    return () => window.removeEventListener("dashboardModeChanged", handler);
+  }, [fetchHealth]);
+
+  const savingsRate =
+    health?.savings_rate ?? health?.components?.savings_rate_pct ?? null;
+  const scoreReady = !healthLoading && !healthError && health != null;
+  const scoreDisplay = scoreReady && health.score != null ? `${health.score}/100` : "—";
 
   const handleChatNavigate = useCallback(
-    (path) => {
-      const base = String(path || "").split("?")[0].toLowerCase();
+    (route) => {
+      const tabById = {
+        emi: "emi",
+        "emi-tracker": "emi",
+        subscriptions: "subscriptions",
+        "subscriptions-ai": "subscriptions",
+        fraud: "fraud",
+        fraudshield: "fraud",
+        transactions: "transactions",
+        dashboard: "dashboard",
+        festival: "festival",
+        festivals: "festival",
+        "dark-patterns": "dark-patterns",
+        purchase: "purchase",
+        purchases: "purchase",
+        insights: "insights",
+        health: "insights",
+        "trip-planner": "trip-planner",
+      };
+      if (route?.tab && tabById[route.tab] && typeof setActiveTab === "function") {
+        setActiveTab(tabById[route.tab]);
+        return;
+      }
+      const base = String(route?.path || route || "").split("?")[0].toLowerCase();
       const tabByPath = {
-        // explicit paths from backend system prompt
         "/emi-tracker": "emi",
         "/emi": "emi",
         "/subscriptions": "subscriptions",
@@ -42,74 +118,13 @@ export default function InsightsTab({ userId, month, year, setActiveTab }) {
         "/purchase": "purchase",
         "/insights": "insights",
         "/health": "insights",
+        "/trip-planner": "trip-planner",
       };
       const tab = tabByPath[base];
       if (tab && typeof setActiveTab === "function") setActiveTab(tab);
     },
     [setActiveTab]
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    setHealthLoading(true);
-    setHealthError(false);
-    getHealthScore(userId, month, year)
-      .then((h) => {
-        if (!cancelled) setHealth(h);
-      })
-      .catch(() => {
-        if (!cancelled) setHealthError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setHealthLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [userId, month, year]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setSummaryLoading(true);
-    getQuickSummary(userId, { month, year })
-      .then((s) => {
-        if (!cancelled) setSummary(s);
-      })
-      .catch(() => {
-        if (!cancelled) setSummary(null);
-      })
-      .finally(() => {
-        if (!cancelled) setSummaryLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [userId, month, year]);
-
-  const refetchAll = useCallback(() => {
-    setHealthLoading(true);
-    setHealthError(false);
-    getHealthScore(userId, month, year)
-      .then((h) => setHealth(h))
-      .catch(() => setHealthError(true))
-      .finally(() => setHealthLoading(false));
-    setSummaryLoading(true);
-    getQuickSummary(userId, { month, year })
-      .then((s) => setSummary(s))
-      .catch(() => setSummary(null))
-      .finally(() => setSummaryLoading(false));
-  }, [userId, month, year]);
-
-  useEffect(() => {
-    const handler = () => refetchAll();
-    window.addEventListener("dashboardModeChanged", handler);
-    return () => window.removeEventListener("dashboardModeChanged", handler);
-  }, [refetchAll]);
-
-  const savingsRate =
-    summary?.savings_rate ?? health?.savings_rate ?? health?.components?.savings_rate_pct ?? null;
-  const scoreReady = !healthLoading && !healthError && health != null;
-  const scoreDisplay = scoreReady && health.score != null ? `${health.score}/100` : "—";
 
   return (
     <div>
@@ -123,13 +138,13 @@ export default function InsightsTab({ userId, month, year, setActiveTab }) {
             label="Health score"
             value={scoreDisplay}
             caption={
-              summaryLoading || healthLoading
+              healthLoading
                 ? undefined
                 : savingsRate != null
-                  ? `${savingsRate.toFixed(1)}% savings rate this month`
+                  ? `${Number(savingsRate).toFixed(1)}% savings rate this month`
                   : undefined
             }
-            captionLoading={summaryLoading || healthLoading}
+            captionLoading={healthLoading}
             delta={savingsRate != null ? savingsRate - 10 : null}
             accentHex={ACCENT}
             loading={healthLoading}
@@ -138,20 +153,25 @@ export default function InsightsTab({ userId, month, year, setActiveTab }) {
       />
 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[55%_minmax(0,1fr)]">
-        <AIInsightsPanel userId={userId} month={month} year={year} presentation="default" />
+        <AIInsightsPanel
+          userId={userId}
+          month={month}
+          year={year}
+          scope={dashboardMode}
+          presentation="default"
+        />
         <HealthScoreGauge
+          userId={userId}
+          month={month}
+          year={year}
           healthData={health || {}}
           variant="default"
           loading={healthLoading}
           loadError={healthError}
-          onRetry={() => {
-            setHealthLoading(true);
-            setHealthError(false);
-            getHealthScore(userId, month, year)
-              .then(setHealth)
-              .catch(() => setHealthError(true))
-              .finally(() => setHealthLoading(false));
-          }}
+          showRecommendations
+          showNarrative
+          showHistory
+          onRetry={fetchHealth}
         />
       </div>
 
@@ -163,7 +183,12 @@ export default function InsightsTab({ userId, month, year, setActiveTab }) {
             Grounded in your real transaction data. Ask in any language.
           </p>
         </div>
-        <SmartSpendChatbot onNavigate={handleChatNavigate} />
+        <SmartSpendChatbot
+          onNavigate={handleChatNavigate}
+          month={month}
+          year={year}
+          dashboardScope={dashboardMode}
+        />
       </div>
     </div>
   );

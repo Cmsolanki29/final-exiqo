@@ -1,8 +1,96 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowDownRight, ArrowUpRight, Minus, RefreshCw } from "lucide-react";
+import { getHealthHistory, getHealthNarrative } from "../../services/api";
 import { GlassCard } from "../intro/GlassCard";
 import PremiumCard from "../Dashboard/shared/PremiumCard";
+
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const WEAKEST_DOT_COLOR = "#A78BFA";
+
+function weakestDotColor(components) {
+  const comp = components || {};
+  const items = [
+    { points: Number(comp.savings_points ?? 0), max: 30, color: "#22c55e" },
+    { points: Number(comp.anomaly_points ?? 0), max: 20, color: "#ef4444" },
+    { points: Number(comp.expense_points ?? 0), max: 25, color: "#f59e0b" },
+    { points: Number(comp.consistency_points ?? 0), max: 15, color: "#3b82f6" },
+    { points: Number(comp.diversity_points ?? 0), max: 10, color: "#a855f7" },
+  ];
+  const weakest = items.reduce((min, x) => {
+    const ratio = x.points / Math.max(x.max, 1);
+    const minRatio = min.points / Math.max(min.max, 1);
+    return ratio < minRatio ? x : min;
+  }, items[0]);
+  return weakest?.color || WEAKEST_DOT_COLOR;
+}
+
+function narrativeFromResponse(res) {
+  const n = res?.narrative;
+  if (typeof n === "string" && n.trim()) return n.trim();
+  if (n && typeof n === "object") {
+    const parts = [n.headline, n.score_explanation, n.motivational_message].filter(Boolean);
+    if (parts.length) return parts.join(" ").slice(0, 320);
+  }
+  return null;
+}
+
+function scoreBarColor(score) {
+  if (score >= 75) return "#22c55e";
+  if (score >= 50) return "#f59e0b";
+  return "#ef4444";
+}
+
+function HistorySparkline({ history, loading }) {
+  const rows = Array.isArray(history) ? history.slice(-12) : [];
+  if (loading) {
+    return <div className="mt-4 h-16 animate-pulse rounded-lg bg-white/[0.06]" />;
+  }
+  if (!rows.length) return null;
+
+  const barW = 14;
+  const gap = 6;
+  const chartH = 48;
+  const svgW = rows.length * (barW + gap) - gap;
+
+  return (
+    <div className="mt-4 border-t border-white/[0.06] pt-4">
+      <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-gray-500">12-month trend</p>
+      <svg viewBox={`0 0 ${svgW} ${chartH + 18}`} width="100%" height={chartH + 18} aria-hidden>
+        {rows.map((row, i) => {
+          const score = Math.max(0, Math.min(100, Number(row.health_score ?? 0)));
+          const h = (score / 100) * chartH;
+          const x = i * (barW + gap);
+          const y = chartH - h;
+          const label = MONTH_SHORT[(Number(row.month) || 1) - 1] || "";
+          return (
+            <g key={`${row.year}-${row.month}-${i}`}>
+              <rect
+                x={x}
+                y={y}
+                width={barW}
+                height={Math.max(h, 2)}
+                rx={2}
+                fill={scoreBarColor(score)}
+                opacity={0.9}
+              />
+              <text
+                x={x + barW / 2}
+                y={chartH + 12}
+                textAnchor="middle"
+                fontSize="8"
+                fill="rgba(255,255,255,0.4)"
+              >
+                {label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
 
 // ── Grade palette ──────────────────────────────────────────────────────────
 const gradeColor = {
@@ -184,21 +272,33 @@ function SvgGauge({ displayScore, score, grade, reduce }) {
 // ── Main component ─────────────────────────────────────────────────────────
 /**
  * @param {{
+ *   userId?: number;
+ *   month?: number;
+ *   year?: number;
  *   healthData?: Record<string, unknown>;
  *   narration?: string;
  *   variant?: "default" | "hero";
  *   loading?: boolean;
  *   loadError?: boolean;
  *   onRetry?: () => void;
+ *   showRecommendations?: boolean;
+ *   showNarrative?: boolean;
+ *   showHistory?: boolean;
  * }} props
  */
 const HealthScoreGauge = ({
+  userId,
+  month,
+  year,
   healthData = {},
   narration,
   variant = "default",
   loading = false,
   loadError = false,
   onRetry,
+  showRecommendations = false,
+  showNarrative = false,
+  showHistory = false,
 }) => {
   const reduce = useReducedMotion();
   const rawScore = healthData.score;
@@ -208,8 +308,64 @@ const HealthScoreGauge = ({
   const grade = healthData.grade || "F";
   const comp = healthData.components || {};
   const trend = healthData.trend || "STABLE";
+  const recommendations = Array.isArray(healthData.recommendations) ? healthData.recommendations : [];
+  const recDotColor = useMemo(() => weakestDotColor(comp), [comp]);
+
+  const [fetchedNarrative, setFetchedNarrative] = useState(null);
+  const [narrativeLoading, setNarrativeLoading] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const targetScore = loadError || loading ? 0 : Number(rawScore || 0);
+
+  useEffect(() => {
+    if (!showNarrative || narration || !userId || !month || !year) {
+      setFetchedNarrative(null);
+      return;
+    }
+    let cancelled = false;
+    setNarrativeLoading(true);
+    getHealthNarrative(userId, month, year)
+      .then((res) => {
+        if (!cancelled) setFetchedNarrative(narrativeFromResponse(res));
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedNarrative(null);
+      })
+      .finally(() => {
+        if (!cancelled) setNarrativeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showNarrative, narration, userId, month, year]);
+
+  useEffect(() => {
+    if (!showHistory || !userId) {
+      setHistory([]);
+      return;
+    }
+    let cancelled = false;
+    setHistoryLoading(true);
+    getHealthHistory(userId)
+      .then((rows) => {
+        if (!cancelled) setHistory(Array.isArray(rows) ? rows : []);
+      })
+      .catch(() => {
+        if (!cancelled) setHistory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showHistory, userId]);
+
+  const narrativeLine =
+    narration ||
+    fetchedNarrative ||
+    (showNarrative && !narrativeLoading && recommendations[0] ? String(recommendations[0]) : null);
 
   // Animate score from 0 → targetScore using requestAnimationFrame
   useEffect(() => {
@@ -318,8 +474,10 @@ const HealthScoreGauge = ({
           <TrendBadge trend={trend} />
         </div>
         <SvgGauge displayScore={displayScore} score={targetScore} grade={grade} reduce={reduce} />
-        {narration && (
-          <p className="mt-2 text-center text-sm leading-relaxed text-white/70 line-clamp-4">{narration}</p>
+        {(narration || (showNarrative && narrativeLine)) && (
+          <p className="mt-2 text-center text-sm leading-relaxed text-white/70 line-clamp-4">
+            {narration || narrativeLine}
+          </p>
         )}
       </PremiumCard>
     );
@@ -347,6 +505,30 @@ const HealthScoreGauge = ({
           <Breakdown key={label} label={label} value={value} max={max} delayMs={delay} />
         ))}
       </div>
+
+      {showNarrative && narrativeLine ? (
+        <p className="mt-3 text-[13px] leading-relaxed text-white/45">{narrativeLine}</p>
+      ) : null}
+      {showNarrative && narrativeLoading && !narration ? (
+        <p className="mt-3 h-4 w-4/5 animate-pulse rounded bg-white/[0.06]" />
+      ) : null}
+
+      {showRecommendations && recommendations.length > 0 ? (
+        <ul className="mt-4 space-y-2 border-t border-white/[0.06] pt-3">
+          {recommendations.map((text, i) => (
+            <li key={i} className="flex items-start gap-2 text-xs leading-relaxed text-white/75">
+              <span
+                className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ backgroundColor: recDotColor }}
+                aria-hidden
+              />
+              <span>{text}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {showHistory ? <HistorySparkline history={history} loading={historyLoading} /> : null}
     </GlassCard>
   );
 };

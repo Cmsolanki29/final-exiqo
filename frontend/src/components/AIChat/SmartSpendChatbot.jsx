@@ -15,6 +15,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TOKEN_ACCESS_KEY } from "../../services/api";
 
+const MONTH_LABELS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+const DASHBOARD_MODE_LABELS = {
+  merged: "All accounts",
+  bank_only: "Bank only",
+  credit_card_only: "Card only",
+};
+
 // ── Response parser ────────────────────────────────────────────────────────
 function parseMessage(raw) {
   const routes = [];
@@ -131,6 +142,17 @@ function UserBubble({ content, timestamp }) {
 }
 
 // ── AI bubble ─────────────────────────────────────────────────────────────
+function SystemNoticeBubble({ content, timestamp }) {
+  return (
+    <div className="mb-3 flex justify-center" style={{ animation: "ss-fade-up 0.22s ease-out both" }}>
+      <div className="max-w-[92%] rounded-xl border border-amber-500/35 bg-amber-500/12 px-4 py-3 text-xs leading-relaxed text-amber-100">
+        {content}
+        <span className="mt-1 block text-[10px] text-amber-200/50">{fmt(timestamp)}</span>
+      </div>
+    </div>
+  );
+}
+
 function AiBubble({ content, onChipClick, onNavigateRoute, isStreaming, timestamp }) {
   const { clean, routes, chips } = parseMessage(content);
 
@@ -175,7 +197,7 @@ function AiBubble({ content, onChipClick, onNavigateRoute, isStreaming, timestam
               <button
                 key={i}
                 type="button"
-                onClick={() => onNavigateRoute?.(r.path)}
+                onClick={() => onNavigateRoute?.(r)}
                 className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold text-violet-100 transition-all hover:-translate-y-0.5 active:scale-95"
                 style={{
                   background: "linear-gradient(135deg,rgba(109,40,217,0.25),rgba(6,182,212,0.15))",
@@ -252,16 +274,28 @@ const STARTER_CHIPS = [
 ];
 
 // ── Main component ─────────────────────────────────────────────────────────
-/** @param {(path: string) => void} [onNavigate] — maps ROUTE paths to app tabs */
-export default function SmartSpendChatbot({ onNavigate }) {
+/**
+ * @param {(route: { path?: string, tab?: string, label?: string }) => void} [onNavigate]
+ * @param {number} [month] — TopBar selected month (1–12)
+ * @param {number} [year] — TopBar selected year
+ * @param {string} [dashboardScope] — merged | bank_only | credit_card_only
+ */
+export default function SmartSpendChatbot({ onNavigate, month, year, dashboardScope = "merged" }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [llmOnline, setLlmOnline] = useState(true);
   const [uploadBanner, setUploadBanner] = useState(null);
+  const [uploadedDocMeta, setUploadedDocMeta] = useState(null);
   const bottomRef = useRef(null);
   const fileRef = useRef(null);
+  const hasUserMessagedRef = useRef(false);
+
+  const contextMonth = Number(month) || new Date().getMonth() + 1;
+  const contextYear = Number(year) || new Date().getFullYear();
+  const monthLabel = MONTH_LABELS[contextMonth - 1] || MONTH_LABELS[0];
+  const dashboardModeLabel = DASHBOARD_MODE_LABELS[dashboardScope] || dashboardScope;
 
   const token = () => localStorage.getItem(TOKEN_ACCESS_KEY) || "";
   const authHeaders = () => ({ Authorization: `Bearer ${token()}` });
@@ -293,12 +327,13 @@ export default function SmartSpendChatbot({ onNavigate }) {
 
   // Core send / stream
   const doSend = useCallback(
-    async (text, sid) => {
+    async (text, sid, { isFirst = false } = {}) => {
       if (!text.trim()) return;
       setLoading(true);
 
       const aiId = `ai-${Date.now()}`;
       const ts = Date.now();
+      const isFirstMessage = isFirst || !hasUserMessagedRef.current;
 
       setMessages((prev) => [
         ...prev,
@@ -313,7 +348,15 @@ export default function SmartSpendChatbot({ onNavigate }) {
           res = await fetch("/api/ai/chat", {
             method: "POST",
             headers: { ...authHeaders(), "Content-Type": "application/json" },
-            body: JSON.stringify({ message: text, session_id: sid || sessionId }),
+            body: JSON.stringify({
+              message: text,
+              session_id: sid || sessionId,
+              is_first_message: isFirstMessage,
+              dashboard_scope: dashboardScope,
+              context_month: contextMonth,
+              context_year: contextYear,
+              uploaded_doc_metadata: uploadedDocMeta,
+            }),
             signal: ctrl.signal,
           });
         } finally {
@@ -373,11 +416,11 @@ export default function SmartSpendChatbot({ onNavigate }) {
           )
         );
       } finally {
+        hasUserMessagedRef.current = true;
         setLoading(false);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessionId]
+    [sessionId, dashboardScope, contextMonth, contextYear, uploadedDocMeta]
   );
 
   const handleSend = () => {
@@ -408,18 +451,37 @@ export default function SmartSpendChatbot({ onNavigate }) {
       if (!res.ok) throw new Error(`Upload ${res.status}`);
       const result = await res.json();
       setUploadBanner({ state: "done", ...result });
-      const inserted = Number(result.ledger_inserted ?? 0);
-      const ledgerNote =
-        inserted > 0
-          ? `${inserted} line(s) were saved to my transaction history (dashboard / anomalies will use them). `
-          : result.ledger_merge_error
-            ? `Note: could not save all lines to history (${String(result.ledger_merge_error).slice(0, 120)}). `
-            : "";
+      if (result.uploaded_doc_metadata) {
+        setUploadedDocMeta(result.uploaded_doc_metadata);
+      }
+      const noticeParts = [];
+      if (result.warning_message) noticeParts.push(result.warning_message);
+      if (result.nudge_message) noticeParts.push(result.nudge_message);
+      const hp = result.health_preview;
+      if (hp?.transaction_count) {
+        noticeParts.push(
+          `Quick snapshot: ${hp.transaction_count} transactions · debits ₹${Number(hp.total_debits || 0).toLocaleString("en-IN")} · credits ₹${Number(hp.total_credits || 0).toLocaleString("en-IN")} · net ₹${Number(hp.net || 0).toLocaleString("en-IN")}.`
+        );
+      }
+      if (result.session_only) {
+        noticeParts.push("These figures are for this chat session only — connect the account to save them permanently.");
+      }
+      if (noticeParts.length) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `sys-${Date.now()}`,
+            role: "system",
+            content: noticeParts.join("\n\n"),
+            timestamp: Date.now(),
+          },
+        ]);
+      }
       const prompt =
-        `I uploaded a document from ${result.institution || "a financial institution"}: ${file.name}. ` +
-        ledgerNote +
-        `It appears to be a ${result.document_type || "financial document"} with ${result.transaction_count || 0} transactions in the file. ` +
-        `${result.date_range ? `Date range: ${result.date_range}. ` : ""}What should I review first?`;
+        `I uploaded a document from ${result.institution || result.doc_info?.institution_name || "a financial institution"}: ${file.name}. ` +
+        `It appears to be a ${result.document_type || result.doc_info?.document_type || "financial document"} with ${result.transaction_count || 0} transactions. ` +
+        `${result.date_range ? `Period: ${result.date_range}. ` : ""}` +
+        `Please summarize what stands out and what I should review first.`;
       setMessages((prev) => [...prev, { id: `u-doc-${Date.now()}`, role: "user", content: prompt, timestamp: Date.now() }]);
       await doSend(prompt, sessionId);
     } catch {
@@ -476,6 +538,8 @@ export default function SmartSpendChatbot({ onNavigate }) {
             onClick={async () => {
               try { await fetch(`/api/ai/session/${sessionId}`, { method: "DELETE", headers: authHeaders() }); } catch { /* ignore */ }
               setMessages([]);
+              setUploadedDocMeta(null);
+              hasUserMessagedRef.current = false;
               try {
                 const res = await fetch("/api/ai/session", { headers: authHeaders() });
                 const data = await res.json();
@@ -487,6 +551,17 @@ export default function SmartSpendChatbot({ onNavigate }) {
             Clear Chat
           </button>
         )}
+      </div>
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--color-text-tertiary, rgba(255,255,255,0.35))",
+          textAlign: "center",
+          padding: "4px 0",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+        }}
+      >
+        Answering for {monthLabel} {contextYear} · {dashboardModeLabel}
       </div>
 
       {/* ── Messages ── */}
@@ -524,10 +599,14 @@ export default function SmartSpendChatbot({ onNavigate }) {
           </div>
         )}
 
-        {messages.map((msg) =>
-          msg.role === "user" ? (
-            <UserBubble key={msg.id} content={msg.content} timestamp={msg.timestamp ?? Date.now()} />
-          ) : (
+        {messages.map((msg) => {
+          if (msg.role === "user") {
+            return <UserBubble key={msg.id} content={msg.content} timestamp={msg.timestamp ?? Date.now()} />;
+          }
+          if (msg.role === "system") {
+            return <SystemNoticeBubble key={msg.id} content={msg.content} timestamp={msg.timestamp ?? Date.now()} />;
+          }
+          return (
             <AiBubble
               key={msg.id}
               content={msg.content}
@@ -536,8 +615,8 @@ export default function SmartSpendChatbot({ onNavigate }) {
               onNavigateRoute={handleNavigateRoute}
               timestamp={msg.timestamp ?? Date.now()}
             />
-          )
-        )}
+          );
+        })}
         {loading && messages[messages.length - 1]?.role !== "assistant" && <TypingIndicator />}
         <div ref={bottomRef} />
       </div>

@@ -1,16 +1,20 @@
 """
-PDFParserAgent — wraps document_parser_service and integrates with
-connected_sources + uploaded_documents for structured import.
-Uses OpenAI (or Groq fallback) via ai_llm_provider.
+PDFParserAgent — monster extraction pipeline for uploaded statements.
+
+Stages: extract_with_retry → classify_and_extract_monster → validate → dedupe → insert.
 """
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime
 from typing import Any
 
-from services.document_parser_service import extract_text_from_bytes, classify_and_extract
+from services.document_parser_service import classify_and_extract_monster
+from services.monster_extraction import extract_with_retry, update_extraction_llm_result
+
+logger = logging.getLogger(__name__)
 
 _CREDIT_KEYWORDS = {"credit", "cr", "deposit", "salary", "refund", "cashback", "received", "reversal"}
 _TRANSFER_KEYWORDS = {
@@ -41,21 +45,56 @@ class PDFParserAgent:
         user_id: int,
         document_id: int,
         connected_source_id: int | None,
-        conn,                           # psycopg2 connection (from get_db)
+        conn,
     ) -> dict[str, Any]:
-        """Full pipeline: parse → validate → deduplicate → insert."""
-
         self._set_status(conn, document_id, "processing")
         conn.commit()
 
-        text = extract_text_from_bytes(file_bytes, filename)
-        if text.startswith("["):
+        extraction = extract_with_retry(
+            content=file_bytes,
+            filename=filename,
+            user_id=user_id,
+            doc_id=document_id,
+            conn=conn,
+        )
+
+        quality_score = extraction.get("quality_score", 0)
+        text = (extraction.get("text") or "").strip()
+
+        if quality_score < 30 and not text:
+            err = extraction.get("error", "Could not extract text from document")
+            self._mark_failed(conn, document_id, err)
+            conn.commit()
+            update_extraction_llm_result(
+                conn,
+                document_id,
+                user_id,
+                llm_raw="",
+                model="",
+                extracted=0,
+                after_validation=0,
+                validation_issues=[err],
+                stored=0,
+                categorization_method="none",
+                status="failed",
+                error=err,
+            )
+            return {"success": False, "error": err, "quality_score": quality_score}
+
+        if text.startswith("[") and "error" in text.lower():
             self._mark_failed(conn, document_id, text)
             conn.commit()
-            return {"success": False, "error": text}
+            return {"success": False, "error": text, "quality_score": quality_score}
 
-        parsed = classify_and_extract(text)
+        parsed = classify_and_extract_monster(
+            text=text,
+            filename=filename,
+            tables=extraction.get("tables"),
+        )
         transactions = parsed.get("transactions", [])
+        validation_issues: list[str] = list(extraction.get("quality_issues") or [])
+        if parsed.get("validation_issues"):
+            validation_issues.extend(parsed["validation_issues"])
 
         imported = duplicates = invalid = internal = 0
 
@@ -96,7 +135,7 @@ class PDFParserAgent:
                       (user_id, amount, type, category, merchant,
                        transaction_date, description,
                        uploaded_document_id, connected_source_id, data_origin)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'pdf_upload')
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'monster_upload')
                     """,
                     (
                         user_id,
@@ -115,6 +154,26 @@ class PDFParserAgent:
         self._mark_completed(conn, document_id, len(transactions), imported, duplicates)
         conn.commit()
 
+        llm_raw = json.dumps({
+            "institution": parsed.get("institution"),
+            "document_type": parsed.get("document_type"),
+            "transaction_count": len(transactions),
+            "doc_info": parsed.get("doc_info"),
+        })
+        update_extraction_llm_result(
+            conn,
+            document_id,
+            user_id,
+            llm_raw=llm_raw,
+            model=parsed.get("llm_model") or parsed.get("method") or "router",
+            extracted=len(transactions),
+            after_validation=len(transactions) - invalid,
+            validation_issues=validation_issues,
+            stored=imported,
+            categorization_method=parsed.get("method", "chunked_llm"),
+            status="completed",
+        )
+
         return {
             "success": True,
             "institution": parsed.get("institution", "unknown"),
@@ -125,14 +184,26 @@ class PDFParserAgent:
             "duplicates": duplicates,
             "internal_transfers_skipped": internal,
             "invalid": invalid,
+            "quality_score": quality_score,
+            "extraction_method": extraction.get("method", "unknown"),
+            "attempts": extraction.get("attempt_number", 1),
+            "transactions_extracted": len(transactions),
+            "transactions_stored": imported,
         }
-
-    # ----------------------------------------------------------------- helpers
 
     @staticmethod
     def _parse_date(raw: str) -> str | None:
         raw = (raw or "").strip()
-        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%b %d, %Y", "%b %d %Y"):
+        for fmt in (
+            "%Y-%m-%d",
+            "%d/%m/%Y",
+            "%d-%m-%Y",
+            "%d %b %Y",
+            "%d-%b-%Y",
+            "%d-%b-%y",
+            "%b %d, %Y",
+            "%b %d %Y",
+        ):
             try:
                 return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
             except ValueError:
@@ -149,10 +220,6 @@ class PDFParserAgent:
 
     @staticmethod
     def _is_duplicate(conn, user_id: int, date: str, merchant: str, amount: float) -> bool:
-        # A transaction is only a "real" duplicate when it already exists in a
-        # VISIBLE source (or has no source).  Transactions trapped in a hidden /
-        # turned-off source are NOT counted — so re-uploading the same statement
-        # under a new visible source correctly imports those transactions.
         with conn.cursor() as cur:
             cur.execute(
                 """

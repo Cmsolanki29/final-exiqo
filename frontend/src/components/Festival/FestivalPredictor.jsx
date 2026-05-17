@@ -354,8 +354,8 @@ const FestivalPredictor = ({ userId }) => {
   return (
     <div className="festival-page fade-in">
       <PageHeader
-        eyebrow="FESTIVALS"
-        title="Plan the Celebration"
+        eyebrow="PLANNING · FESTIVALS & EVENTS"
+        title="Festivals & Event Planner"
         subtitle="Save before festivals hit. Budget smarter, celebrate guilt-free, no financial hangover."
         accentHex={ACCENT}
         rightSlot={

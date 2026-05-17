@@ -59,6 +59,8 @@ def _is_subscription_candidate(merchant: str, amounts: list[float], dates: list[
         return False, "MONTHLY"
 
     if len(dates) < 2:
+        if known and 99 <= med_amount <= 15000:
+            return True, "MONTHLY"
         return False, "MONTHLY"
 
     iv = _median_interval_days(dates)

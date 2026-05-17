@@ -6,7 +6,7 @@ import { ErrorCard } from "../common/ErrorCard";
 import { SkeletonCard } from "../common/SkeletonCard";
 import { GlassCard } from "../intro/GlassCard";
 
-/** Labels match backend bucket names in routes/transactions.py (_CATEGORY_FILTER_BUCKETS). */
+/** Labels match UI buckets in services/categorizer.py (category_filter_sql). */
 const categories = ["All", "Food & Dining", "Entertainment", "Shopping", "Travel", "Bills", "Other", "Anomalies Only"];
 
 const csvEscape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;

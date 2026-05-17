@@ -1,0 +1,160 @@
+"""Score in-scope transactions for FraudShield (no seed/demo alerts)."""
+
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta
+from typing import Any
+
+from services.dashboard_scope import fetch_dashboard_mode, transaction_scope_sql
+
+
+def _severity_from_score(score: int) -> str:
+    if score >= 85:
+        return "CRITICAL"
+    if score >= 65:
+        return "HIGH"
+    if score >= 35:
+        return "MEDIUM"
+    return "LOW"
+
+
+def _row_to_tx_dict(row) -> dict[str, Any]:
+    return {
+        "id": row[0],
+        "merchant": row[1] or row[2] or "",
+        "description": row[2] or "",
+        "amount": float(row[3] or 0),
+        "transaction_date": row[4],
+        "transaction_time": row[5],
+        "payment_method": row[6] or "CARD",
+        "type": row[7] or "DEBIT",
+    }
+
+
+def score_scoped_transactions(
+    cur,
+    user_id: int,
+    *,
+    limit: int = 50,
+    min_risk: int = 35,
+    days: int = 120,
+) -> list[dict[str, Any]]:
+    mode = fetch_dashboard_mode(cur, user_id)
+    scope = transaction_scope_sql("t", mode)
+    since = date.today() - timedelta(days=days)
+    cur.execute(
+        f"""
+        SELECT t.id, t.merchant, t.description, t.amount, t.transaction_date,
+               t.transaction_time, t.payment_method, t.type
+        FROM transactions t
+        WHERE t.user_id = %s
+          AND UPPER(t.type) = 'DEBIT'
+          AND t.transaction_date >= %s
+          AND ({scope})
+        ORDER BY t.transaction_date DESC, t.transaction_time DESC NULLS LAST, t.id DESC
+        LIMIT %s;
+        """,
+        (user_id, since, limit),
+    )
+    rows = cur.fetchall()
+    from routes.fraud_shield import calculate_fraud_risk_score
+
+    alerts: list[dict[str, Any]] = []
+    for row in rows:
+        tx = _row_to_tx_dict(row)
+        payee = (tx.get("merchant") or tx.get("description") or "").strip()
+        td = tx["transaction_date"]
+        tt = tx.get("transaction_time")
+        if isinstance(td, date) and tt is not None:
+            at = datetime.combine(td, tt)
+        else:
+            at = datetime.now()
+        uh = {"avg_debit": 0, "payee_previous_debit_count": 0, "debits_last_30_min": 0, "debits_last_10_min": 0}
+        result = calculate_fraud_risk_score(tx, uh)
+        risk = int(result.get("risk_score") or 0)
+        if risk < min_risk:
+            continue
+        pattern = result.get("estimated_fraud_type") or result.get("pattern") or "UNUSUAL_TRANSACTION"
+        alerts.append(
+            {
+                "id": f"txn-{tx['id']}",
+                "transaction_id": tx["id"],
+                "pattern_matched": pattern,
+                "risk_score": risk,
+                "amount_at_risk": tx["amount"],
+                "warning_message": (result.get("risk_factors") or ["Unusual transaction"])[0]
+                if isinstance(result.get("risk_factors"), list) and result.get("risk_factors")
+                else "Flagged by FraudShield rules",
+                "hinglish_explanation": result.get("security_advice") or "",
+                "user_action": "PENDING",
+                "money_saved": 0.0,
+                "created_at": at.isoformat(),
+                "severity": _severity_from_score(risk),
+                "merchant": payee,
+                "source": "transaction",
+            }
+        )
+    alerts.sort(key=lambda a: (-a["risk_score"], a.get("created_at") or ""))
+    return alerts
+
+
+def scoped_db_fraud_alerts(cur, user_id: int) -> list[dict[str, Any]]:
+    """fraud_alerts rows whose transaction is in the current dashboard scope."""
+    mode = fetch_dashboard_mode(cur, user_id)
+    scope = transaction_scope_sql("t", mode)
+    _sev = """CASE
+        WHEN COALESCE(fa.risk_score, 0) >= 85 THEN 'CRITICAL'
+        WHEN COALESCE(fa.risk_score, 0) >= 65 THEN 'HIGH'
+        WHEN COALESCE(fa.risk_score, 0) >= 35 THEN 'MEDIUM'
+        ELSE 'LOW'
+    END"""
+    cur.execute(
+        f"""
+        SELECT fa.id, fa.pattern_matched, fa.risk_score, fa.amount_at_risk, fa.warning_message,
+               fa.hinglish_explanation, fa.user_action, fa.money_saved, fa.created_at,
+               ({_sev}) AS severity, fa.transaction_id,
+               COALESCE(t.merchant, t.description, '')
+        FROM fraud_alerts fa
+        INNER JOIN transactions t ON t.id = fa.transaction_id AND t.user_id = fa.user_id
+        WHERE fa.user_id = %s AND ({scope})
+        ORDER BY fa.risk_score DESC NULLS LAST, fa.created_at DESC;
+        """,
+        (user_id,),
+    )
+    out = []
+    for r in cur.fetchall():
+        out.append(
+            {
+                "id": r[0],
+                "pattern_matched": r[1],
+                "risk_score": int(r[2] or 0),
+                "amount_at_risk": float(r[3] or 0),
+                "warning_message": r[4],
+                "hinglish_explanation": r[5],
+                "user_action": r[6],
+                "money_saved": float(r[7] or 0),
+                "created_at": r[8].isoformat() if r[8] else None,
+                "severity": r[9] or "MEDIUM",
+                "transaction_id": r[10],
+                "merchant": r[11] or "",
+                "source": "fraud_alerts",
+            }
+        )
+    return out
+
+
+def merge_alerts(db_alerts: list[dict], txn_alerts: list[dict]) -> list[dict]:
+    seen_txn: set[int] = set()
+    merged: list[dict] = []
+    for a in db_alerts:
+        tid = a.get("transaction_id")
+        if tid is not None:
+            seen_txn.add(int(tid))
+        merged.append(a)
+    for a in txn_alerts:
+        tid = a.get("transaction_id")
+        if tid is not None and int(tid) in seen_txn:
+            continue
+        merged.append(a)
+    merged.sort(key=lambda x: (-int(x.get("risk_score") or 0), x.get("created_at") or ""))
+    return merged

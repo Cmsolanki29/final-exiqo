@@ -13,44 +13,25 @@ from db import get_db
 from models.schemas import TransactionResponse
 from services.dashboard_scope import fetch_dashboard_mode, transaction_scope_sql
 from services.ml_model import ml_detector
-from services.categorizer import categorize_merchant
+from services.categorizer import categorize_merchant, category_filter_sql, normalize_category
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 # Register static sub-paths before `/{user_id}` so they are not captured as user ids.
 
-# UI filter chips → values persisted on `transactions.category` (see services/categorizer.py).
-# Include legacy seed labels (Food, Groceries, Recharge, …) so older rows still filter correctly.
-_CATEGORY_FILTER_BUCKETS: dict[str, tuple[str, ...]] = {
-    "Food & Dining": ("Food & Dining", "Food", "Groceries"),
-    "Food": ("Food & Dining", "Food", "Groceries"),
-    "Entertainment": ("Entertainment",),
-    "Shopping": ("Shopping",),
-    "Travel": ("Transportation", "Transport"),
-    "Bills": ("Bills & Utilities", "Utilities", "Recharge"),
-    "Other": (
-        "Healthcare",
-        "Health",
-        "Finance & Investment",
-        "Finance",
-        "Transfer",
-        "Others",
-        "Salary",
-    ),
-}
-
 
 def _category_filter_sql(category: str, alias: str = "t") -> tuple[str, list]:
-    """Build SQL fragment and bind values for category filter (bucket or exact match)."""
-    key = (category or "").strip()
-    if not key:
-        return "", []
-    col = f"{alias}.category"
-    if key in _CATEGORY_FILTER_BUCKETS:
-        vals = list(_CATEGORY_FILTER_BUCKETS[key])
-        placeholders = ", ".join(["%s"] * len(vals))
-        return f" AND {col} IN ({placeholders})", vals
-    return f" AND {col} = %s", [key]
+    """Build SQL fragment for UI category chip (all legacy + snake_case aliases)."""
+    return category_filter_sql(category, alias=alias)
+
+
+def _anomaly_filter_sql(alias: str = "t") -> str:
+    """Rows flagged by ML pipeline or high fraud-risk score."""
+    return (
+        f" AND (COALESCE({alias}.anomaly_flag, FALSE) = TRUE"
+        f" OR COALESCE({alias}.risk_score, 0) >= 60"
+        f" OR UPPER(COALESCE({alias}.risk_level, 'LOW')) IN ('HIGH', 'CRITICAL'))"
+    )
 
 
 def _row_to_tx(row) -> TransactionResponse:
@@ -206,7 +187,7 @@ def list_transactions(
             q += frag
             params.extend(extra)
         if anomaly_only:
-            q += " AND t.anomaly_flag = TRUE"
+            q += _anomaly_filter_sql(alias="t")
         q += " ORDER BY t.transaction_date DESC, t.transaction_time DESC LIMIT %s"
         params.append(limit)
         cur.execute(q, params)
@@ -221,6 +202,7 @@ def list_transactions(
             d["risk_score"] = int(d.get("risk_score") or 0)
             d["risk_level"] = d.get("risk_level") or "LOW"
             d["amount"] = float(d.get("amount") or 0)
+            d["category"] = normalize_category(d.get("category"))
             result.append(d)
         return result
     except HTTPException:

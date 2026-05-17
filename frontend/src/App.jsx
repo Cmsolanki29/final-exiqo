@@ -33,7 +33,6 @@ import FraudShieldPage from "./components/FraudShield/FraudShieldPage";
 import PurchasePlanner from "./components/Purchase/PurchasePlanner";
 import DarkPatternDetector from "./components/DarkPatterns/DarkPatternDetector";
 import EMITrapDetector from "./components/EMI/EMITrapDetector";
-import FamilyEventsPage from "./components/FamilyEvents/FamilyEventsPage";
 import Sidebar from "./components/Layout/Sidebar";
 import TopBar from "./components/Layout/TopBar";
 import SmartReminderEngine from "./pages/SmartReminderEngine";
@@ -41,7 +40,7 @@ import SubscriptionConnect from "./pages/SubscriptionConnect";
 import SubscriptionHub from "./pages/SubscriptionHub";
 import AIAnalysisEngine from "./pages/AIAnalysisEngine";
 import { isSubscriptionFlowConnected } from "./utils/subscriptionFlowStorage";
-import IntroFlow from "./components/intro/IntroFlow";
+import IntroFlow, { resetToIntroAuth } from "./components/intro/IntroFlow";
 import { ToastProvider } from "./components/common/Toast";
 import { SkeletonCard } from "./components/common/SkeletonCard";
 import { useAuth } from "./context/AuthContext";
@@ -50,6 +49,7 @@ import { getUsers } from "./services/api";
 const TransactionsTab = lazy(() => import("./components/app-tabs/TransactionsTab"));
 const InsightsTab = lazy(() => import("./components/app-tabs/InsightsTab"));
 const TripPlannerPage = lazy(() => import("./pages/AIActions/TripPlannerPage"));
+const CyberSafeConnectPage = lazy(() => import("./pages/RiskAwareness/CyberSafeConnectPage"));
 /** Legacy `activeTab === "simulator"` only (sidebar tab removed); renders Insights. */
 const SimulatorTab = lazy(() => import("./components/app-tabs/SimulatorTab"));
 const SettingsTab = lazy(() => import("./components/app-tabs/SettingsTab"));
@@ -97,7 +97,7 @@ const App = () => {
     setSubscriptionsSubView(isSubscriptionFlowConnected(subscriptionOwnerId) ? "hub" : "connect");
   }, [activeTab, subscriptionOwnerId]);
 
-  /** Remove stale `fraudTab` from URL when viewing other tabs (avoids confusion + stale deep-links). */
+  /** Remove stale `fraudTab` from URL when leaving FraudShield. */
   useEffect(() => {
     if (activeTab === "fraud") return;
     try {
@@ -105,8 +105,49 @@ const App = () => {
       if (!url.searchParams.has("fraudTab")) return;
       url.searchParams.delete("fraudTab");
       const q = url.searchParams.toString();
-      const next = `${url.pathname}${q ? `?${q}` : ""}${url.hash}`;
-      window.history.replaceState({}, "", next);
+      window.history.replaceState({}, "", `${url.pathname}${q ? `?${q}` : ""}${url.hash}`);
+    } catch {
+      /* ignore */
+    }
+  }, [activeTab]);
+
+  /** Trips & Events removed from UI — send stale tab id to dashboard. */
+  useEffect(() => {
+    if (activeTab === "family-events") setActiveTab("dashboard");
+  }, [activeTab]);
+
+  /** Deep-link from notification actions → Risk Awareness / CyberSafe Connect. */
+  useEffect(() => {
+    const handler = (e) => {
+      const tab = e.detail?.tab;
+      if (tab) setActiveTab(tab);
+    };
+    window.addEventListener("smartspend:navigate", handler);
+    return () => window.removeEventListener("smartspend:navigate", handler);
+  }, []);
+
+  /** Legacy `?fraudTab=cybersafe` → Risk Awareness sidebar tab. */
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("fraudTab") !== "cybersafe") return;
+      url.searchParams.delete("fraudTab");
+      window.history.replaceState({}, "", url.toString());
+      setActiveTab("cybersafe-connect");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  /** Clear CyberSafe screen param when leaving Risk Awareness tab. */
+  useEffect(() => {
+    if (activeTab === "cybersafe-connect") return;
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has("cybersafeScreen")) return;
+      url.searchParams.delete("cybersafeScreen");
+      const q = url.searchParams.toString();
+      window.history.replaceState({}, "", `${url.pathname}${q ? `?${q}` : ""}${url.hash}`);
     } catch {
       /* ignore */
     }
@@ -257,6 +298,20 @@ const App = () => {
       <ToastProvider>
         <SourceSelection
           userId={user.id}
+          onBack={async () => {
+            try {
+              if (user?.id) {
+                window.sessionStorage.removeItem(`ss_pre_onboard_intro_done_${user.id}`);
+              }
+              window.sessionStorage.removeItem("ss_source_selection");
+            } catch {
+              /* ignore */
+            }
+            setPreOnboardIntroDone(false);
+            setNeedsSourceSelection(false);
+            resetToIntroAuth("signin");
+            await logout();
+          }}
           onComplete={async () => {
             await reloadUser();
             try {
@@ -400,10 +455,14 @@ const App = () => {
                 )}
                 {activeTab === "purchase" && <PurchasePlanner userId={selectedUserId} />}
                 {activeTab === "festival" && <FestivalPredictor userId={selectedUserId} />}
-                {activeTab === "family-events" && <FamilyEventsPage userId={selectedUserId} />}
                 {activeTab === "trip-planner" && (
                   <Suspense fallback={<SkeletonCard lines={4} height={120} />}>
                     <TripPlannerPage />
+                  </Suspense>
+                )}
+                {activeTab === "cybersafe-connect" && (
+                  <Suspense fallback={<SkeletonCard lines={4} height={120} />}>
+                    <CyberSafeConnectPage />
                   </Suspense>
                 )}
 

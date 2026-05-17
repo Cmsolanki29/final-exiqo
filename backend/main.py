@@ -45,6 +45,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from db import get_db, test_db_connection
+from services.dashboard_scope import fetch_dashboard_mode, transaction_scope_sql
+from services.scoped_analytics import statement_period_card_spend, total_statement_spend
 from models.schemas import (
     AnomalyResponse,
     DashboardSummary,
@@ -77,6 +79,7 @@ from routes import (
     subscription_intelligence,
     transactions,
     trip_planner,
+    simulator,
 )
 from services.ml_model import ml_detector
 from services.scorer import calculate_health_score
@@ -134,6 +137,32 @@ async def lifespan(app: FastAPI):
             f"Install into the SAME Python that runs uvicorn:\n"
             f"  {sys.executable} -m pip install pdfplumber"
         )
+
+    try:
+        from services.monster_extraction import _configure_tesseract
+
+        if _configure_tesseract():
+            import pytesseract as _pt
+
+            print(f"[documents] Tesseract OCR OK — {_pt.pytesseract.tesseract_cmd}")
+        else:
+            print(
+                "[documents] WARNING: Tesseract not found. Scanned PDFs/images need OCR. "
+                "Set TESSERACT_CMD in .env to your tesseract.exe path."
+            )
+    except Exception as _ocr_exc:  # noqa: BLE001
+        print(f"[documents] WARNING: OCR setup failed ({type(_ocr_exc).__name__}: {_ocr_exc})")
+
+    try:
+        from services.llm_router import get_llm_router
+
+        _llm = get_llm_router(required=False)
+        if _llm:
+            print(f"[documents] LLM Router OK — providers: {list(_llm.providers.keys())}")
+        else:
+            print("[documents] WARNING: LLM Router unavailable (no API keys for extraction LLM)")
+    except Exception as _llm_exc:  # noqa: BLE001
+        print(f"[documents] WARNING: LLM Router init failed ({type(_llm_exc).__name__}: {_llm_exc})")
 
     asyncio.create_task(_warm_ml_models())
 
@@ -264,6 +293,7 @@ app.include_router(subscription_graveyard.router, prefix="/api")
 app.include_router(subscription_intelligence.router, prefix="/api")
 app.include_router(dark_patterns.router, prefix="/api")
 app.include_router(fraud_shield.router, prefix="/api")
+app.include_router(simulator.router, prefix="/api")
 app.include_router(festival_important_days.router, prefix="/api")
 app.include_router(festival_predictor.router, prefix="/api")
 app.include_router(purchase_planner.router, prefix="/api")
@@ -592,6 +622,9 @@ def dashboard(user_id: int, conn=Depends(get_db)):
     today = date.today()
     m, y = today.month, today.year
     cur = conn.cursor()
+    mode = "merged"
+    stmt_spend = 0.0
+    stmt_txn_count = 0
     try:
         # User row + last_login (used as a freshness fallback when no bank is linked).
         cur.execute(
@@ -614,6 +647,11 @@ def dashboard(user_id: int, conn=Depends(get_db)):
             risk_tolerance=ur[5],
         )
         last_login = ur[6]
+        mode = fetch_dashboard_mode(cur, user_id)
+        scope = transaction_scope_sql("t", mode)
+        stmt_cards = statement_period_card_spend(cur, user_id, mode)
+        stmt_spend = total_statement_spend(cur, user_id, mode)
+        stmt_txn_count = sum(c.get("transaction_count", 0) for c in stmt_cards)
 
         # Real "Last synced" — most-recent bank sync across all linked banks.
         # Returns NULL when the user has not linked any bank yet; the frontend
@@ -629,26 +667,30 @@ def dashboard(user_id: int, conn=Depends(get_db)):
         ls_row = cur.fetchone()
         last_synced = ls_row[0] if ls_row else None
 
-        # Pending fraud signals — drives the greeting status pill
-        # ("FraudShield is watching N signals"). PENDING = awaiting user action.
-        cur.execute(
-            """
-            SELECT COUNT(*) FROM fraud_alerts
-            WHERE user_id = %s
-              AND COALESCE(user_action, 'PENDING') = 'PENDING';
-            """,
-            (user_id,),
+        # Pending fraud signals from in-scope transaction analysis (not global seed alerts).
+        from services.fraud_from_transactions import (
+            merge_alerts,
+            score_scoped_transactions,
+            scoped_db_fraud_alerts,
         )
-        fraud_pending = int(cur.fetchone()[0] or 0)
+
+        _fraud_alerts = merge_alerts(
+            scoped_db_fraud_alerts(cur, user_id),
+            score_scoped_transactions(cur, user_id),
+        )
+        fraud_pending = sum(
+            1 for a in _fraud_alerts if (a.get("user_action") or "PENDING").upper() == "PENDING"
+        )
         cur.execute(
-            """
+            f"""
             SELECT COALESCE(SUM(CASE WHEN type = 'CREDIT' THEN amount ELSE 0 END), 0)::float,
                    COALESCE(SUM(CASE WHEN type = 'DEBIT' THEN amount ELSE 0 END), 0)::float,
                    COUNT(*)
-            FROM transactions
-            WHERE user_id = %s
-              AND EXTRACT(MONTH FROM transaction_date)::int = %s
-              AND EXTRACT(YEAR FROM transaction_date)::int = %s;
+            FROM transactions t
+            WHERE t.user_id = %s
+              AND EXTRACT(MONTH FROM t.transaction_date)::int = %s
+              AND EXTRACT(YEAR FROM t.transaction_date)::int = %s
+              AND ({scope});
             """,
             (user_id, m, y),
         )
@@ -663,11 +705,12 @@ def dashboard(user_id: int, conn=Depends(get_db)):
         }
 
         cur.execute(
-            """
+            f"""
             SELECT id, merchant, amount, transaction_date, COALESCE(anomaly_reason, ''),
                    risk_score, risk_level
-            FROM transactions
-            WHERE user_id = %s AND anomaly_flag = TRUE
+            FROM transactions t
+            WHERE t.user_id = %s AND t.anomaly_flag = TRUE
+              AND ({scope})
             ORDER BY transaction_date DESC LIMIT 8;
             """,
             (user_id,),
@@ -691,22 +734,24 @@ def dashboard(user_id: int, conn=Depends(get_db)):
 
         pm, py = (m - 1, y) if m > 1 else (12, y - 1)
         cur.execute(
-            """
+            f"""
             WITH cur AS (
                 SELECT COALESCE(category, 'Uncategorized') AS category,
                        SUM(amount)::float AS total, COUNT(*)::int AS cnt
-                FROM transactions
-                WHERE user_id = %s AND type = 'DEBIT'
-                  AND EXTRACT(MONTH FROM transaction_date)::int = %s
-                  AND EXTRACT(YEAR FROM transaction_date)::int = %s
+                FROM transactions t
+                WHERE t.user_id = %s AND t.type = 'DEBIT'
+                  AND EXTRACT(MONTH FROM t.transaction_date)::int = %s
+                  AND EXTRACT(YEAR FROM t.transaction_date)::int = %s
+                  AND ({scope})
                 GROUP BY 1
             ),
             prev AS (
                 SELECT COALESCE(category, 'Uncategorized') AS category, SUM(amount)::float AS total
-                FROM transactions
-                WHERE user_id = %s AND type = 'DEBIT'
-                  AND EXTRACT(MONTH FROM transaction_date)::int = %s
-                  AND EXTRACT(YEAR FROM transaction_date)::int = %s
+                FROM transactions t
+                WHERE t.user_id = %s AND t.type = 'DEBIT'
+                  AND EXTRACT(MONTH FROM t.transaction_date)::int = %s
+                  AND EXTRACT(YEAR FROM t.transaction_date)::int = %s
+                  AND ({scope})
                 GROUP BY 1
             )
             SELECT cur.category, cur.total, cur.cnt, COALESCE(prev.total, 0)::float
@@ -790,6 +835,9 @@ def dashboard(user_id: int, conn=Depends(get_db)):
         last_synced=last_synced,
         last_login=last_login,
         fraud_pending_count=fraud_pending,
+        dashboard_mode=mode,
+        statement_period_spend=stmt_spend if stmt_spend > 0 else None,
+        statement_transaction_count=stmt_txn_count if stmt_txn_count > 0 else None,
     )
 
 

@@ -97,3 +97,6 @@ class DashboardSummary(BaseModel):
     last_synced: Optional[datetime] = None
     last_login: Optional[datetime] = None
     fraud_pending_count: int = 0
+    dashboard_mode: str = "merged"
+    statement_period_spend: float | None = None
+    statement_transaction_count: int | None = None

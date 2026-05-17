@@ -369,8 +369,11 @@ export const getAnomalyStats = async (userId) =>
 export const runMLDetection = async (userId) =>
   request(api.post(`/anomalies/${userId}/run-detection`));
 
-export const getHealthScore = async (userId, month, year) =>
-  request(api.get(`/health-score/${userId}`, { params: { month, year }, timeout: 25000 }));
+export const getHealthScore = async (userId, month, year, scope = null) => {
+  const params = { month, year };
+  if (scope) params.scope = scope;
+  return request(api.get(`/health-score/${userId}`, { params, timeout: 25000 }));
+};
 
 export const getHealthHistory = async (userId) =>
   request(api.get(`/health-score/${userId}/history`));
@@ -384,15 +387,21 @@ export const getInsights = async (userId, month, year) =>
  * Streams GET /insights/{userId}/insights-stream (SSE). Invokes onEvent for each parsed JSON object.
  * Resolves with final payload `{ user, period, insights, recommendations, generated_at }` or rejects.
  */
-export async function fetchInsightsSse(userId, month, year, onEvent) {
+export async function fetchInsightsSse(userId, month, year, onEvent, options = {}) {
+  const { scope = null, signal: externalSignal = null } = options;
   const base = getApiBaseUrl();
   const params = new URLSearchParams();
   if (month != null) params.set("month", String(month));
   if (year != null) params.set("year", String(year));
+  if (scope) params.set("scope", scope);
   const qs = params.toString();
   const url = `${base}/insights/${userId}/insights-stream${qs ? `?${qs}` : ""}`;
   const token = getAccessToken();
   const ctrl = new AbortController();
+  if (externalSignal) {
+    if (externalSignal.aborted) ctrl.abort();
+    else externalSignal.addEventListener("abort", () => ctrl.abort(), { once: true });
+  }
   const tid = window.setTimeout(() => ctrl.abort(), INSIGHTS_FETCH_MS);
   try {
     const res = await fetch(url, {

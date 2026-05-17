@@ -7,6 +7,6 @@ export { SplashScreen } from "./SplashScreen";
 export { IntroStory } from "./IntroStory";
 export { GetStartedScreen } from "./GetStartedScreen";
 export { IntroAuth } from "./IntroAuth";
-export { IntroFlow, SEEN_INTRO_KEY } from "./IntroFlow";
+export { IntroFlow, SEEN_INTRO_KEY, resetToIntroAuth } from "./IntroFlow";
 export type { AuthMode } from "./IntroAuth";
 export type { IntroStep } from "./IntroFlow";

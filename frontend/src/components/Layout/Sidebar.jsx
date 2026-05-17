@@ -3,7 +3,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
   AlertTriangle,
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
   LayoutDashboard,
@@ -13,6 +12,7 @@ import {
   Plane,
   Receipt,
   Shield,
+  ShieldCheck,
   ShoppingBag,
   Sparkles,
   Settings,
@@ -57,10 +57,14 @@ const NAV_SECTIONS = [
     id: "planning",
     label: "Planning",
     items: [
-      { id: "festival", label: "Festivals", icon: Sparkles },
+      { id: "festival", label: "Festivals & Event Planner", icon: Sparkles },
       { id: "purchase", label: "Purchase Planner", icon: ShoppingBag },
-      { id: "family-events", label: "Trips & Events", icon: CalendarDays },
     ],
+  },
+  {
+    id: "risk-awareness",
+    label: "Risk Awareness",
+    items: [{ id: "cybersafe-connect", label: "CyberSafe Connect", icon: ShieldCheck, newBadge: true }],
   },
   {
     id: "system",

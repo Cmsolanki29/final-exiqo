@@ -15,9 +15,21 @@ const BRAND_EASE = [0.22, 1, 0.36, 1] as const;
 export const SEEN_INTRO_KEY = "smartspend.seenIntro";
 
 /** Default unauthenticated flow (splash → … → auth). */
-const SESSION_STEP_KEY_DEFAULT = "smartspend.introStep";
+export const SESSION_STEP_KEY_DEFAULT = "smartspend.introStep";
 /** Logged-in users who still need onboarding — separate storage so it does not collide with the sign-in flow. */
-const SESSION_STEP_KEY_PRE_ONBOARD = "smartspend.introStep.preOnboard";
+export const SESSION_STEP_KEY_PRE_ONBOARD = "smartspend.introStep.preOnboard";
+
+/** After onboarding back: open sign-in / sign-up (IntroAuth), not splash or story. */
+export function resetToIntroAuth(mode: AuthMode = "signin") {
+  try {
+    window.localStorage.setItem(SEEN_INTRO_KEY, "true");
+    window.sessionStorage.removeItem(SESSION_STEP_KEY_PRE_ONBOARD);
+    window.sessionStorage.setItem(SESSION_STEP_KEY_DEFAULT, "auth");
+    window.location.hash = mode === "signup" ? "#signup" : "#signin";
+  } catch {
+    /* ignore */
+  }
+}
 
 export type IntroStep = "splash" | "intro" | "get-started" | "auth" | "pre-onboard-cta";
 

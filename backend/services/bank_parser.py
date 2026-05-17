@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import time
+from datetime import date, time
 from typing import Any, Dict, List, Tuple
 
 import pandas as pd
@@ -363,6 +363,42 @@ class BankStatementParser:
                 logger.warning("Error parsing Kotak row %s: %s", idx, exc)
         logger.info("Parsed %s Kotak transactions", len(transactions))
         return transactions
+
+    def parse_dataframe(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Parse in-memory DataFrame; returns upload-format transaction dicts."""
+        df = df.dropna(how="all")
+        if df.empty:
+            return []
+        bank = self.detect_bank(df)
+        if bank == "HDFC":
+            raw = self.parse_hdfc(df)
+        elif bank == "SBI":
+            raw = self.parse_sbi(df)
+        elif bank == "ICICI":
+            raw = self.parse_icici(df)
+        elif bank == "Axis":
+            raw = self.parse_axis(df)
+        elif bank == "Kotak":
+            raw = self.parse_kotak(df)
+        else:
+            return []
+        return [self._to_upload_format(t) for t in raw]
+
+    @staticmethod
+    def _to_upload_format(txn: Dict[str, Any]) -> Dict[str, Any]:
+        txn_date = txn.get("transaction_date")
+        if isinstance(txn_date, date):
+            date_str = txn_date.isoformat()
+        else:
+            date_str = str(txn_date)[:10]
+        raw_type = (txn.get("type") or "DEBIT").upper()
+        return {
+            "date": date_str,
+            "description": (txn.get("description") or txn.get("merchant") or "Unknown")[:200],
+            "amount": float(txn.get("amount", 0)),
+            "type": "credit" if raw_type == "CREDIT" else "debit",
+            "category": txn.get("category", "other"),
+        }
 
     def parse(self, file_path: str) -> Dict[str, Any]:
         """Main parsing function - auto-detects bank and parses"""

@@ -6,7 +6,7 @@ from datetime import date
 from typing import Any
 
 from models.schemas import HealthScoreResponse
-from services.dashboard_scope import fetch_dashboard_mode, transaction_scope_sql
+from services.dashboard_scope import fetch_dashboard_mode, normalize_dashboard_mode, transaction_scope_sql
 
 
 def _month_key(y: int, m: int) -> int:
@@ -32,23 +32,37 @@ def _grade(score: int) -> str:
     return "F"
 
 
-def calculate_health_score(conn, user_id: int, month: int, year: int) -> HealthScoreResponse:
+def calculate_health_score(
+    conn,
+    user_id: int,
+    month: int,
+    year: int,
+    scope: str | None = None,
+) -> HealthScoreResponse:
     cur = conn.cursor()
     try:
-        mode = fetch_dashboard_mode(cur, user_id)
-        scope = transaction_scope_sql("t", mode)
-
-        cur.execute(
-            """
-            SELECT total_income, total_expense, savings_rate, anomaly_count, COALESCE(health_score, 0)
-            FROM monthly_summary
-            WHERE user_id = %s AND month = %s AND year = %s;
-            """,
-            (user_id, month, year),
+        today = date.today()
+        is_current_month = month == today.month and year == today.year
+        mode = (
+            normalize_dashboard_mode(scope)
+            if scope is not None
+            else fetch_dashboard_mode(cur, user_id)
         )
-        row = cur.fetchone()
-        # Always compute component breakdown for the gauge UI (stored monthly_summary alone
-        # used to return the wrong component shape — all bars showed 0/30).
+        scope_sql = transaction_scope_sql("t", mode)
+
+        row = None
+        if not is_current_month:
+            cur.execute(
+                """
+                SELECT total_income, total_expense, savings_rate, anomaly_count, COALESCE(health_score, 0)
+                FROM monthly_summary
+                WHERE user_id = %s AND month = %s AND year = %s;
+                """,
+                (user_id, month, year),
+            )
+            row = cur.fetchone()
+
+        # Current month: always live transactions (monthly_summary may be stale after upload).
         if not row:
             cur.execute(
                 f"""
@@ -59,7 +73,7 @@ def calculate_health_score(conn, user_id: int, month: int, year: int) -> HealthS
                 WHERE t.user_id = %s
                   AND EXTRACT(MONTH FROM t.transaction_date)::int = %s
                   AND EXTRACT(YEAR FROM t.transaction_date)::int = %s
-                  AND ({scope});
+                  AND ({scope_sql});
                 """,
                 (user_id, month, year),
             )
@@ -75,7 +89,7 @@ def calculate_health_score(conn, user_id: int, month: int, year: int) -> HealthS
                 WHERE t.user_id = %s AND t.anomaly_flag = TRUE
                   AND EXTRACT(MONTH FROM t.transaction_date)::int = %s
                   AND EXTRACT(YEAR FROM t.transaction_date)::int = %s
-                  AND ({scope});
+                  AND ({scope_sql});
                 """,
                 (user_id, month, year),
             )
@@ -151,7 +165,7 @@ def calculate_health_score(conn, user_id: int, month: int, year: int) -> HealthS
             WHERE t.user_id = %s AND t.type = 'DEBIT'
               AND EXTRACT(MONTH FROM t.transaction_date)::int = %s
               AND EXTRACT(YEAR FROM t.transaction_date)::int = %s
-              AND ({scope});
+              AND ({scope_sql});
             """,
             (user_id, month, year),
         )

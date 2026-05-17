@@ -18,12 +18,13 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from db import get_connection, get_db
-from services.dashboard_scope import fetch_dashboard_mode, transaction_scope_sql
+from services.dashboard_scope import fetch_dashboard_mode, normalize_dashboard_mode, transaction_scope_sql
 from services.openai_service import (
     explain_anomaly_transaction,
     generate_health_narrative,
     generate_monthly_insights,
     get_personalized_recommendations,
+    invalidate_insight_cache,
     simulate_financial_scenario,
 )
 from services.scorer import calculate_health_score
@@ -42,15 +43,27 @@ def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
     return ny, nm
 
 
-def build_user_data(conn, user_id: int, month: int, year: int) -> dict[str, Any]:
+def build_user_data(
+    conn,
+    user_id: int,
+    month: int,
+    year: int,
+    scope: str | None = None,
+) -> dict[str, Any]:
     """
     Fetch real PostgreSQL data for GPT prompts: profile, monthly_summary
     (or live aggregates), category breakdown, merchants, last month.
     """
     cur = conn.cursor()
     try:
-        mode = fetch_dashboard_mode(cur, user_id)
-        scope = transaction_scope_sql("t", mode)
+        today = date.today()
+        is_current_month = month == today.month and year == today.year
+        mode = (
+            normalize_dashboard_mode(scope)
+            if scope is not None
+            else fetch_dashboard_mode(cur, user_id)
+        )
+        scope_sql = transaction_scope_sql("t", mode)
 
         cur.execute(
             """
@@ -67,17 +80,19 @@ def build_user_data(conn, user_id: int, month: int, year: int) -> dict[str, Any]
         monthly_income = float(monthly_income or 0)
         savings_goal = float(savings_goal or 0)
 
-        cur.execute(
-            """
-            SELECT COALESCE(total_income, 0)::float, COALESCE(total_expense, 0)::float,
-                   COALESCE(total_saved, 0)::float, COALESCE(savings_rate, 0)::float,
-                   COALESCE(health_score, 0)::int, COALESCE(anomaly_count, 0)::int
-            FROM monthly_summary
-            WHERE user_id = %s AND month = %s AND year = %s;
-            """,
-            (user_id, month, year),
-        )
-        ms = cur.fetchone()
+        ms = None
+        if not is_current_month:
+            cur.execute(
+                """
+                SELECT COALESCE(total_income, 0)::float, COALESCE(total_expense, 0)::float,
+                       COALESCE(total_saved, 0)::float, COALESCE(savings_rate, 0)::float,
+                       COALESCE(health_score, 0)::int, COALESCE(anomaly_count, 0)::int
+                FROM monthly_summary
+                WHERE user_id = %s AND month = %s AND year = %s;
+                """,
+                (user_id, month, year),
+            )
+            ms = cur.fetchone()
         if ms:
             total_income, total_expense, total_saved, savings_rate, _ms_health, anomaly_count = ms
             total_income = float(total_income or 0)
@@ -94,7 +109,7 @@ def build_user_data(conn, user_id: int, month: int, year: int) -> dict[str, Any]
                 WHERE t.user_id = %s
                   AND EXTRACT(MONTH FROM t.transaction_date)::int = %s
                   AND EXTRACT(YEAR FROM t.transaction_date)::int = %s
-                  AND ({scope});
+                  AND ({scope_sql});
                 """,
                 (user_id, month, year),
             )
@@ -111,13 +126,13 @@ def build_user_data(conn, user_id: int, month: int, year: int) -> dict[str, Any]
                 WHERE t.user_id = %s AND t.anomaly_flag = TRUE
                   AND EXTRACT(MONTH FROM t.transaction_date)::int = %s
                   AND EXTRACT(YEAR FROM t.transaction_date)::int = %s
-                  AND ({scope});
+                  AND ({scope_sql});
                 """,
                 (user_id, month, year),
             )
             anomaly_count = int(cur.fetchone()[0] or 0)
 
-        hs_live = calculate_health_score(conn, user_id, month, year)
+        hs_live = calculate_health_score(conn, user_id, month, year, scope=mode)
         health_score = int(hs_live.score)
 
         cur.execute(
@@ -127,7 +142,7 @@ def build_user_data(conn, user_id: int, month: int, year: int) -> dict[str, Any]
             WHERE t.user_id = %s AND t.type = 'DEBIT'
               AND EXTRACT(MONTH FROM t.transaction_date)::int = %s
               AND EXTRACT(YEAR FROM t.transaction_date)::int = %s
-              AND ({scope})
+              AND ({scope_sql})
             GROUP BY 1 ORDER BY amt DESC LIMIT 12;
             """,
             (user_id, month, year),
@@ -152,7 +167,7 @@ def build_user_data(conn, user_id: int, month: int, year: int) -> dict[str, Any]
             WHERE t.user_id = %s AND t.type = 'DEBIT' AND t.merchant IS NOT NULL
               AND EXTRACT(MONTH FROM t.transaction_date)::int = %s
               AND EXTRACT(YEAR FROM t.transaction_date)::int = %s
-              AND ({scope})
+              AND ({scope_sql})
             GROUP BY t.merchant ORDER BY s DESC LIMIT 5;
             """,
             (user_id, month, year),
@@ -180,7 +195,7 @@ def build_user_data(conn, user_id: int, month: int, year: int) -> dict[str, Any]
                 WHERE t.user_id = %s
                   AND EXTRACT(MONTH FROM t.transaction_date)::int = %s
                   AND EXTRACT(YEAR FROM t.transaction_date)::int = %s
-                  AND ({scope});
+                  AND ({scope_sql});
                 """,
                 (user_id, pm, py),
             )
@@ -195,6 +210,9 @@ def build_user_data(conn, user_id: int, month: int, year: int) -> dict[str, Any]
             "user_id": int(uid),
             "name": name,
             "email": email,
+            "insight_month": month,
+            "insight_year": year,
+            "insight_scope": mode,
             "monthly_income": monthly_income,
             "savings_goal": savings_goal,
             "current_month": current_month_label,
@@ -244,8 +262,14 @@ def _health_details_for_narrative(hs: Any) -> dict[str, Any]:
 # --- Static paths must be registered before /{user_id} ---
 
 
-def _insights_payload(conn, user_id: int, month: int, year: int) -> dict[str, Any]:
-    user_data = build_user_data(conn, user_id, month, year)
+def _insights_payload(
+    conn,
+    user_id: int,
+    month: int,
+    year: int,
+    scope: str | None = None,
+) -> dict[str, Any]:
+    user_data = build_user_data(conn, user_id, month, year, scope=scope)
     with ThreadPoolExecutor(max_workers=2) as pool:
         fi = pool.submit(generate_monthly_insights, user_data)
         fr = pool.submit(get_personalized_recommendations, user_data)
@@ -269,6 +293,7 @@ def insights_stream(
     user_id: int,
     month: int | None = Query(None, ge=1, le=12),
     year: int | None = Query(None, ge=2000, le=2100),
+    scope: str | None = Query("merged", description="bank_only | credit_card_only | merged"),
 ):
     """SSE: progress pulses while the insights LLM runs; `done` fires as soon as insights return (no second LLM wait)."""
 
@@ -284,8 +309,9 @@ def insights_stream(
             yield _sse_line({"status": "analyzing"})
             # DB work can take several seconds; keep sending pulses so the client/proxy
             # does not treat the SSE as stalled. Same executor runs tasks sequentially.
+            scope_mode = normalize_dashboard_mode(scope)
             with ThreadPoolExecutor(max_workers=1) as pool:
-                f_ud = pool.submit(build_user_data, conn, user_id, m, y)
+                f_ud = pool.submit(build_user_data, conn, user_id, m, y, scope_mode)
                 deadline_ud = time.time() + 45
                 while not f_ud.done():
                     if time.time() > deadline_ud:
@@ -320,9 +346,11 @@ def insights_stream(
                     )
                     return
 
-                fi = pool.submit(generate_monthly_insights, user_data)
+            with ThreadPoolExecutor(max_workers=2) as llm_pool:
+                fi = llm_pool.submit(generate_monthly_insights, user_data)
+                fr = llm_pool.submit(get_personalized_recommendations, user_data)
                 deadline = time.time() + 40
-                while not fi.done():
+                while not (fi.done() and fr.done()):
                     if time.time() > deadline:
                         yield _sse_line(
                             {
@@ -334,9 +362,10 @@ def insights_stream(
                     yield _sse_line({"pulse": True})
                     time.sleep(0.22)
                 try:
-                    insights = fi.result(timeout=0)
+                    insights_card = fi.result(timeout=0)
+                    recs = fr.result(timeout=0)
                 except Exception:
-                    _log.exception("insights-stream generate_monthly_insights failed user_id=%s", user_id)
+                    _log.exception("insights-stream LLM jobs failed user_id=%s", user_id)
                     yield _sse_line(
                         {
                             "error": "insights_unavailable",
@@ -345,11 +374,19 @@ def insights_stream(
                     )
                     return
 
+            if not isinstance(insights_card, dict):
+                insights_card = {}
+            if not isinstance(recs, dict):
+                recs = {}
+            insights_card["priority_actions"] = recs.get("priority_actions", [])
+            insights_card["quick_wins"] = recs.get("quick_wins", [])
+            insights_card["budget_suggestion"] = recs.get("budget_suggestion", {})
+
             payload = {
                 "user": {"name": user_data["name"], "email": user_data["email"]},
                 "period": user_data["current_month"],
-                "insights": insights,
-                "recommendations": {},
+                "insights": insights_card,
+                "recommendations": recs,
                 "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
             }
             yield _sse_line({"done": True, "data": payload})
@@ -507,7 +544,7 @@ def health_narrative(
     y = year if year is not None else today.year
     try:
         user_data = build_user_data(conn, user_id, m, y)
-        hs = calculate_health_score(conn, user_id, m, y)
+        hs = calculate_health_score(conn, user_id, m, y, scope=user_data.get("insight_scope"))
         details = _health_details_for_narrative(hs)
         narrative = generate_health_narrative(user_data, details)
         return {
@@ -800,13 +837,14 @@ def get_insights(
     user_id: int,
     month: int | None = Query(None, ge=1, le=12),
     year: int | None = Query(None, ge=2000, le=2100),
+    scope: str | None = Query(None, description="bank_only | credit_card_only | merged"),
     conn=Depends(get_db),
 ):
     today = date.today()
     m = month if month is not None else today.month
     y = year if year is not None else today.year
     try:
-        return _insights_payload(conn, user_id, m, y)
+        return _insights_payload(conn, user_id, m, y, scope=scope)
     except HTTPException:
         raise
     except FuturesTimeout:

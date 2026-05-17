@@ -1,5 +1,11 @@
 import { useState } from "react";
 import { getAccessToken } from "../../services/api";
+import UploadResultSummary from "../../components/Upload/UploadResultSummary";
+import {
+  UPLOAD_ACCEPT,
+  UPLOAD_HINT,
+  uploadFinancialDocument,
+} from "../../services/documentUpload";
 
 const BANKS = [
   { id: "HDFC", name: "HDFC Bank", emoji: "🏦" },
@@ -31,42 +37,15 @@ async function apiSetMode({ userId, dashboard_mode, bank_name, onboarding_source
   return res.json();
 }
 
-function extractMsg(data) {
-  if (!data) return "Upload failed";
-  const d = data.detail ?? data.error ?? data.message;
-  if (typeof d === "string") return d;
-  if (Array.isArray(d)) return d.map((e) => e?.msg || JSON.stringify(e)).join("; ");
-  if (d && typeof d === "object") return JSON.stringify(d);
-  return "Upload failed";
-}
-
-async function apiUploadPDF({ userId, file, source_type, institution_name }) {
-  const token = getAccessToken();
-  const form = new FormData();
-  form.append("file", file);
-  form.append("user_id", String(userId));   // endpoint expects Form field, not query param
-  form.append("source_type", source_type);
-  form.append("institution_name", institution_name);
-
-  const res = await fetch(`/api/documents/upload`, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: form,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.success === false) {
-    throw new Error(extractMsg(data));
-  }
-  return data;
-}
-
-export default function SourceSelection({ userId, onComplete }) {
+export default function SourceSelection({ userId, onComplete, onBack }) {
   const [screen, setScreen] = useState("main"); // main | bank_picker | pdf_upload | success
   const [activeOption, setActiveOption] = useState(null);
   const [selectedBank, setSelectedBank] = useState(null);
   const [uploadFile, setUploadFile] = useState(null);
+  const [institutionName, setInstitutionName] = useState("");
+  const [accountLast4, setAccountLast4] = useState("");
   const [busy, setBusy] = useState(false);
-  const [successData, setSuccessData] = useState(null);
+  const [uploadResult, setUploadResult] = useState(null);
   const [error, setError] = useState("");
 
   const clearError = () => setError("");
@@ -105,22 +84,26 @@ export default function SourceSelection({ userId, onComplete }) {
 
   async function handlePDFUpload() {
     if (!uploadFile) { setError("Please choose a file first"); return; }
+    if (!institutionName.trim()) { setError("Enter your bank or card name"); return; }
     setBusy(true);
     clearError();
     try {
       const isCard = activeOption === "credit_card";
-      const data = await apiUploadPDF({
-        userId,
+      const data = await uploadFinancialDocument({
         file: uploadFile,
-        source_type: isCard ? "credit_card" : "bank_statement_pdf",
-        institution_name: isCard ? "Credit Card" : "Bank Statement",
+        userId,
+        sourceType: isCard ? "credit_card" : "bank_statement_pdf",
+        institutionName: institutionName.trim(),
+        accountNumberMasked: accountLast4.trim() || undefined,
+        addedVia: "onboarding_upload",
+        apiBase: "/api",
       });
       await apiSetMode({
         userId,
         dashboard_mode: isCard ? "credit_card_only" : "bank_only",
         onboarding_source: isCard ? "credit_card" : "bank_statement",
       });
-      setSuccessData({ imported: data.imported ?? 0, duplicates: data.duplicates ?? 0 });
+      setUploadResult(data);
       setScreen("success");
     } catch (e) {
       setError(e.message);
@@ -131,8 +114,8 @@ export default function SourceSelection({ userId, onComplete }) {
 
   // ── Success ───────────────────────────────────────────────────────────────
   if (screen === "success") {
-    const total = (successData?.imported ?? 0) + (successData?.duplicates ?? 0);
-    const allDupes = successData?.imported === 0 && successData?.duplicates > 0;
+    const imported = uploadResult?.imported ?? uploadResult?.transactions_stored ?? 0;
+    const allDupes = imported === 0 && (uploadResult?.duplicates ?? 0) > 0;
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#070418] px-4 text-center">
         <div className="mx-auto w-full max-w-md rounded-2xl border border-white/10 bg-white/[0.04] p-8 backdrop-blur-xl">
@@ -142,21 +125,8 @@ export default function SourceSelection({ userId, onComplete }) {
           <h2 className="text-2xl font-bold text-white">
             {allDupes ? "Statement Connected!" : "Successfully Imported!"}
           </h2>
-          <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-6 py-4">
-            {allDupes ? (
-              <p className="text-base text-emerald-300">
-                ✓ {total} transactions found — already up to date
-              </p>
-            ) : (
-              <p className="text-base text-emerald-300">
-                ✓ {successData?.imported} transactions imported
-              </p>
-            )}
-            {!allDupes && successData?.duplicates > 0 && (
-              <p className="mt-1 text-sm text-slate-400">
-                {successData.duplicates} duplicates skipped
-              </p>
-            )}
+          <div className="mt-4">
+            <UploadResultSummary result={uploadResult} variant="signup" />
           </div>
           <p className="mt-4 text-sm text-slate-400">Your financial insights are ready.</p>
           <button
@@ -174,8 +144,13 @@ export default function SourceSelection({ userId, onComplete }) {
   // ── Bank Picker ───────────────────────────────────────────────────────────
   if (screen === "bank_picker") {
     return (
-      <PageShell>
-        <BackBtn onClick={() => { setScreen("main"); clearError(); setSelectedBank(null); }} />
+      <PageShell
+        onBack={() => {
+          setScreen("main");
+          clearError();
+          setSelectedBank(null);
+        }}
+      >
         <h2 className="mb-1 text-2xl font-bold text-white">Select Your Bank</h2>
         <p className="mb-6 text-sm text-slate-400">Choose your primary bank account</p>
         <div className="grid w-full max-w-sm grid-cols-2 gap-3">
@@ -213,22 +188,48 @@ export default function SourceSelection({ userId, onComplete }) {
   if (screen === "pdf_upload") {
     const isCard = activeOption === "credit_card";
     return (
-      <PageShell>
-        <BackBtn
-          onClick={() => {
-            setScreen("main");
-            clearError();
-            setUploadFile(null);
-          }}
-        />
+      <PageShell
+        onBack={() => {
+          setScreen("main");
+          clearError();
+          setUploadFile(null);
+        }}
+      >
         <h2 className="mb-1 text-2xl font-bold text-white">
           {isCard ? "💳 Add Credit Card" : "📄 Upload Bank Statement"}
         </h2>
-        <p className="mb-6 text-sm text-slate-400">
+        <p className="mb-4 text-sm text-slate-400">
           {isCard
-            ? "Upload your credit card PDF statement"
-            : "Import transactions from PDF or CSV"}
+            ? "Upload your credit card statement (PDF, CSV, Excel, or photo)"
+            : "Import transactions from PDF, CSV, Excel, or image"}
         </p>
+
+        <div className="mb-3 w-full max-w-sm space-y-3">
+          <div>
+            <label className="mb-1 block text-left text-xs text-slate-400">
+              {isCard ? "Credit card name" : "Bank name"}
+            </label>
+            <input
+              value={institutionName}
+              onChange={(e) => setInstitutionName(e.target.value)}
+              placeholder={isCard ? "e.g. Axis Bank Credit Card" : "e.g. HDFC Bank savings"}
+              className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm text-white placeholder-white/30"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-left text-xs text-slate-400">
+              Last 4 digits <span className="text-slate-500">(optional)</span>
+            </label>
+            <input
+              value={accountLast4}
+              onChange={(e) => setAccountLast4(e.target.value)}
+              placeholder="e.g. 4812"
+              maxLength={8}
+              className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm text-white placeholder-white/30"
+            />
+          </div>
+        </div>
+
         <label
           htmlFor="ss-file-input"
           className={`flex w-full max-w-sm cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-sm transition ${
@@ -238,12 +239,12 @@ export default function SourceSelection({ userId, onComplete }) {
           }`}
         >
           <span className="text-3xl">{uploadFile ? "✓" : "📂"}</span>
-          {uploadFile ? uploadFile.name : "Click to choose file (PDF, CSV — max 20 MB)"}
+          {uploadFile ? uploadFile.name : `Click to choose file (${UPLOAD_HINT})`}
         </label>
         <input
           id="ss-file-input"
           type="file"
-          accept=".pdf,.csv,.xlsx"
+          accept={UPLOAD_ACCEPT}
           className="hidden"
           onChange={(e) => {
             setUploadFile(e.target.files?.[0] || null);
@@ -254,7 +255,7 @@ export default function SourceSelection({ userId, onComplete }) {
         <button
           type="button"
           onClick={handlePDFUpload}
-          disabled={!uploadFile || busy}
+          disabled={!uploadFile || !institutionName.trim() || busy}
           className="mt-5 w-full max-w-sm rounded-xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-pink-600 py-3 text-base font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
         >
           {busy ? "Processing… (this may take 30–60 s)" : "Upload & Extract Transactions →"}
@@ -266,13 +267,13 @@ export default function SourceSelection({ userId, onComplete }) {
 
   // ── Main screen ───────────────────────────────────────────────────────────
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#070418] px-4 py-12">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-[#070418] px-4 py-12">
+      {onBack ? <FixedBackBtn onClick={onBack} /> : null}
       {/* Background blobs */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -left-32 top-0 h-96 w-96 rounded-full bg-violet-600/20 blur-[120px]" />
         <div className="absolute -right-20 bottom-0 h-80 w-80 rounded-full bg-cyan-500/15 blur-[100px]" />
       </div>
-
       <div className="relative z-10 w-full max-w-2xl text-center">
         <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-400/90">
           Almost there
@@ -294,13 +295,21 @@ export default function SourceSelection({ userId, onComplete }) {
             icon="💳"
             title="Add Credit Card"
             desc="Spending insights from card statement"
-            onClick={() => { setActiveOption("credit_card"); setScreen("pdf_upload"); }}
+            onClick={() => {
+              setActiveOption("credit_card");
+              setInstitutionName("");
+              setScreen("pdf_upload");
+            }}
           />
           <OptionCard
             icon="📄"
             title="Upload Bank Statement"
             desc="Import transactions from PDF or CSV"
-            onClick={() => { setActiveOption("bank_statement"); setScreen("pdf_upload"); }}
+            onClick={() => {
+              setActiveOption("bank_statement");
+              setInstitutionName("");
+              setScreen("pdf_upload");
+            }}
           />
         </div>
 
@@ -321,28 +330,30 @@ export default function SourceSelection({ userId, onComplete }) {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function PageShell({ children }) {
+function PageShell({ children, onBack }) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#070418] px-4 py-12">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-[#070418] px-4 py-12">
+      {onBack ? <FixedBackBtn onClick={onBack} /> : null}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -left-32 top-0 h-96 w-96 rounded-full bg-violet-600/20 blur-[120px]" />
         <div className="absolute -right-20 bottom-0 h-80 w-80 rounded-full bg-cyan-500/15 blur-[100px]" />
       </div>
-      <div className="relative z-10 flex w-full max-w-md flex-col items-center">
+      <div className="relative z-10 flex w-full max-w-md flex-col items-center pt-12">
         {children}
       </div>
     </div>
   );
 }
 
-function BackBtn({ onClick }) {
+function FixedBackBtn({ onClick, label = "← Back" }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="mb-6 self-start rounded-lg border border-white/10 px-3 py-1.5 text-sm text-violet-400 transition hover:border-violet-500/50 hover:text-violet-200"
+      aria-label="Go back"
+      className="fixed left-4 top-4 z-50 inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-[#0c1022]/90 px-4 py-2 text-sm font-medium text-slate-200 shadow-lg backdrop-blur-md transition hover:border-violet-500/50 hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
     >
-      ← Back
+      {label}
     </button>
   );
 }
