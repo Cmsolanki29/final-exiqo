@@ -80,9 +80,16 @@ def _dev_auth_detail(exc: Exception, fallback: str) -> str:
 
 def _seed_new_user_transactions(user_id: int) -> None:
     """
-    Heavy inserts (1000+ txns + demo workspace) run after the signup HTTP response.
-    Uses a dedicated connection so the client is not blocked by bulk inserts / ML DB load.
+    Optional demo seed (1000+ txns + workspace widgets).
+
+    Off by default so new signups see an empty dashboard until they upload statements.
+    Enable for judge demos: SMARTSPEND_SEED_DEMO_TXNS=1 (or SMARTSPEND_SEED_CORPUS=1).
     """
+    if os.getenv("SMARTSPEND_SEED_DEMO_TXNS", "").lower() not in ("1", "true", "yes"):
+        if os.getenv("SMARTSPEND_SEED_CORPUS", "").lower() not in ("1", "true", "yes"):
+            logger.info("Skipping demo transaction seed for user id=%s (upload-first onboarding)", user_id)
+            return
+
     import random
 
     from db import get_connection

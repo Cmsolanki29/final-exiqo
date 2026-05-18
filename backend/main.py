@@ -45,6 +45,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from db import get_db, test_db_connection
+from utils.auth import get_current_user_id
 from services.dashboard_scope import fetch_dashboard_mode, transaction_scope_sql
 from services.scoped_analytics import statement_period_card_spend, total_statement_spend
 from models.schemas import (
@@ -561,14 +562,19 @@ def health_orchestrator() -> dict[str, Any]:
 
 
 @app.get("/api/users", response_model=list[UserResponse])
-def list_users(conn=Depends(get_db)):
+def list_users(
+    conn=Depends(get_db),
+    current_user_id: int = Depends(get_current_user_id),
+):
+    """Return only the authenticated user (prevents cross-user workspace leakage)."""
     cur = conn.cursor()
     try:
         cur.execute(
             """
             SELECT id, name, email, monthly_income::float, savings_goal::float, risk_tolerance
-            FROM users ORDER BY id;
-            """
+            FROM users WHERE id = %s;
+            """,
+            (current_user_id,),
         )
         return [
             UserResponse(
@@ -588,7 +594,13 @@ def list_users(conn=Depends(get_db)):
 
 
 @app.get("/api/users/{user_id}", response_model=UserResponse)
-def get_user(user_id: int, conn=Depends(get_db)):
+def get_user(
+    user_id: int,
+    conn=Depends(get_db),
+    current_user_id: int = Depends(get_current_user_id),
+):
+    if user_id != current_user_id:
+        raise HTTPException(403, "Forbidden")
     cur = conn.cursor()
     try:
         cur.execute(

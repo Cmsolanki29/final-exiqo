@@ -44,7 +44,6 @@ import IntroFlow, { resetToIntroAuth } from "./components/intro/IntroFlow";
 import { ToastProvider } from "./components/common/Toast";
 import { SkeletonCard } from "./components/common/SkeletonCard";
 import { useAuth } from "./context/AuthContext";
-import { getUsers } from "./services/api";
 
 const TransactionsTab = lazy(() => import("./components/app-tabs/TransactionsTab"));
 const InsightsTab = lazy(() => import("./components/app-tabs/InsightsTab"));
@@ -70,10 +69,10 @@ const App = () => {
       }
     } catch { /* ignore */ }
   }, [isAuthenticated]);
-  const [users, setUsers] = useState([]);
-  const [selectedUserId, setSelectedUserId] = useState(1);
+  /** Always the JWT user — never another workspace id (prevents cross-user data leaks). */
+  const workspaceUserId = useMemo(() => Number(user?.id) || 0, [user?.id]);
   /** Logged-in user only — subscription intelligence + device-link must match JWT (no workspace fallback). */
-  const subscriptionOwnerId = useMemo(() => Number(user?.id) || 0, [user?.id]);
+  const subscriptionOwnerId = workspaceUserId;
   const [darkMode, setDarkMode] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -82,8 +81,6 @@ const App = () => {
    * connect → first-time device link | hub → two engines | ai-analysis | reminders
    */
   const [subscriptionsSubView, setSubscriptionsSubView] = useState("connect");
-  const [loadingUsers, setLoadingUsers] = useState(true);
-  const [userError, setUserError] = useState("");
   /** After sign-in, show cinematic intro once per tab session before OTP / bank onboarding. */
   const [preOnboardIntroDone, setPreOnboardIntroDone] = useState(false);
 
@@ -121,6 +118,9 @@ const App = () => {
     const handler = (e) => {
       const tab = e.detail?.tab;
       if (tab) setActiveTab(tab);
+      if (tab === "subscriptions" && e.detail?.subView) {
+        setSubscriptionsSubView(e.detail.subView);
+      }
     };
     window.addEventListener("smartspend:navigate", handler);
     return () => window.removeEventListener("smartspend:navigate", handler);
@@ -182,10 +182,7 @@ const App = () => {
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [year, setYear] = useState(today.getFullYear());
 
-  const selectedUser = useMemo(
-    () => (users || []).find((u) => u.id === selectedUserId),
-    [users, selectedUserId]
-  );
+  const selectedUser = user;
 
   useEffect(() => {
     document.documentElement.classList.toggle("light", !darkMode);
@@ -205,35 +202,6 @@ const App = () => {
       setPreOnboardIntroDone(false);
     }
   }, [user?.id, user?.onboarding_completed]);
-
-  useEffect(() => {
-    if (!isAuthenticated || !user) {
-      setUsers([]);
-      setLoadingUsers(false);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      setLoadingUsers(true);
-      setUserError("");
-      setSelectedUserId(user.id);
-      try {
-        const response = await getUsers();
-        if (cancelled) return;
-        setUsers(response || []);
-        if (response?.length && !response.find((u) => u.id === user.id)) {
-          setSelectedUserId(response[0].id);
-        }
-      } catch (error) {
-        if (!cancelled) setUserError(error.message || "Unable to load users");
-      } finally {
-        if (!cancelled) setLoadingUsers(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated, user]);
 
   if (authLoading) {
     return (
@@ -346,7 +314,7 @@ const App = () => {
           <TopBar
             userName={selectedUser?.name || user?.name || user?.email || "User"}
             userEmail={user?.email}
-            userId={selectedUserId}
+            userId={workspaceUserId}
             month={month}
             year={year}
             onMonthChange={setMonth}
@@ -356,23 +324,11 @@ const App = () => {
           />
 
           <div className="p-4 pb-28 pt-4 sm:p-5 md:pb-7 lg:p-7">
-            {loadingUsers ? (
-              <div style={{ marginTop: 4 }}>
-                <SkeletonCard lines={4} height={88} />
-              </div>
-            ) : userError ? (
-              <div className="error-card glass-card" style={{ marginTop: 4 }}>
-                <p>Could not load users: {userError}</p>
-                <button type="button" onClick={() => window.location.reload()}>
-                  Retry
-                </button>
-              </div>
-            ) : (
-              <>
                 <div key={activeTab} className="tab-panel-enter">
                 {activeTab === "dashboard" && (
                   <Dashboard
-                    userId={selectedUserId}
+                    key={workspaceUserId}
+                    userId={workspaceUserId}
                     month={month}
                     year={year}
                     onMonthChange={setMonth}
@@ -382,13 +338,14 @@ const App = () => {
                 )}
                 {activeTab === "transactions" && (
                   <Suspense fallback={<SkeletonCard lines={4} height={88} />}>
-                    <TransactionsTab userId={selectedUserId} month={month} year={year} />
+                    <TransactionsTab key={workspaceUserId} userId={workspaceUserId} month={month} year={year} />
                   </Suspense>
                 )}
                 {activeTab === "insights" && (
                   <Suspense fallback={<SkeletonCard lines={4} height={88} />}>
                     <InsightsTab
-                      userId={selectedUserId}
+                      key={workspaceUserId}
+                      userId={workspaceUserId}
                       month={month}
                       year={year}
                       setActiveTab={setActiveTab}
@@ -398,7 +355,8 @@ const App = () => {
                 {activeTab === "simulator" && (
                   <Suspense fallback={<SkeletonCard lines={4} height={88} />}>
                     <SimulatorTab
-                      userId={selectedUserId}
+                      key={workspaceUserId}
+                      userId={workspaceUserId}
                       month={month}
                       year={year}
                       setActiveTab={setActiveTab}
@@ -408,8 +366,9 @@ const App = () => {
                 {activeTab === "settings" && (
                   <Suspense fallback={<SkeletonCard lines={2} height={72} />}>
                     <SettingsTab
+                      key={workspaceUserId}
                       onOpenAdmin={() => setActiveTab("admin")}
-                      userId={selectedUserId}
+                      userId={workspaceUserId}
                       onLeave={() => setActiveTab("dashboard")}
                     />
                   </Suspense>
@@ -419,15 +378,17 @@ const App = () => {
                     <AdminDiagnostics onExit={() => setActiveTab("settings")} />
                   </Suspense>
                 )}
-                {activeTab === "emi" && <EMITrapDetector userId={selectedUserId} />}
+                {activeTab === "emi" && <EMITrapDetector key={workspaceUserId} userId={workspaceUserId} />}
                 {activeTab === "subscriptions" && subscriptionOwnerId > 0 && subscriptionsSubView === "connect" && (
                   <SubscriptionConnect
+                    key={subscriptionOwnerId}
                     ownerId={subscriptionOwnerId}
                     onComplete={() => setSubscriptionsSubView("hub")}
                   />
                 )}
                 {activeTab === "subscriptions" && subscriptionOwnerId > 0 && subscriptionsSubView === "hub" && (
                   <SubscriptionHub
+                    key={subscriptionOwnerId}
                     ownerId={subscriptionOwnerId}
                     onOpenAI={() => setSubscriptionsSubView("ai-analysis")}
                     onOpenReminders={() => setSubscriptionsSubView("reminders")}
@@ -436,12 +397,13 @@ const App = () => {
                 )}
                 {activeTab === "subscriptions" && subscriptionOwnerId > 0 && subscriptionsSubView === "ai-analysis" && (
                   <AIAnalysisEngine
+                    key={subscriptionOwnerId}
                     onBack={() => setSubscriptionsSubView("hub")}
                     onOpenReminders={() => setSubscriptionsSubView("reminders")}
                   />
                 )}
                 {activeTab === "subscriptions" && subscriptionOwnerId > 0 && subscriptionsSubView === "reminders" && (
-                  <SmartReminderEngine onBack={() => setSubscriptionsSubView("hub")} />
+                  <SmartReminderEngine key={subscriptionOwnerId} onBack={() => setSubscriptionsSubView("hub")} />
                 )}
                 {activeTab === "subscriptions" && !subscriptionOwnerId ? (
                   <div className="mx-auto max-w-lg rounded-2xl border border-white/10 bg-white/[0.04] p-6 text-center text-sm text-white/75">
@@ -449,12 +411,12 @@ const App = () => {
                     intelligence.
                   </div>
                 ) : null}
-                {activeTab === "dark-patterns" && <DarkPatternDetector userId={selectedUserId} />}
+                {activeTab === "dark-patterns" && <DarkPatternDetector key={workspaceUserId} userId={workspaceUserId} />}
                 {activeTab === "fraud" && (
-                  <FraudShieldPage userId={selectedUserId} userName={selectedUser?.name} />
+                  <FraudShieldPage key={workspaceUserId} userId={workspaceUserId} userName={selectedUser?.name} />
                 )}
-                {activeTab === "purchase" && <PurchasePlanner userId={selectedUserId} />}
-                {activeTab === "festival" && <FestivalPredictor userId={selectedUserId} />}
+                {activeTab === "purchase" && <PurchasePlanner key={workspaceUserId} userId={workspaceUserId} />}
+                {activeTab === "festival" && <FestivalPredictor key={workspaceUserId} userId={workspaceUserId} />}
                 {activeTab === "trip-planner" && (
                   <Suspense fallback={<SkeletonCard lines={4} height={120} />}>
                     <TripPlannerPage />
@@ -467,8 +429,6 @@ const App = () => {
                 )}
 
                 </div>
-              </>
-            )}
           </div>
         </div>
       </div>

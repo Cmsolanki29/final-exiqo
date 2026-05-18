@@ -18,6 +18,7 @@ import {
   getAccessToken,
   setAuthTokens,
 } from "../services/api";
+import { clearClientSessionState } from "../utils/sessionReset";
 
 const SPLASH_SEEN_KEY = "smartspend_splash_seen";
 
@@ -135,13 +136,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(async () => {
+    const uid = user?.id;
     try {
       if (getAccessToken()) await authLogout();
     } finally {
-      clearAuthTokens();
+      clearClientSessionState(uid);
       setUser(null);
     }
-  }, []);
+  }, [user?.id]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

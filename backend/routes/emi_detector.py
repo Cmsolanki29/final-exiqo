@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from db import get_db
 from services.dashboard_scope import fetch_dashboard_mode, transaction_scope_sql
+from services.emi_calculator import loan_summary
 from services.openai_service import call_gpt
 
 router = APIRouter(prefix="/emi", tags=["EMI Tracker"])
@@ -502,6 +503,34 @@ class CalculateImpactBody(BaseModel):
     new_emi_monthly: float = Field(default=0, ge=0, le=5_000_000)
 
 
+class LoanCalculateBody(BaseModel):
+    product_name: str = Field(default="Purchase", max_length=120)
+    product_price: float = Field(..., gt=0, le=50_000_000)
+    down_payment: float = Field(default=0, ge=0)
+    annual_interest_rate_pct: float = Field(default=12.0, ge=0, le=60)
+    tenure_months: int = Field(default=12, ge=1, le=360)
+
+
+@router.post("/{user_id}/loan-calculate", tags=["EMI Tracker"])
+def post_loan_calculate(user_id: int, body: LoanCalculateBody, conn=Depends(get_db)):
+    """Standard reducing-balance EMI + amortization schedule."""
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM users WHERE id = %s;", (user_id,))
+    if not cur.fetchone():
+        cur.close()
+        raise HTTPException(404, "User not found")
+    cur.close()
+    if body.down_payment > body.product_price:
+        raise HTTPException(400, detail="down_payment cannot exceed product_price")
+    summary = loan_summary(
+        body.product_price,
+        body.down_payment,
+        body.annual_interest_rate_pct,
+        body.tenure_months,
+    )
+    return {"product_name": body.product_name.strip(), **summary}
+
+
 @router.post("/{user_id}/calculate-impact")
 def post_calculate_emi_impact(user_id: int, body: CalculateImpactBody, conn=Depends(get_db)):
     """Return DTI before/after adding a hypothetical monthly EMI."""
@@ -849,6 +878,18 @@ def scan_and_store_emi(user_id: int, conn=Depends(get_db)):
                 )
         finally:
             cur.close()
+        try:
+            from services.financial_engine import recalculate_financial_state
+
+            recalculate_financial_state(
+                conn,
+                user_id,
+                trigger_type="emi_scan",
+                trigger_summary=f"EMI scan stored {len(entries)} active EMI(s)",
+            )
+            conn.commit()
+        except Exception:
+            pass
         return {
             "user_id": user_id,
             "emi_detected_count": len(entries),

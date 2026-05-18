@@ -369,12 +369,21 @@ async def upload_statement(
         try:
             from datetime import date as _date
 
+            from services.financial_engine import recalculate_financial_state
             from services.openai_service import invalidate_insight_cache
 
             today = _date.today()
             invalidate_insight_cache(conn, user_id, today.month, today.year)
+            recalculate_financial_state(
+                conn,
+                user_id,
+                trigger_type="statement_upload",
+                trigger_id=doc_id,
+                trigger_summary=f"Imported {result.get('imported', 0)} transactions",
+            )
+            conn.commit()
         except Exception:
-            logger.exception("[upload] insight cache invalidation failed user_id=%s", user_id)
+            logger.exception("[upload] post-upload recalc failed user_id=%s", user_id)
     logger.warning(
         "[upload] ok document_id=%s source_id=%s success=%s imported=%s",
         doc_id,
@@ -637,6 +646,37 @@ async def update_dashboard_mode(request: Request, conn=Depends(get_db)):
 
     conn.commit()
     return {"success": True, "mode": mode_n, "visible_source_ids": ids}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+@router.delete("/sources/{source_id}")
+def delete_connected_source(
+    source_id: int,
+    user_id: int = Query(...),
+    conn=Depends(get_db),
+):
+    """Remove a connected source and all its transactions for the given user."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM connected_sources WHERE id = %s AND user_id = %s",
+            (source_id, user_id),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Source not found or not owned by this user")
+
+        # Delete transactions linked to this source
+        cur.execute(
+            "DELETE FROM transactions WHERE source_id = %s AND user_id = %s",
+            (source_id, user_id),
+        )
+        # Delete the source itself
+        cur.execute(
+            "DELETE FROM connected_sources WHERE id = %s AND user_id = %s",
+            (source_id, user_id),
+        )
+
+    conn.commit()
+    return {"success": True, "deleted_source_id": source_id}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

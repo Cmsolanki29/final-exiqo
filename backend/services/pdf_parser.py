@@ -17,14 +17,46 @@ from services.monster_extraction import extract_with_retry, update_extraction_ll
 logger = logging.getLogger(__name__)
 
 _CREDIT_KEYWORDS = {"credit", "cr", "deposit", "salary", "refund", "cashback", "received", "reversal"}
+_CREDIT_NARRATION_HINTS = (
+    "neft cr",
+    "imps cr",
+    "rtgs cr",
+    "upi from",
+    "upi cr",
+    "salary",
+    "payroll",
+    "reimbursement",
+    "interest credit",
+    "int.pd",
+    "interest paid",
+    "credit interest",
+)
 _TRANSFER_KEYWORDS = {
-    "credit card payment", "cc payment", "card payment", "payment received",
-    "payment towards", "autopay", "inward transfer", "outward transfer",
+    "credit card payment",
+    "cc payment",
+    "card payment",
+    "cc bill payment",
+    "payment towards card",
+    "payment towards credit",
+    "payment received",
+    "payment towards",
+    "autopay cc",
+    "autopay",
+    "inward transfer",
+    "outward transfer",
+    "self transfer",
+    "imps self",
+    "neft self",
+    "transfer to self",
+    "fund transfer self",
 }
 
 
-def _normalise_type(raw: str | None) -> str:
+def _normalise_type(raw: str | None, description: str = "") -> str:
     r = (raw or "").lower().strip()
+    combined = f"{r} {description}".lower()
+    if any(k in combined for k in _CREDIT_NARRATION_HINTS):
+        return "CREDIT"
     if any(k in r for k in _CREDIT_KEYWORDS):
         return "CREDIT"
     return "DEBIT"
@@ -114,7 +146,7 @@ class PDFParserAgent:
                 invalid += 1
                 continue
 
-            raw_type = _normalise_type(txn.get("type"))
+            raw_type = _normalise_type(txn.get("type"), desc)
             txn_date = self._parse_date(txn.get("date", ""))
             if not txn_date:
                 invalid += 1

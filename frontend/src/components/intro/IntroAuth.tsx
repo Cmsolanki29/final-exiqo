@@ -300,10 +300,10 @@ function DashboardPreview() {
         <p className="text-[10.5px] font-semibold uppercase tracking-[0.18em] text-white/50">
           Available balance
         </p>
-        <p className="mt-1 font-heading text-[34px] font-semibold leading-none text-white">
-          ₹2,84,612
+        <p className="mt-1 font-heading text-[34px] font-semibold leading-none text-white/90">
+          Illustrative preview
         </p>
-        <p className="mt-1 text-[12px] text-emerald-300">+₹12,400 this month</p>
+        <p className="mt-1 text-[12px] text-white/45">Your live balance appears after you connect accounts</p>
       </div>
 
       {/* Mini chart */}
@@ -589,7 +589,7 @@ export function IntroAuth({
             </AnimatePresence>
 
             {/* Form */}
-            <form className="mt-6 space-y-4" onSubmit={submit}>
+            <form id="intro-auth-form" className="mt-6 space-y-4" onSubmit={submit}>
               <AnimatePresence initial={false}>
                 {mode === "signup" ? (
                   <motion.div
@@ -719,15 +719,22 @@ export function IntroAuth({
             </div>
           </div>
 
-          {/* Mobile sticky CTA mirror (only when CTA isn't already visible) */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 lg:hidden">
-            <div className="bg-gradient-to-t from-[#070418] via-[#070418]/85 to-transparent px-5 pb-5 pt-10">
-              <p className="text-center text-[10.5px] font-semibold uppercase tracking-[0.18em] text-white/45">
+          {/* Mobile sticky submit — keeps primary CTA reachable on short viewports */}
+          <motion.div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 lg:hidden">
+            <motion.div className="pointer-events-auto bg-gradient-to-t from-[#070418] via-[#070418]/95 to-transparent px-5 pb-5 pt-8">
+              <MorphSubmit
+                busy={busy}
+                success={success}
+                label={submitLabel}
+                disabled={busy || success}
+                formId="intro-auth-form"
+              />
+              <p className="mt-3 text-center text-[10.5px] font-semibold uppercase tracking-[0.18em] text-white/45">
                 <ShieldCheck size={11} className="mr-1 inline-block -translate-y-px text-cyan-300" />
                 256-bit encryption · RBI aligned
               </p>
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
         </main>
       </div>
     </div>
@@ -753,11 +760,14 @@ function MorphSubmit({
   success,
   label,
   disabled,
+  formId,
 }: {
   busy: boolean;
   success: boolean;
   label: string;
   disabled?: boolean;
+  /** When set, mobile sticky CTA submits the main form via form attribute. */
+  formId?: string;
 }) {
   const reduce = useReducedMotion();
   // Three states: idle (pill) / busy (spinning shield) / success (check burst)
@@ -770,8 +780,10 @@ function MorphSubmit({
           <motion.button
             key="idle"
             type="submit"
+            form={formId}
             disabled={disabled}
-            initial={{ opacity: 0, y: 6 }}
+            aria-label={label}
+            initial={reduce ? false : { opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.35, ease: BRAND_EASE }}

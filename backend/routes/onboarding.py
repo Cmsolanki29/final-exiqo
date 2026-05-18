@@ -146,11 +146,10 @@ async def link_bank(
             """
             UPDATE users
             SET mobile_number = %s,
-                phone = %s,
                 is_verified = TRUE
             WHERE id = %s
             """,
-            (mobile_number, mobile_number, user_id),
+            (mobile_number, user_id),
         )
 
         cur.execute("SELECT COUNT(*) FROM transactions WHERE user_id = %s", (user_id,))

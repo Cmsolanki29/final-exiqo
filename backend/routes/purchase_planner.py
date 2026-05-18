@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from db import get_db
 from services.ai_service import call_groq
 from services.dashboard_scope import fetch_dashboard_mode, transaction_scope_sql
+from services.emi_calculator import emi_vs_cash_from_loan
 
 router = APIRouter(prefix="/purchases", tags=["Purchase Planner"])
 
@@ -363,6 +364,11 @@ class AddGoalBody(BaseModel):
     target_date: str
     category: str = Field(default="OTHER", max_length=50)
     priority: str = Field(default="MEDIUM")
+    down_payment: float = Field(default=0, ge=0)
+    annual_interest_rate_pct: Optional[float] = Field(default=None, ge=0, le=60)
+    emi_tenure_months: Optional[int] = Field(default=None, ge=1, le=360)
+    linked_festival_key: Optional[str] = Field(default=None, max_length=80)
+    display_timeline_label: Optional[str] = Field(default=None, max_length=80)
 
 
 @router.post("/{user_id}/add-goal")
@@ -383,31 +389,65 @@ def add_goal(user_id: int, body: AddGoalBody, conn=Depends(get_db)):
     monthly_target = float(body.target_amount) / months_rem
     binfo = _best_buy_info(body.category, td)
     best_buy_str = f"{binfo['month']} — {binfo['reason']}"
-    emi_vs = json.dumps(_emi_cash_payload(float(body.target_amount)))
+    amount_f = float(body.target_amount)
+    down = max(0.0, min(float(body.down_payment or 0), amount_f))
+    if body.emi_tenure_months and body.annual_interest_rate_pct is not None:
+        emi_payload = emi_vs_cash_from_loan(
+            amount_f,
+            float(body.annual_interest_rate_pct),
+            int(body.emi_tenure_months),
+            down,
+        )
+    else:
+        emi_payload = _emi_cash_payload(amount_f)
+    emi_vs = json.dumps(emi_payload)
     sacrifice = json.dumps(_build_sacrifice_plan(conn, user_id, max(0, monthly_target - _avg_monthly_saved(conn, user_id)), monthly_target))
 
-    cur.execute(
-        """
-        INSERT INTO purchase_goals (
-          user_id, item_name, target_amount, saved_amount, target_date, monthly_target,
-          category, priority, status, best_buy_month, emi_vs_cash, sacrifice_plan
-        ) VALUES (%s, %s, %s, 0, %s, %s, %s, %s, 'SAVING', %s, %s::jsonb, %s::jsonb)
-        RETURNING id, item_name, target_amount, saved_amount, target_date, monthly_target,
-                  category, priority, status, best_buy_month, emi_vs_cash, sacrifice_plan;
-        """,
-        (
-            user_id,
-            body.item_name.strip(),
-            float(body.target_amount),
-            td,
-            round(monthly_target, 2),
-            body.category.upper()[:50],
-            body.priority.upper()[:10],
-            best_buy_str[:200],
-            emi_vs,
-            sacrifice,
-        ),
+    saved_initial = down
+    fk = (body.linked_festival_key or "").strip() or None
+    dl = (body.display_timeline_label or "").strip() or None
+
+    insert_cols = (
+        "user_id, item_name, target_amount, saved_amount, target_date, monthly_target, "
+        "category, priority, status, best_buy_month, emi_vs_cash, sacrifice_plan"
     )
+    insert_vals = (
+        user_id,
+        body.item_name.strip(),
+        amount_f,
+        round(saved_initial, 2),
+        td,
+        round(monthly_target, 2),
+        body.category.upper()[:50],
+        body.priority.upper()[:10],
+        "SAVING",
+        best_buy_str[:200],
+        emi_vs,
+        sacrifice,
+    )
+    try:
+        cur.execute(
+            f"""
+            INSERT INTO purchase_goals (
+              {insert_cols}, linked_festival_key, display_timeline_label
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
+            RETURNING id, item_name, target_amount, saved_amount, target_date, monthly_target,
+                      category, priority, status, best_buy_month, emi_vs_cash, sacrifice_plan;
+            """,
+            insert_vals + (fk, dl),
+        )
+    except Exception:
+        conn.rollback()
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            INSERT INTO purchase_goals ({insert_cols})
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb)
+            RETURNING id, item_name, target_amount, saved_amount, target_date, monthly_target,
+                      category, priority, status, best_buy_month, emi_vs_cash, sacrifice_plan;
+            """,
+            insert_vals,
+        )
     row = cur.fetchone()
     goal_id_new = row[0] if row else None
     cur.close()
@@ -458,6 +498,19 @@ def update_savings(user_id: int, goal_id: int, body: UpdateSavingsBody, conn=Dep
     )
     row2 = cur.fetchone()
     cur.close()
+    try:
+        from services.financial_engine import recalculate_financial_state
+
+        recalculate_financial_state(
+            conn,
+            user_id,
+            trigger_type="purchase_savings_update",
+            trigger_id=goal_id,
+            trigger_summary="Purchase goal savings updated",
+        )
+        conn.commit()
+    except Exception:
+        pass
     return _enrich_goal(conn, user_id, row2)
 
 
