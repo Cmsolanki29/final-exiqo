@@ -12,6 +12,7 @@ import {
   Plane,
   Receipt,
   Shield,
+  ShieldAlert,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
@@ -64,7 +65,10 @@ const NAV_SECTIONS = [
   {
     id: "risk-awareness",
     label: "Risk Awareness",
-    items: [{ id: "cybersafe-connect", label: "CyberSafe Connect", icon: ShieldCheck, newBadge: true }],
+    items: [
+      { id: "cybersafe-connect", label: "CyberSafe Connect", icon: ShieldCheck, newBadge: true },
+      { id: "fraud-shield", label: "FraudShield", icon: ShieldAlert },
+    ],
   },
   {
     id: "system",

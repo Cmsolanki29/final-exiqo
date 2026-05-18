@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
+  completePurchaseGoal,
   deletePurchaseGoal,
   getPurchases,
   postPurchaseAddGoal,
@@ -52,6 +53,8 @@ const PurchasePlanner = ({ userId }) => {
   const [postponeGoal, setPostponeGoal] = useState(null);
   const [postponeMonths, setPostponeMonths] = useState("3");
   const [postponing, setPostponing] = useState(false);
+  const [completingId, setCompletingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,15 +132,23 @@ const PurchasePlanner = ({ userId }) => {
     try {
       const updated = await putPurchaseUpdateSavings(userId, goalId, amt);
       setSaveInput((s) => ({ ...s, [goalId]: "" }));
-      await load();
-      showToast("Savings updated! 🎉");
-      const milestones = [25, 50, 75, 100];
       const newPct = Number(updated?.progress_pct ?? 0);
-      for (const m of milestones) {
-        if (prevPct < m && newPct >= m) {
-          setCelebrate({ pct: m, msg: `${m}% milestone!` });
-          setTimeout(() => setCelebrate(null), 4500);
-          break;
+      const finished = updated?.status === "COMPLETED" || newPct >= 100;
+      await load();
+      dispatchPlannerSync(userId);
+      if (finished) {
+        showToast("Goal complete — removed from your active plans!");
+        setCelebrate({ pct: 100, msg: "Purchase goal complete!" });
+        setTimeout(() => setCelebrate(null), 4500);
+      } else {
+        showToast("Savings updated!");
+        const milestones = [25, 50, 75, 100];
+        for (const m of milestones) {
+          if (prevPct < m && newPct >= m) {
+            setCelebrate({ pct: m, msg: `${m}% milestone!` });
+            setTimeout(() => setCelebrate(null), 4500);
+            break;
+          }
         }
       }
     } catch (e) {
@@ -147,13 +158,42 @@ const PurchasePlanner = ({ userId }) => {
     }
   };
 
-  const removeGoal = async (goalId) => {
-    if (!window.confirm("Cancel this goal?")) return;
+  const removeGoal = async (goalId, itemName) => {
+    if (!window.confirm(`Delete "${itemName}"? This cannot be undone.`)) return;
+    setDeletingId(goalId);
     try {
       await deletePurchaseGoal(userId, goalId);
       await load();
+      dispatchPlannerSync(userId);
+      showToast("Purchase plan deleted.");
     } catch (e) {
-      alert(e.message || "Delete failed");
+      showToast(e.message || "Delete failed");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const markComplete = async (goal) => {
+    const name = goal?.item_name || "this goal";
+    if (
+      !window.confirm(
+        `Mark "${name}" as complete? It will be removed from your active purchase plans.`,
+      )
+    ) {
+      return;
+    }
+    setCompletingId(goal.goal_id);
+    try {
+      await completePurchaseGoal(userId, goal.goal_id);
+      await load();
+      dispatchPlannerSync(userId);
+      setCelebrate({ pct: 100, msg: `${name} — done!` });
+      setTimeout(() => setCelebrate(null), 4500);
+      showToast("Marked complete — nice work!");
+    } catch (e) {
+      showToast(e.message || "Could not mark complete");
+    } finally {
+      setCompletingId(null);
     }
   };
 
@@ -369,6 +409,22 @@ const PurchasePlanner = ({ userId }) => {
                   <button type="button" className="btn-outline" onClick={() => setPostponeGoal(g)}>
                     Postpone
                   </button>
+                  <button
+                    type="button"
+                    className="btn-outline planner-btn-complete"
+                    disabled={completingId === g.goal_id}
+                    onClick={() => markComplete(g)}
+                  >
+                    {completingId === g.goal_id ? "Saving…" : "Mark complete"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    disabled={deletingId === g.goal_id}
+                    onClick={() => removeGoal(g.goal_id, g.item_name)}
+                  >
+                    {deletingId === g.goal_id ? "Deleting…" : "Delete"}
+                  </button>
                   <button type="button" className="btn-outline" onClick={() => toggleExpand(g.goal_id)}>
                     {isOpen ? "Hide ▲" : "Details ▼"}
                   </button>
@@ -433,9 +489,6 @@ const PurchasePlanner = ({ userId }) => {
                         ))}
                       </div>
                     </div>
-                    <button type="button" className="btn-outline" style={{ marginTop: 12 }} onClick={() => removeGoal(g.goal_id)}>
-                      Cancel goal
-                    </button>
                   </div>
                 )}
               </article>

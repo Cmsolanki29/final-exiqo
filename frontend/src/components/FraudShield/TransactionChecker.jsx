@@ -287,6 +287,21 @@ function VerdictCard({ verdict, result, userName, reporting, reportMsg, onDismis
         <p className="mt-2 text-sm font-medium leading-relaxed text-white/95">{recommendedCopy(verdict)}</p>
       </motion.div>
 
+      {result?.models_used && Object.keys(result.models_used).length > 0 ? (
+        <div className="relative mt-6 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/90">Model scores</p>
+          <p className="mt-2 font-mono text-xs text-white/90">
+            {Object.entries(result.models_used)
+              .filter(([, v]) => v != null)
+              .map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`)
+              .join(" · ")}
+          </p>
+          {result.flagged_by?.length ? (
+            <p className="mt-2 text-xs text-gray-400">Flagged by: {result.flagged_by.join(", ")}</p>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="relative mt-6 rounded-2xl border border-white/10 bg-black/30 p-4 sm:p-5">
         <div className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-200/85">
           <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />

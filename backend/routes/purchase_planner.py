@@ -335,7 +335,8 @@ def list_goals(user_id: int, conn=Depends(get_db)):
         SELECT id, item_name, target_amount, saved_amount, target_date, monthly_target,
                category, priority, status, best_buy_month, emi_vs_cash, sacrifice_plan
         FROM purchase_goals
-        WHERE user_id = %s AND status <> 'CANCELLED'
+        WHERE user_id = %s
+          AND UPPER(COALESCE(status, '')) NOT IN ('CANCELLED', 'COMPLETED')
         ORDER BY
           CASE priority WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END,
           target_date;
@@ -801,6 +802,60 @@ def postpone_purchase_goal(user_id: int, goal_id: int, body: PostponeGoalBody, c
         "message": f"Goal “{enriched.get('item_name', '')}” target moved to {new_td.isoformat()}.",
         "goal": enriched,
         "previous_target_date": old_td.isoformat(),
+    }
+
+
+@router.post("/{user_id}/{goal_id}/complete")
+def complete_goal(user_id: int, goal_id: int, conn=Depends(get_db)):
+    """Mark a purchase goal done — removes it from the active planner list."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, item_name, target_amount, saved_amount, target_date, monthly_target,
+               category, priority, status, best_buy_month, emi_vs_cash, sacrifice_plan
+        FROM purchase_goals
+        WHERE id = %s AND user_id = %s
+          AND UPPER(COALESCE(status, '')) NOT IN ('CANCELLED', 'COMPLETED');
+        """,
+        (goal_id, user_id),
+    )
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        raise HTTPException(404, "Goal not found")
+    target_f = float(row[2] or 0)
+    saved_f = float(row[3] or 0)
+    final_saved = max(saved_f, target_f) if target_f > 0 else saved_f
+    cur.execute(
+        """
+        UPDATE purchase_goals
+        SET status = 'COMPLETED', saved_amount = %s
+        WHERE id = %s AND user_id = %s
+        RETURNING id, item_name, target_amount, saved_amount, target_date, monthly_target,
+                  category, priority, status, best_buy_month, emi_vs_cash, sacrifice_plan;
+        """,
+        (final_saved, goal_id, user_id),
+    )
+    row2 = cur.fetchone()
+    cur.close()
+    try:
+        from services.financial_engine import recalculate_financial_state
+
+        recalculate_financial_state(
+            conn,
+            user_id,
+            trigger_type="purchase_goal_completed",
+            trigger_id=goal_id,
+            trigger_summary=f"Purchase goal '{row[1]}' marked complete.",
+        )
+        conn.commit()
+    except Exception:
+        pass
+    return {
+        "success": True,
+        "status": "COMPLETED",
+        "message": f"Goal “{row[1]}” marked complete.",
+        "goal": _enrich_goal(conn, user_id, row2) if row2 else None,
     }
 
 

@@ -121,14 +121,15 @@ class FeedbackService:
 
         # 4. Publish event (fire-and-forget — don't let event failure block response)
         try:
-            publisher = EventPublisher()
-            await publisher.publish(
+            from services.event_bus.publisher import event_publisher
+
+            await event_publisher.publish(
                 FEEDBACK_RECEIVED,
                 {
-                    "txn_id":   txn_id,
-                    "user_id":  user_id,
-                    "label":    label,
-                    "source":   "user_report",
+                    "txn_id": txn_id,
+                    "user_id": user_id,
+                    "label": label,
+                    "source": "user_report",
                 },
             )
         except Exception as exc:
@@ -201,14 +202,15 @@ class FeedbackService:
         await self.auto_remediate(dict(row))
 
         try:
-            publisher = EventPublisher()
-            await publisher.publish(
+            from services.event_bus.publisher import event_publisher
+
+            await event_publisher.publish(
                 FEEDBACK_RECEIVED,
                 {
-                    "txn_id":     txn_id,
-                    "user_id":    int(row["user_id"]),
-                    "label":      True,
-                    "source":     "chargeback",
+                    "txn_id": txn_id,
+                    "user_id": int(row["user_id"]),
+                    "label": True,
+                    "source": "chargeback",
                     "dispute_id": dispute_id,
                 },
             )
@@ -315,15 +317,16 @@ class FeedbackService:
             await self.auto_remediate(dict(txn_row))
 
         try:
-            publisher = EventPublisher()
-            await publisher.publish(
+            from services.event_bus.publisher import event_publisher
+
+            await event_publisher.publish(
                 FEEDBACK_RECEIVED,
                 {
-                    "txn_id":     txn_id,
-                    "label":      label,
-                    "source":     "analyst",
+                    "txn_id": txn_id,
+                    "label": label,
+                    "source": "analyst",
                     "resolution": resolution,
-                    "queue_id":   str(queue_id),
+                    "queue_id": str(queue_id),
                 },
             )
         except Exception as exc:

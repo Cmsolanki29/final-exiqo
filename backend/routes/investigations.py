@@ -2,8 +2,8 @@
 
 Endpoints (mounted at /api/risk/investigations from main.py):
 
-  POST /{txn_id}/run                  — manually trigger an investigation (admin)
-  GET  /{txn_id}                      — fetch the latest investigation row (admin)
+  POST /{txn_id}/run                  — trigger investigation (admin **or** transaction owner JWT)
+  GET  /{txn_id}                      — latest investigation row (admin **or** owner JWT)
   GET  /budget/today                  — today's LLM spend rollup       (admin)
   GET  /health                        — agent + LLM availability       (open)
 """
@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from core.config import get_settings
 from services.phase_9_agent.investigation_service import (
@@ -21,7 +21,7 @@ from services.phase_9_agent.investigation_service import (
     investigate_transaction,
 )
 from services.risk_common import groq_llm_client
-from services.risk_common.admin_auth import require_admin
+from services.risk_common.admin_auth import require_admin, verify_admin_or_transaction_owner
 from services.risk_common.budget_guard import budget_guard
 
 logger = logging.getLogger(__name__)
@@ -51,13 +51,15 @@ async def health() -> dict[str, Any]:
     }
 
 
-@router.post("/{txn_id}/run", dependencies=[Depends(require_admin)])
+@router.post("/{txn_id}/run")
 async def run_investigation(
     txn_id: int,
+    request: Request,
     user_id: Optional[int] = Query(default=None),
     triggered_by: str = Query(default="manual"),
 ) -> dict[str, Any]:
-    """Trigger an investigation on demand.  Admin only."""
+    """Trigger an investigation on demand. Admin **or** owner of the transaction (JWT)."""
+    verify_admin_or_transaction_owner(request, txn_id)
     if not get_settings().PHASE_9_AGENT_ENABLED:
         raise HTTPException(
             status_code=503,
@@ -70,9 +72,10 @@ async def run_investigation(
     )
 
 
-@router.get("/{txn_id}", dependencies=[Depends(require_admin)])
-async def fetch_investigation(txn_id: int) -> dict[str, Any]:
-    """Return the most recent investigation for a transaction."""
+@router.get("/{txn_id}")
+async def fetch_investigation(txn_id: int, request: Request) -> dict[str, Any]:
+    """Return the most recent investigation for a transaction. Admin or transaction owner."""
+    verify_admin_or_transaction_owner(request, txn_id)
     inv = await get_investigation(txn_id)
     if inv is None:
         raise HTTPException(status_code=404, detail=f"No investigation for transaction {txn_id}")

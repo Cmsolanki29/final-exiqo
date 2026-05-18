@@ -22,7 +22,7 @@ that succeeds when *either* of the two auth paths is satisfied.
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import Depends, Header, HTTPException, Request
 from fastapi.security import HTTPBearer
@@ -115,3 +115,58 @@ def require_admin(
             "in the ADMIN_USER_IDS allow-list."
         ),
     )
+
+
+def verify_admin_or_transaction_owner(request: Request, transaction_id: int) -> dict[str, Any]:
+    """Allow Phase 9 read/run if admin (X-Admin-Token or JWT admin list) OR JWT owns the transaction.
+
+    Used by investigation routes so normal users can investigate their own flagged txns
+    without REACT_APP_ADMIN_TOKEN.
+    """
+    x_admin = request.headers.get("X-Admin-Token") or request.headers.get("x-admin-token")
+    if x_admin and x_admin == _expected_admin_token():
+        return {"auth_path": "x_admin_token", "user_id": None}
+
+    bearer_token: Optional[str] = None
+    auth_hdr = request.headers.get("authorization") or request.headers.get("Authorization")
+    if auth_hdr and auth_hdr.lower().startswith("bearer "):
+        bearer_token = auth_hdr.split(" ", 1)[1].strip()
+
+    admin_uid = _check_jwt(bearer_token)
+    if admin_uid is not None:
+        return {"auth_path": "jwt_admin", "user_id": admin_uid}
+
+    if not bearer_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Sign in to run investigations, or use admin credentials.",
+        )
+    try:
+        payload = decode_token(bearer_token)
+    except HTTPException:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired session. Sign in again to investigate your transactions.",
+        ) from None
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+    try:
+        uid = int(payload.get("user_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token payload") from None
+
+    from db import get_connection  # noqa: PLC0415
+
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM transactions WHERE id = %s", (transaction_id,))
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row or int(row[0]) != uid:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only access investigations for your own transactions.",
+        )
+    return {"auth_path": "jwt_owner", "user_id": uid}

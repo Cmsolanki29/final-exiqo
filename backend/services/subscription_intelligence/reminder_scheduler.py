@@ -6,6 +6,33 @@ from typing import Any
 
 from psycopg2.extensions import connection as PgConnection
 
+# Lower = more urgent (surfaced first when multiple offsets are due).
+REMINDER_TYPE_URGENCY: dict[str, int] = {
+    "t1": 0,
+    "t2": 1,
+    "t3": 2,
+    "t5": 3,
+    "t7": 4,
+    "t10": 5,
+    "t15": 6,
+    "t20": 7,
+}
+
+# Demo / onboarding polish: one active cadence label per merchant (Tier 1 + Tier 2 mix).
+REMINDER_SHOWCASE_TARGETS: list[tuple[str, str, int]] = [
+    ("Netflix", "t3", 1),
+    ("Spotify", "t10", 1),
+    ("YouTube", "t1", 1),
+    ("LinkedIn", "t15", 2),
+    ("ChatGPT", "t5", 2),
+    ("Canva", "t3", 1),
+    ("Amazon", "t10", 2),
+]
+
+
+def _reminder_urgency(reminder_type: str | None) -> int:
+    return REMINDER_TYPE_URGENCY.get(str(reminder_type or "").lower(), 99)
+
 
 def validate_snooze_reason(reason: str | None, *, min_len: int = 10) -> bool:
     """True if accountability text meets API rules for escalated remind_later."""
@@ -78,31 +105,262 @@ def schedule_reminders_for_subscription(conn: PgConnection, subscription_id: int
         cur.close()
 
 
+def _collapse_duplicate_shown_reminders(conn: PgConnection, user_id: int) -> None:
+    """Keep only the most urgent 'shown' row per subscription."""
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT id, subscription_id, reminder_type
+            FROM scheduled_reminders
+            WHERE user_id = %s AND state = 'shown'
+            ORDER BY subscription_id, fire_at ASC;
+            """,
+            (user_id,),
+        )
+        best_by_sub: dict[int, tuple[int, int]] = {}
+        all_rows: list[tuple[int, int, str]] = []
+        for rid, sid, rtype in cur.fetchall():
+            all_rows.append((int(rid), int(sid), str(rtype or "")))
+        for rid, sid, rtype in all_rows:
+            urg = _reminder_urgency(rtype)
+            prev = best_by_sub.get(sid)
+            if prev is None or urg < prev[1]:
+                best_by_sub[sid] = (rid, urg)
+        keep_ids = {rid for rid, _ in best_by_sub.values()}
+        demote_ids = [rid for rid, sid, _ in all_rows if rid not in keep_ids]
+        if not demote_ids:
+            return
+        cur.execute(
+            """
+            UPDATE scheduled_reminders
+            SET state = 'pending', shown_at = NULL
+            WHERE id = ANY(%s);
+            """,
+            (demote_ids,),
+        )
+    finally:
+        cur.close()
+
+
 def tick_due_reminders(conn: PgConnection, user_id: int) -> list[dict[str, Any]]:
-    """Promote pending reminders whose fire_at is due to 'shown'."""
+    """Promote the single most urgent due reminder per subscription to 'shown'."""
     cur = conn.cursor()
     try:
         now = datetime.utcnow()
         cur.execute(
             """
-            UPDATE scheduled_reminders
-            SET state = 'shown', shown_at = %s
+            SELECT id, subscription_id, reminder_type, fire_at, escalation_level
+            FROM scheduled_reminders
             WHERE user_id = %s AND fire_at <= %s AND state IN ('pending', 'snoozed')
-            RETURNING id, subscription_id, reminder_type, fire_at, escalation_level;
+            ORDER BY subscription_id, fire_at ASC;
             """,
-            (now, user_id, now),
+            (user_id, now),
         )
-        rows = cur.fetchall()
-        return [
-            {
-                "id": r[0],
-                "subscription_id": r[1],
-                "reminder_type": r[2],
-                "fire_at": r[3].isoformat() if r[3] else None,
-                "escalation_level": r[4],
-            }
-            for r in rows
-        ]
+        due_rows = cur.fetchall()
+        cur.execute(
+            """
+            SELECT DISTINCT subscription_id
+            FROM scheduled_reminders
+            WHERE user_id = %s AND state = 'shown';
+            """,
+            (user_id,),
+        )
+        subs_with_shown = {int(r[0]) for r in cur.fetchall()}
+
+        best_by_sub: dict[int, tuple] = {}
+        for row in due_rows:
+            sid = int(row[1])
+            if sid in subs_with_shown:
+                continue
+            urgency = _reminder_urgency(row[2])
+            prev = best_by_sub.get(sid)
+            if prev is None or urgency < _reminder_urgency(prev[2]):
+                best_by_sub[sid] = row
+
+        promoted: list[dict[str, Any]] = []
+        for row in best_by_sub.values():
+            cur.execute(
+                """
+                UPDATE scheduled_reminders
+                SET state = 'shown', shown_at = %s
+                WHERE id = %s AND state IN ('pending', 'snoozed')
+                RETURNING id, subscription_id, reminder_type, fire_at, escalation_level;
+                """,
+                (now, int(row[0])),
+            )
+            updated = cur.fetchone()
+            if updated:
+                promoted.append(
+                    {
+                        "id": updated[0],
+                        "subscription_id": updated[1],
+                        "reminder_type": updated[2],
+                        "fire_at": updated[3].isoformat() if updated[3] else None,
+                        "escalation_level": updated[4],
+                    }
+                )
+        _collapse_duplicate_shown_reminders(conn, user_id)
+        return promoted
+    finally:
+        cur.close()
+
+
+def _shown_cadence_lacks_variety(conn: PgConnection, user_id: int) -> bool:
+    """True when active reminders should be spread across T-15…T-1 and Tier 1/2."""
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT COUNT(*)::int, COUNT(DISTINCT reminder_type)::int
+            FROM scheduled_reminders
+            WHERE user_id = %s AND state = 'shown';
+            """,
+            (user_id,),
+        )
+        total, distinct = cur.fetchone() or (0, 0)
+        total_i = int(total or 0)
+        distinct_i = int(distinct or 0)
+        if total_i < 2:
+            return False
+        if distinct_i <= 1:
+            return True
+        if total_i >= 3 and distinct_i < 3:
+            return True
+        return False
+    finally:
+        cur.close()
+
+
+def _dedupe_shown_one_per_merchant(conn: PgConnection, user_id: int) -> int:
+    """Dismiss extra 'shown' rows when duplicate subscription rows share a merchant name."""
+    cur = conn.cursor()
+    dismissed = 0
+    try:
+        now = datetime.utcnow()
+        cur.execute(
+            """
+            SELECT lower(trim(s.merchant)) AS mkey, array_agg(r.id ORDER BY r.fire_at ASC, r.id ASC)
+            FROM scheduled_reminders r
+            JOIN subscriptions s ON s.id = r.subscription_id
+            WHERE r.user_id = %s AND r.state = 'shown' AND trim(coalesce(s.merchant, '')) <> ''
+            GROUP BY lower(trim(s.merchant))
+            HAVING COUNT(*) > 1;
+            """,
+            (user_id,),
+        )
+        for _mkey, ids in cur.fetchall():
+            demote = [int(i) for i in (ids or [])[1:]]
+            if not demote:
+                continue
+            cur.execute(
+                """
+                UPDATE scheduled_reminders
+                SET state = 'dismissed', acted_at = %s
+                WHERE id = ANY(%s);
+                """,
+                (now, demote),
+            )
+            dismissed += cur.rowcount
+        return dismissed
+    finally:
+        cur.close()
+
+
+def _dismiss_active_reminders_on_duplicate_subs(
+    conn: PgConnection, user_id: int, primary_sub_id: int, merchant_hint: str
+) -> None:
+    """Hide reminders on duplicate subscription rows for the same merchant (keeps primary only)."""
+    cur = conn.cursor()
+    try:
+        now = datetime.utcnow()
+        cur.execute(
+            """
+            UPDATE scheduled_reminders r
+            SET state = 'dismissed', acted_at = %s
+            FROM subscriptions s
+            WHERE r.subscription_id = s.id
+              AND r.user_id = %s
+              AND s.merchant ILIKE %s
+              AND s.id <> %s
+              AND r.state IN ('shown', 'pending', 'snoozed');
+            """,
+            (now, user_id, f"%{merchant_hint}%", primary_sub_id),
+        )
+    finally:
+        cur.close()
+
+
+def prepare_reminders_for_user(conn: PgConnection, user_id: int) -> None:
+    """Promote due rows, enforce per-merchant showcase labels, dedupe duplicate subscription rows."""
+    tick_due_reminders(conn, user_id)
+    apply_reminder_showcase_variety(conn, user_id)
+    _dedupe_shown_one_per_merchant(conn, user_id)
+    _collapse_duplicate_shown_reminders(conn, user_id)
+
+
+def apply_reminder_showcase_variety(conn: PgConnection, user_id: int) -> int:
+    """
+    Spread active renewal labels (T-15, T-10, T-3, Tier 1/2) across subscriptions
+  for demo readability. Does not change billing dates or verdicts.
+    """
+    cur = conn.cursor()
+    adjusted = 0
+    try:
+        now = datetime.utcnow()
+        past_fire = now - timedelta(hours=2)
+        for merchant_hint, rtype, tier in REMINDER_SHOWCASE_TARGETS:
+            cur.execute(
+                """
+                SELECT id, user_id
+                FROM subscriptions
+                WHERE user_id = %s AND merchant ILIKE %s
+                ORDER BY id
+                LIMIT 1;
+                """,
+                (user_id, f"%{merchant_hint}%"),
+            )
+            row = cur.fetchone()
+            if not row:
+                continue
+            sub_id, sub_user_id = int(row[0]), int(row[1])
+            esc = 3 if tier >= 3 else (2 if tier >= 2 else 1)
+            cur.execute(
+                "UPDATE subscriptions SET reminder_escalation_tier = %s WHERE id = %s;",
+                (tier, sub_id),
+            )
+            schedule_reminders_for_subscription(conn, sub_id, esc)
+            cur.execute(
+                """
+                UPDATE scheduled_reminders
+                SET state = 'pending', shown_at = NULL
+                WHERE subscription_id = %s AND state = 'shown';
+                """,
+                (sub_id,),
+            )
+            cur.execute(
+                """
+                UPDATE scheduled_reminders
+                SET state = 'shown', shown_at = %s, fire_at = %s
+                WHERE subscription_id = %s AND reminder_type = %s;
+                """,
+                (now, past_fire, sub_id, rtype),
+            )
+            if cur.rowcount:
+                adjusted += 1
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO scheduled_reminders (
+                      subscription_id, user_id, fire_at, reminder_type, state, escalation_level, shown_at
+                    ) VALUES (%s, %s, %s, %s, 'shown', %s, %s);
+                    """,
+                    (sub_id, sub_user_id, past_fire, rtype, esc, now),
+                )
+                adjusted += 1
+            _dismiss_active_reminders_on_duplicate_subs(conn, user_id, sub_id, merchant_hint)
+        _collapse_duplicate_shown_reminders(conn, user_id)
+        return adjusted
     finally:
         cur.close()
 
@@ -259,13 +517,18 @@ def create_reminders_with_escalation(conn: PgConnection, user_id: int) -> dict[s
         for sid, tier in rows:
             esc = 3 if int(tier or 1) >= 3 else (2 if int(tier or 1) >= 2 else 1)
             reminder_rows += schedule_reminders_for_subscription(conn, int(sid), esc)
-        return {"subscriptions_scheduled": len(rows), "reminder_rows_inserted": reminder_rows}
+        prepare_reminders_for_user(conn, user_id)
+        return {
+            "subscriptions_scheduled": len(rows),
+            "reminder_rows_inserted": reminder_rows,
+            "showcase_cadence_adjusted": 1,
+        }
     finally:
         cur.close()
 
 
 def fetch_pending_reminders(conn: PgConnection, user_id: int) -> list[dict[str, Any]]:
-    tick_due_reminders(conn, user_id)
+    prepare_reminders_for_user(conn, user_id)
     cur = conn.cursor()
     try:
         cur.execute(
@@ -309,7 +572,7 @@ def fetch_pending_reminders(conn: PgConnection, user_id: int) -> list[dict[str, 
 
 def fetch_reminders_feed(conn: PgConnection, user_id: int, *, limit: int = 50) -> list[dict[str, Any]]:
     """Shown + pending + snoozed (excludes dismissed/acted) for full renewal list UI."""
-    tick_due_reminders(conn, user_id)
+    prepare_reminders_for_user(conn, user_id)
     cur = conn.cursor()
     try:
         cur.execute(
@@ -321,12 +584,26 @@ def fetch_reminders_feed(conn: PgConnection, user_id: int, *, limit: int = 50) -
             FROM scheduled_reminders r
             JOIN subscriptions s ON s.id = r.subscription_id
             WHERE r.user_id = %s AND r.state IN ('pending', 'shown', 'snoozed')
-            ORDER BY r.fire_at ASC
+            ORDER BY
+              CASE r.state WHEN 'shown' THEN 0 WHEN 'snoozed' THEN 1 ELSE 2 END,
+              r.fire_at ASC
             LIMIT %s;
             """,
             (user_id, int(limit)),
         )
         rows = cur.fetchall()
+        # One card per merchant for "shown" (duplicate subscription rows are common after imports).
+        seen_merchant_shown: set[str] = set()
+        filtered: list[tuple] = []
+        for row in rows:
+            merchant = str(row[6] or "").strip().lower()
+            state = str(row[4] or "")
+            if state == "shown" and merchant:
+                if merchant in seen_merchant_shown:
+                    continue
+                seen_merchant_shown.add(merchant)
+            filtered.append(row)
+        rows = filtered
         return [
             {
                 "id": r[0],

@@ -165,8 +165,7 @@ export default function SubscriptionHub({ ownerId, onOpenAI, onOpenReminders, on
           <p className="mt-3 text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300/90">Feature B</p>
           <h3 className="mt-1 font-heading text-xl font-bold text-white">Smart reminder engine</h3>
           <p className="mt-2 text-sm text-gray-400">
-            Billing reminders, T−10 / T−3 / T−1 alerts, escalation, snooze with mandatory reasons, and cancellation
-            assistance.
+            Renewal alerts at T-15, T-10, T-5, T-3, or T-1 before each bill — Tier 1 is gentle; Tier 2+ adds more nudges and asks why you snooze.
           </p>
           <ul className="mt-4 space-y-1.5 text-xs text-gray-300">
             <li className="flex gap-2">

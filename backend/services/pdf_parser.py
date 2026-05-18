@@ -121,27 +121,45 @@ class PDFParserAgent:
             conn.commit()
             return {"success": False, "error": text, "quality_score": quality_score}
 
-        parsed = classify_and_extract_monster(
-            text=text,
-            filename=filename,
-            tables=extraction.get("tables"),
-        )
-        transactions = parsed.get("transactions", [])
         deterministic = parse_axis_style_statement(text)
-        if len(deterministic) >= len(transactions):
+        if len(deterministic) >= 10:
             transactions = deterministic
-            parsed["method"] = "axis_line_parser"
-        elif deterministic:
-            seen = {
-                f"{t.get('date','')}|{float(t.get('amount',0)):.2f}|{str(t.get('description',''))[:24].lower()}"
-                for t in transactions
+            parsed = {
+                "transactions": transactions,
+                "method": "axis_line_parser",
+                "institution": "AXIS BANK",
+                "document_type": "bank_statement",
+                "date_range": None,
+                "validation_issues": [],
             }
-            for t in deterministic:
-                key = f"{t.get('date','')}|{float(t.get('amount',0)):.2f}|{str(t.get('description',''))[:24].lower()}"
-                if key not in seen:
-                    transactions.append(t)
-                    seen.add(key)
-            parsed["method"] = (parsed.get("method") or "") + "+axis_merge"
+            period = re.search(
+                r"(\d{1,2}\s+[A-Za-z]+\s+\d{4})\s*-\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4})",
+                text,
+                re.I,
+            )
+            if period:
+                parsed["date_range"] = f"{period.group(1)} - {period.group(2)}"
+        else:
+            parsed = classify_and_extract_monster(
+                text=text,
+                filename=filename,
+                tables=extraction.get("tables"),
+            )
+            transactions = parsed.get("transactions", [])
+            if len(deterministic) >= len(transactions):
+                transactions = deterministic
+                parsed["method"] = "axis_line_parser"
+            elif deterministic:
+                seen = {
+                    f"{t.get('date','')}|{float(t.get('amount',0)):.2f}|{str(t.get('description',''))[:24].lower()}"
+                    for t in transactions
+                }
+                for t in deterministic:
+                    key = f"{t.get('date','')}|{float(t.get('amount',0)):.2f}|{str(t.get('description',''))[:24].lower()}"
+                    if key not in seen:
+                        transactions.append(t)
+                        seen.add(key)
+                parsed["method"] = (parsed.get("method") or "") + "+axis_merge"
         validation_issues: list[str] = list(extraction.get("quality_issues") or [])
         if parsed.get("validation_issues"):
             validation_issues.extend(parsed["validation_issues"])
@@ -174,7 +192,7 @@ class PDFParserAgent:
                 internal += 1
                 continue
 
-            if self._is_duplicate(conn, user_id, txn_date, merchant, amount):
+            if self._is_duplicate(conn, user_id, txn_date, merchant, amount, connected_source_id):
                 duplicates += 1
                 continue
 
@@ -280,7 +298,14 @@ class PDFParserAgent:
             return False
 
     @staticmethod
-    def _is_duplicate(conn, user_id: int, date: str, merchant: str, amount: float) -> bool:
+    def _is_duplicate(
+        conn,
+        user_id: int,
+        date: str,
+        merchant: str,
+        amount: float,
+        connected_source_id: int | None,
+    ) -> bool:
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -289,16 +314,9 @@ class PDFParserAgent:
                   AND t.transaction_date::date = %s
                   AND LOWER(t.merchant) = LOWER(%s)
                   AND ABS(t.amount - %s) < 5
-                  AND (
-                    t.connected_source_id IS NULL
-                    OR NOT EXISTS (
-                      SELECT 1 FROM connected_sources cs
-                      WHERE cs.id = t.connected_source_id
-                        AND COALESCE(cs.is_visible_on_dashboard, false) = false
-                    )
-                  )
+                  AND t.connected_source_id IS NOT DISTINCT FROM %s
                 """,
-                (user_id, date, merchant, amount),
+                (user_id, date, merchant, amount, connected_source_id),
             )
             return (cur.fetchone()[0] or 0) > 0
 

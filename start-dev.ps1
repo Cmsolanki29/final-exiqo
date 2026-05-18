@@ -5,10 +5,10 @@
 
 $root = $PSScriptRoot
 
-Write-Host "" -ForegroundColor White
-Write-Host "╔═════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║     SmartSpend — Full Clean Restart     ║" -ForegroundColor Cyan
-Write-Host "╚═════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "===========================================" -ForegroundColor Cyan
+Write-Host "     SmartSpend - Full Clean Restart" -ForegroundColor Cyan
+Write-Host "===========================================" -ForegroundColor Cyan
 Write-Host ""
 
 # ── 1. Kill all zombie Node.js processes ──────────────────────────────────────
@@ -30,7 +30,7 @@ if ($pythonZombies -and $pythonZombies.Count -gt 0) {
 }
 
 # ── 3. Kill anything on ports 8001 and 3000 ───────────────────────────────────
-foreach ($port in @(8765, 3000)) {
+foreach ($port in @(8765, 8810, 8001, 8002, 3000)) {
     $pids = (netstat -ano 2>$null | Select-String ":$port\s") |
         ForEach-Object { ($_ -split "\s+")[-1] } |
         Where-Object { $_ -match "^\d+$" } |
@@ -54,7 +54,7 @@ if (Test-Path $cacheDir) {
 Write-Host ""
 Write-Host "[start-dev] Launching backend in new window..." -ForegroundColor Green
 Start-Process powershell -WorkingDirectory $root -ArgumentList @(
-    "-NoExit", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $root "start-backend.ps1")
+    "-NoExit", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $root "start-backend.ps1"), "-Port", "8002"
 )
 
 Write-Host "[start-dev] Waiting 15s for migrations + uvicorn to start..." -ForegroundColor Yellow
@@ -64,7 +64,7 @@ Start-Sleep -Seconds 15
 $backendOk = $false
 for ($i = 0; $i -lt 3; $i++) {
     try {
-        $r = (Invoke-WebRequest "http://127.0.0.1:8765/health" -TimeoutSec 5 -UseBasicParsing).StatusCode
+        $r = (Invoke-WebRequest "http://127.0.0.1:8002/health" -TimeoutSec 5 -UseBasicParsing).StatusCode
         if ($r -eq 200) { $backendOk = $true; break }
     } catch { }
     Start-Sleep -Seconds 5
@@ -83,8 +83,8 @@ Start-Process powershell -WorkingDirectory $root -ArgumentList @(
 )
 
 Write-Host ""
-Write-Host "╔═════════════════════════════════════════╗" -ForegroundColor Green
-Write-Host "║  Backend:  http://127.0.0.1:8765        ║" -ForegroundColor Green
-Write-Host "║  Frontend: http://localhost:3000         ║" -ForegroundColor Green
-Write-Host "║  Wait ~30s for frontend compilation     ║" -ForegroundColor Green
-Write-Host "╚═════════════════════════════════════════╝" -ForegroundColor Green
+Write-Host "===========================================" -ForegroundColor Green
+Write-Host "  Backend:  http://127.0.0.1:8002" -ForegroundColor Green
+Write-Host "  Frontend: http://localhost:3000" -ForegroundColor Green
+Write-Host "  Wait ~30s for frontend compilation" -ForegroundColor Green
+Write-Host "===========================================" -ForegroundColor Green

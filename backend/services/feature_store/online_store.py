@@ -58,7 +58,7 @@ class OnlineFeatureStore:
         defaults = get_defaults(entity_type)
         redis = get_redis()
         if redis is None:
-            return defaults
+            return await self._get_without_redis(entity_type, entity_id, defaults)
 
         t0 = time.perf_counter()
         try:
@@ -102,6 +102,10 @@ class OnlineFeatureStore:
 
         redis = get_redis()
         if redis is None:
+            for et, eid in requests:
+                result[f"{et}:{eid}"] = await self._get_without_redis(
+                    et, eid, result[f"{et}:{eid}"]
+                )
             return result
 
         t0 = time.perf_counter()
@@ -143,11 +147,14 @@ class OnlineFeatureStore:
             features:    Dict of feature_name → value (must be JSON-serialisable).
             ttl:         TTL in seconds; defaults to FEATURE_TTL_SEC from config.
         """
+        effective_ttl = ttl if ttl is not None else self._settings.FEATURE_TTL_SEC
         redis = get_redis()
         if redis is None:
+            from services.feature_store import memory_cache
+
+            memory_cache.set(entity_type, entity_id, features, ttl_sec=effective_ttl)
             return
 
-        effective_ttl = ttl if ttl is not None else self._settings.FEATURE_TTL_SEC
         key = _redis_key(entity_type, entity_id)
         try:
             await redis.set(key, json.dumps(features, default=str), ex=effective_ttl)
@@ -167,14 +174,18 @@ class OnlineFeatureStore:
             items: List of (entity_type, entity_id, features_dict).
             ttl:   TTL in seconds (same for all items in the batch).
         """
-        redis = get_redis()
-        if redis is None:
-            return
-
         if not items:
             return
 
         effective_ttl = ttl if ttl is not None else self._settings.FEATURE_TTL_SEC
+        redis = get_redis()
+        if redis is None:
+            from services.feature_store import memory_cache
+
+            for et, eid, features in items:
+                memory_cache.set(et, eid, features, ttl_sec=effective_ttl)
+            return
+
         t0 = time.perf_counter()
         try:
             pipe = redis.pipeline(transaction=False)
@@ -193,11 +204,44 @@ class OnlineFeatureStore:
         """Remove a single entity's features (used in tests and forced refresh)."""
         redis = get_redis()
         if redis is None:
+            from services.feature_store import memory_cache
+
+            memory_cache.delete(entity_type, entity_id)
             return
         try:
             await redis.delete(_redis_key(entity_type, entity_id))
         except Exception as exc:
             logger.warning("online_store_delete_failed error=%s", exc)
+
+    async def _get_without_redis(
+        self,
+        entity_type: str,
+        entity_id: str,
+        defaults: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Memory L1 → Postgres offline L2 → catalog defaults."""
+        from services.feature_store import memory_cache
+
+        cached = memory_cache.get(entity_type, entity_id)
+        if cached:
+            return {**defaults, **cached}
+
+        try:
+            from services.feature_store.offline_store import offline_feature_store
+
+            latest = await offline_feature_store.get_latest(entity_type, entity_id)
+            if latest:
+                memory_cache.set(entity_type, entity_id, latest)
+                return {**defaults, **latest}
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "online_store_offline_fallback_failed entity=%s/%s: %s",
+                entity_type,
+                entity_id,
+                exc,
+            )
+
+        return defaults
 
 
 # Module-level singleton

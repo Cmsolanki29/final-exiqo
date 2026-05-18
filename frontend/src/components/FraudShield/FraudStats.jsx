@@ -68,9 +68,8 @@ const FraudStats = ({ userId }) => {
     );
   }
 
-  const avgLoss = 45000;
   const userLoss = s.money_lost_total || 0;
-  const belowAvg = userLoss < avgLoss;
+  const avgLoss = s.benchmark_avg_loss || null;
 
   return (
     <div className="fraud-stats glass-card">
@@ -108,13 +107,15 @@ const FraudStats = ({ userId }) => {
         <strong>Fraud-free days (since last loss):</strong> {s.fraud_free_days} days ✅
       </p>
 
-      <div className="fraud-stats-compare">
-        <p className="muted small">Compared to average Indian user (illustrative):</p>
-        <p>Average loss to fraud (estimate): {fmt(avgLoss)}/year</p>
-        <p>
-          Your recorded loss: {fmt(userLoss)} {belowAvg ? "(below that estimate ✅)" : ""}
-        </p>
-      </div>
+      {avgLoss != null && (
+        <div className="fraud-stats-compare">
+          <p className="muted small">Compared to average user:</p>
+          <p>Average loss to fraud: {fmt(avgLoss)}/year</p>
+          <p>
+            Your recorded loss: {fmt(userLoss)} {userLoss < avgLoss ? "(below average ✅)" : ""}
+          </p>
+        </div>
+      )}
 
       <div className="fraud-badge-legend">
         <strong>Safety badges</strong>

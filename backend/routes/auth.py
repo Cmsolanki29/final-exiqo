@@ -197,8 +197,13 @@ def signup(
             """,
             (user_id, access, refresh, ACCESS_TOKEN_EXPIRE_MINUTES, client_host, ua),
         )
-        background_tasks.add_task(_seed_new_user_transactions, user_id)
-        logger.info("New user registered id=%s email=%s (demo seed scheduled)", user_id, user.email)
+        if os.getenv("SMARTSPEND_SEED_DEMO_TXNS", "").lower() in ("1", "true", "yes") or os.getenv(
+            "SMARTSPEND_SEED_CORPUS", ""
+        ).lower() in ("1", "true", "yes"):
+            background_tasks.add_task(_seed_new_user_transactions, user_id)
+            logger.info("New user registered id=%s email=%s (demo seed scheduled)", user_id, user.email)
+        else:
+            logger.info("New user registered id=%s email=%s (upload-first, no demo seed)", user_id, user.email)
         return TokenResponse(
             access_token=access,
             refresh_token=refresh,

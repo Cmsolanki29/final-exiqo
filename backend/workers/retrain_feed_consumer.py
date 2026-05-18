@@ -40,6 +40,10 @@ _RETRAIN_COUNTER_KEY = "retrain:pending_labels"
 _RETRAIN_LOCK_KEY = "retrain:running"
 _RETRAIN_LOCK_TTL_SEC = 7200  # 2 hours max for a retrain run
 
+# In-process counters when Redis is unavailable (Phase 8 fallback)
+_memory_pending_labels = 0
+_memory_retrain_lock = False
+
 
 class RetrainFeedConsumer:
     """Consumes FEEDBACK_RECEIVED events and triggers retraining.
@@ -54,7 +58,12 @@ class RetrainFeedConsumer:
     """
 
     def __init__(self) -> None:
-        self._threshold: int = _DEFAULT_RETRAIN_THRESHOLD
+        import os
+
+        try:
+            self._threshold = int(os.getenv("RETRAIN_LABEL_THRESHOLD", str(_DEFAULT_RETRAIN_THRESHOLD)))
+        except ValueError:
+            self._threshold = _DEFAULT_RETRAIN_THRESHOLD
         self._running: bool = False
 
     async def start(self) -> None:
@@ -120,6 +129,27 @@ class RetrainFeedConsumer:
         """Signal the consumer loop to exit."""
         self._running = False
 
+    async def handle_feedback_event(self, payload: dict[str, Any]) -> None:
+        """Process feedback without Redis (local bus / direct call)."""
+        global _memory_pending_labels, _memory_retrain_lock
+
+        _memory_pending_labels += 1
+        logger.debug(
+            "retrain_feed_consumer.memory_label pending=%d threshold=%d",
+            _memory_pending_labels,
+            self._threshold,
+        )
+        if _memory_pending_labels < self._threshold:
+            return
+        if _memory_retrain_lock:
+            return
+        _memory_pending_labels = 0
+        _memory_retrain_lock = True
+        try:
+            await self._run_retrain()
+        finally:
+            _memory_retrain_lock = False
+
     async def _handle(self, fields: dict[str, Any]) -> None:
         """Process one FEEDBACK_RECEIVED event.
 
@@ -131,6 +161,17 @@ class RetrainFeedConsumer:
         """
         redis = get_redis()
         if redis is None:
+            raw = fields.get("payload")
+            if isinstance(raw, str):
+                import json
+
+                try:
+                    payload = json.loads(raw)
+                except json.JSONDecodeError:
+                    payload = {}
+            else:
+                payload = dict(fields)
+            await self.handle_feedback_event(payload)
             return
 
         # Increment label counter
@@ -177,6 +218,8 @@ class RetrainFeedConsumer:
         except Exception as exc:
             logger.warning("retrain_feed_consumer: retrain failed: %s", exc)
         finally:
+            global _memory_retrain_lock
+            _memory_retrain_lock = False
             try:
                 _r = get_redis()
                 if _r is not None:

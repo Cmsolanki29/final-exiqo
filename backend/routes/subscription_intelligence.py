@@ -28,7 +28,10 @@ from services.subscription_intelligence.substitution_detector import (
     detect_category_migrations,
     save_category_migration_insights,
 )
-from services.subscription_intelligence.verdict_engine import generate_all_verdict_reports
+from services.subscription_intelligence.verdict_engine import (
+    generate_all_verdict_reports,
+    refresh_all_subscription_verdicts,
+)
 from services.subscription_intelligence.connected_apps_sync import (
     log_subscription_event,
     sync_connected_apps_for_user,
@@ -228,6 +231,7 @@ def get_ai_summary(
     Requires Bearer token; user_id must match JWT.
     """
     _require_self(user_id, auth_user_id)
+    refresh_all_subscription_verdicts(conn, user_id)
     verdicts = generate_all_verdict_reports(conn, user_id)
     migrations = detect_category_migrations(conn, user_id)
     cur = conn.cursor()
@@ -713,8 +717,11 @@ def get_reminders(
 ) -> dict[str, Any]:
     _require_self(user_id, auth_user_id)
     if include_upcoming:
-        return {"reminders": fetch_reminders_feed(conn, user_id)}
-    return {"reminders": fetch_pending_reminders(conn, user_id)}
+        rows = fetch_reminders_feed(conn, user_id)
+    else:
+        rows = fetch_pending_reminders(conn, user_id)
+    conn.commit()
+    return {"reminders": rows}
 
 
 @router.post("/{user_id}/reminders/{reminder_id}/action")

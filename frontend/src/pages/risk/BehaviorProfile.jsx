@@ -24,42 +24,6 @@ import { fmtRelativeTime } from "../../utils/risk/formatters";
 import { BehaviorRiskGauge } from "../../components/FraudShield/BehaviorRiskGauge";
 import { LocationPatternMap } from "../../components/FraudShield/LocationPatternMap";
 
-const DEMO = {
-  risk_score: 0.12,
-  risk_action: "allow",
-  login_patterns: [
-    { hour: "00", count: 0 }, { hour: "01", count: 0 }, { hour: "02", count: 0 },
-    { hour: "03", count: 0 }, { hour: "04", count: 0 }, { hour: "05", count: 1 },
-    { hour: "06", count: 3 }, { hour: "07", count: 8 }, { hour: "08", count: 14 },
-    { hour: "09", count: 22 }, { hour: "10", count: 18 }, { hour: "11", count: 15 },
-    { hour: "12", count: 12 }, { hour: "13", count: 16 }, { hour: "14", count: 20 },
-    { hour: "15", count: 19 }, { hour: "16", count: 17 }, { hour: "17", count: 14 },
-    { hour: "18", count: 10 }, { hour: "19", count: 8 }, { hour: "20", count: 5 },
-    { hour: "21", count: 3 }, { hour: "22", count: 1 }, { hour: "23", count: 0 },
-  ],
-  locations: [
-    { city: "Mumbai", country: "IN", count: 142, risk: "low", last_seen: new Date(Date.now() - 3600_000) },
-    { city: "Pune", country: "IN", count: 28, risk: "low", last_seen: new Date(Date.now() - 86400_000) },
-    { city: "Bangalore", country: "IN", count: 4, risk: "medium", last_seen: new Date(Date.now() - 259200_000) },
-    { city: "Singapore", country: "SG", count: 1, risk: "high", last_seen: new Date(Date.now() - 604800_000) },
-  ],
-  anomalies: [
-    { id: 1, type: "unusual_hour", description: "Login at 3:47 AM", severity: "medium", ts: new Date(Date.now() - 172800_000) },
-    { id: 2, type: "new_location", description: "Transaction from Singapore", severity: "high", ts: new Date(Date.now() - 604800_000) },
-    { id: 3, type: "velocity_spike", description: "4 transactions in 2 minutes", severity: "medium", ts: new Date(Date.now() - 864000_000) },
-  ],
-  recent_activity: [
-    { id: 1, action: "Login", channel: "Mobile App", ts: new Date(Date.now() - 3600_000), ok: true },
-    { id: 2, action: "Transaction ₹1,200", channel: "UPI", ts: new Date(Date.now() - 7200_000), ok: true },
-    { id: 3, action: "OTP Verified", channel: "SMS", ts: new Date(Date.now() - 7500_000), ok: true },
-    { id: 4, action: "Transaction ₹450", channel: "Card", ts: new Date(Date.now() - 86400_000), ok: true },
-    { id: 5, action: "Password Change", channel: "Web", ts: new Date(Date.now() - 172800_000), ok: true },
-    { id: 6, action: "Login", channel: "New device", ts: new Date(Date.now() - 172900_000), ok: false },
-    { id: 7, action: "Transaction ₹8,500", channel: "NEFT", ts: new Date(Date.now() - 259200_000), ok: true },
-    { id: 8, action: "Login", channel: "Mobile App", ts: new Date(Date.now() - 345600_000), ok: true },
-  ],
-};
-
 function formatHourLabel(h) {
   const hour = Number(h);
   const h12 = hour % 12 === 0 ? 12 : hour % 12;
@@ -322,26 +286,25 @@ function ActivityRow({ item, index, embedded }) {
 const BehaviorProfile = ({ userId = 1, onNavigate, embedded = false }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [, setError] = useState(null);
-  const [usingDemo, setUsingDemo] = useState(false);
+  const [profileError, setProfileError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError(null);
+    setProfileError(null);
 
     getBehaviorProfile(userId)
       .then((res) => {
         if (!cancelled) {
           setData(res);
+          setProfileError(null);
           setLoading(false);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setData(null);
-          setUsingDemo(false);
-          setError("Could not load behavior profile. Check that the API is running.");
+          setProfileError("Could not load behavior profile. Check that the API is running.");
           setLoading(false);
         }
       });
@@ -352,7 +315,7 @@ const BehaviorProfile = ({ userId = 1, onNavigate, embedded = false }) => {
   }, [userId]);
 
   const d = data;
-  const highlightHours = useMemo(() => anomalyHighlightHours(d.anomalies), [d.anomalies]);
+  const highlightHours = useMemo(() => anomalyHighlightHours(d?.anomalies), [d?.anomalies]);
 
   const outer = embedded ? "mx-auto max-w-6xl space-y-5 pb-4" : "mx-auto max-w-3xl space-y-6 pb-8";
 
@@ -397,6 +360,8 @@ const BehaviorProfile = ({ userId = 1, onNavigate, embedded = false }) => {
 
       {loading ? (
         <RiskStatePlaceholder loading />
+      ) : profileError ? (
+        <RiskStatePlaceholder empty title="Behavior profile unavailable" message={profileError} />
       ) : !d ? (
         <RiskStatePlaceholder
           empty

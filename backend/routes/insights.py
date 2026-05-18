@@ -23,8 +23,10 @@ from services.openai_service import (
     explain_anomaly_transaction,
     generate_health_narrative,
     generate_monthly_insights,
+    get_cached_insights_payload,
     get_personalized_recommendations,
     invalidate_insight_cache,
+    set_cached_insight,
     simulate_financial_scenario,
 )
 from services.scorer import calculate_health_score
@@ -262,30 +264,66 @@ def _health_details_for_narrative(hs: Any) -> dict[str, Any]:
 # --- Static paths must be registered before /{user_id} ---
 
 
+def _merge_insights_payload(user_data: dict[str, Any], insights_card: dict, recs: dict) -> dict[str, Any]:
+    card = dict(insights_card) if isinstance(insights_card, dict) else {}
+    rec = dict(recs) if isinstance(recs, dict) else {}
+    card["priority_actions"] = rec.get("priority_actions", [])
+    card["quick_wins"] = rec.get("quick_wins", [])
+    card["budget_suggestion"] = rec.get("budget_suggestion", {})
+    return {
+        "user": {"name": user_data["name"], "email": user_data["email"]},
+        "period": user_data["current_month"],
+        "insights": card,
+        "recommendations": rec,
+        "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }
+
+
 def _insights_payload(
     conn,
     user_id: int,
     month: int,
     year: int,
     scope: str | None = None,
+    *,
+    force_refresh: bool = False,
 ) -> dict[str, Any]:
-    user_data = build_user_data(conn, user_id, month, year, scope=scope)
+    scope_mode = normalize_dashboard_mode(scope)
+    if not force_refresh:
+        cached = get_cached_insights_payload(conn, user_id, month, year, scope_mode)
+        if cached is not None:
+            return cached
+
+    user_data = build_user_data(conn, user_id, month, year, scope=scope_mode)
     with ThreadPoolExecutor(max_workers=2) as pool:
-        fi = pool.submit(generate_monthly_insights, user_data)
+        fi = pool.submit(generate_monthly_insights, user_data, force_refresh=force_refresh)
         fr = pool.submit(get_personalized_recommendations, user_data)
-        insights = fi.result(timeout=40)
-        recommendations = fr.result(timeout=40)
-    return {
-        "user": {"name": user_data["name"], "email": user_data["email"]},
-        "period": user_data["current_month"],
-        "insights": insights,
-        "recommendations": recommendations,
-        "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
-    }
+        insights = fi.result(timeout=90)
+        recommendations = fr.result(timeout=90)
+    payload = _merge_insights_payload(user_data, insights, recommendations)
+    set_cached_insight(conn, user_id, month, year, scope_mode, payload)
+    return payload
 
 
 def _sse_line(obj: dict[str, Any]) -> str:
     return f"data: {json.dumps(obj, default=str)}\n\n"
+
+
+@router.post("/{user_id}/invalidate-cache")
+def invalidate_insights_cache(
+    user_id: int,
+    month: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2000, le=2100),
+    scope: str | None = Query(None, description="bank_only | credit_card_only | merged"),
+    conn=Depends(get_db),
+):
+    """Drop cached AI insights for this user (optional month/year/scope)."""
+    today = date.today()
+    m = month if month is not None else today.month
+    y = year if year is not None else today.year
+    scope_mode = normalize_dashboard_mode(scope) if scope else None
+    invalidate_insight_cache(conn, user_id, m, y, scope_mode)
+    return {"success": True, "user_id": user_id, "month": m, "year": y, "scope": scope_mode or "all"}
 
 
 @router.get("/{user_id}/insights-stream")
@@ -294,22 +332,29 @@ def insights_stream(
     month: int | None = Query(None, ge=1, le=12),
     year: int | None = Query(None, ge=2000, le=2100),
     scope: str | None = Query("merged", description="bank_only | credit_card_only | merged"),
+    refresh: bool = Query(False, description="If true, bypass cache and regenerate insights"),
 ):
-    """SSE: progress pulses while the insights LLM runs; `done` fires as soon as insights return (no second LLM wait)."""
+    """SSE: progress pulses while insights run; cached payload returns immediately without LLM calls."""
 
     today = date.today()
     m = month if month is not None else today.month
     y = year if year is not None else today.year
 
     def event_gen() -> Generator[str, None, None]:
-        # Own DB connection for the whole stream — `Depends(get_db)` is torn down as soon as this
-        # route returns StreamingResponse, which closes psycopg2 before the generator runs further.
         conn = get_connection()
         try:
             yield _sse_line({"status": "analyzing"})
-            # DB work can take several seconds; keep sending pulses so the client/proxy
-            # does not treat the SSE as stalled. Same executor runs tasks sequentially.
             scope_mode = normalize_dashboard_mode(scope)
+
+            if refresh:
+                invalidate_insight_cache(conn, user_id, m, y, scope_mode)
+
+            if not refresh:
+                cached_payload = get_cached_insights_payload(conn, user_id, m, y, scope_mode)
+                if cached_payload is not None:
+                    yield _sse_line({"done": True, "data": cached_payload, "cached": True})
+                    return
+
             with ThreadPoolExecutor(max_workers=1) as pool:
                 f_ud = pool.submit(build_user_data, conn, user_id, m, y, scope_mode)
                 deadline_ud = time.time() + 45
@@ -347,9 +392,9 @@ def insights_stream(
                     return
 
             with ThreadPoolExecutor(max_workers=2) as llm_pool:
-                fi = llm_pool.submit(generate_monthly_insights, user_data)
+                fi = llm_pool.submit(generate_monthly_insights, user_data, force_refresh=True)
                 fr = llm_pool.submit(get_personalized_recommendations, user_data)
-                deadline = time.time() + 40
+                deadline = time.time() + 90
                 while not (fi.done() and fr.done()):
                     if time.time() > deadline:
                         yield _sse_line(
@@ -374,21 +419,8 @@ def insights_stream(
                     )
                     return
 
-            if not isinstance(insights_card, dict):
-                insights_card = {}
-            if not isinstance(recs, dict):
-                recs = {}
-            insights_card["priority_actions"] = recs.get("priority_actions", [])
-            insights_card["quick_wins"] = recs.get("quick_wins", [])
-            insights_card["budget_suggestion"] = recs.get("budget_suggestion", {})
-
-            payload = {
-                "user": {"name": user_data["name"], "email": user_data["email"]},
-                "period": user_data["current_month"],
-                "insights": insights_card,
-                "recommendations": recs,
-                "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
-            }
+            payload = _merge_insights_payload(user_data, insights_card, recs)
+            set_cached_insight(conn, user_id, m, y, scope_mode, payload)
             yield _sse_line({"done": True, "data": payload})
         finally:
             try:

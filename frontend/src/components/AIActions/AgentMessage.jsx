@@ -2,23 +2,34 @@ import React from "react";
 import { Sparkles } from "lucide-react";
 import ToolCallTimeline from "./ToolCallTimeline";
 import ItineraryCard from "./ItineraryCard";
+import { renderMarkdownLite, TypewriterText } from "../common/TypewriterText";
 
 const fmt = (ts) =>
   ts ? new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
 
-function renderMarkdownLite(text) {
-  if (!text) return null;
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={i} className="text-white">{part.slice(2, -2)}</strong>;
-    }
-    return part.split("\n").map((line, j, arr) => (
-      <span key={`${i}-${j}`}>
-        {line}
-        {j < arr.length - 1 && <br />}
+function TypingIndicator() {
+  return (
+    <div
+      data-testid="agent-typing-indicator"
+      className="flex items-center gap-2.5 px-1 py-1"
+      aria-label="Trip Planner is typing"
+    >
+      <div className="flex items-center gap-1 rounded-2xl rounded-tl-sm border border-white/[0.07] border-l-[3px] border-l-violet-500/55 bg-white/[0.04] px-3.5 py-2.5">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="h-1.5 w-1.5 rounded-full bg-violet-400/80"
+            style={{
+              animation: `tp-dot-blink 1.2s ${i * 0.2}s infinite ease-in-out`,
+            }}
+          />
+        ))}
+      </div>
+      <span className="select-none text-[11px] italic text-white/40">
+        Trip Planner is typing…
       </span>
-    ));
-  });
+    </div>
+  );
 }
 
 export default function AgentMessage({
@@ -28,6 +39,9 @@ export default function AgentMessage({
   streaming,
   timestamp,
 }) {
+  const hasContent = Boolean((content || "").trim());
+  const showBubble = hasContent || streaming;
+
   return (
     <div
       className="mb-4 flex items-start gap-2.5"
@@ -48,7 +62,7 @@ export default function AgentMessage({
       <div className="min-w-0 flex-1">
         <ToolCallTimeline steps={steps} />
 
-        {content?.trim() ? (
+        {showBubble ? (
           <div
             className="rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed text-gray-200"
             style={{
@@ -61,22 +75,19 @@ export default function AgentMessage({
               wordBreak: "break-word",
             }}
           >
-            {renderMarkdownLite(content)}
             {streaming ? (
-              <span
-                aria-hidden
-                style={{
-                  display: "inline-block",
-                  width: 2,
-                  height: "1em",
-                  background: "#A78BFA",
-                  marginLeft: 3,
-                  verticalAlign: "text-bottom",
-                  borderRadius: 1,
-                  animation: "tp-cursor-blink 0.65s step-end infinite",
-                }}
-              />
-            ) : null}
+              hasContent ? (
+                <TypewriterText
+                  key={`tw-${timestamp}`}
+                  text={content}
+                  isStreaming={streaming}
+                />
+              ) : (
+                <TypingIndicator />
+              )
+            ) : (
+              renderMarkdownLite(content)
+            )}
           </div>
         ) : null}
 

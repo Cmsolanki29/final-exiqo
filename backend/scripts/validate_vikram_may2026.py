@@ -41,9 +41,33 @@ EXPECTED = [
 ]
 
 
+def _api_has_statement_filters() -> bool:
+    root = BASE.rstrip("/").removesuffix("/api")
+    try:
+        spec = requests.get(f"{root}/openapi.json", timeout=5).json()
+        params = spec.get("paths", {}).get("/api/transactions/{user_id}", {}).get("get", {}).get(
+            "parameters", []
+        )
+        names = {p.get("name") for p in params}
+        return "connected_source_id" in names and "uploaded_document_id" in names
+    except Exception as exc:
+        print(f"Could not load OpenAPI from {root}: {exc}")
+        return False
+
+
 def main() -> int:
     if not PDF.exists():
         print(f"Missing PDF: {PDF}")
+        return 1
+
+    if not _api_has_statement_filters():
+        print(
+            f"\nStale API at {BASE}: missing connected_source_id/uploaded_document_id filters.\n"
+            "Port 8001 often keeps zombie uvicorn on Windows. Run:\n"
+            "  .\\start-backend.ps1 -Port 8810\n"
+            "  $env:QA_API_BASE='http://127.0.0.1:8810/api'\n"
+            "Or reboot / clear port 8001, then .\\start-backend.ps1 -Port 8001\n"
+        )
         return 1
 
     email = f"vikram.may.{int(time.time())}@example.com"
@@ -73,12 +97,30 @@ def main() -> int:
             files={"file": (PDF.name, f, "application/pdf")},
             timeout=300,
         )
-    print("upload:", up.status_code, up.text[:500] if up.status_code != 200 else up.json())
+    if up.status_code != 200:
+        print("upload failed", up.status_code, up.text[:500])
+        return 1
+    up_body = up.json()
+    print("upload:", up.status_code, up_body)
+    source_id = up_body.get("source_id")
+    document_id = up_body.get("document_id")
+    imported = int(up_body.get("imported") or 0)
+    if not source_id:
+        print("upload response missing source_id")
+        return 1
 
+    list_params: dict = {
+        "limit": 200,
+        "month": 5,
+        "year": 2026,
+        "connected_source_id": source_id,
+    }
+    if document_id:
+        list_params["uploaded_document_id"] = document_id
     tx = requests.get(
         f"{BASE}/transactions/{uid}",
         headers={"Authorization": f"Bearer {token}"},
-        params={"limit": 200, "month": 5, "year": 2026},
+        params=list_params,
         timeout=60,
     ).json()
     if isinstance(tx, list):
@@ -88,7 +130,15 @@ def main() -> int:
     else:
         rows = []
 
-    print(f"\nStored transactions: {len(rows)}")
+    print(
+        f"\nStatement transactions (source_id={source_id}, document_id={document_id}, "
+        f"upload imported={imported}): {len(rows)}"
+    )
+    if imported and len(rows) != imported:
+        print(
+            f"WARNING: row count {len(rows)} != upload imported {imported} "
+            "(restart backend on port 8001 if filters are ignored)"
+        )
     for t in sorted(rows, key=lambda x: (x.get("transaction_date") or "", x.get("amount") or 0)):
         print(
             f"  {t.get('transaction_date','')[:10]} | {t.get('type','?'):6} | "
@@ -106,12 +156,12 @@ def main() -> int:
                     found = True
                     break
         if not found:
-            missing.append(f"{typ} ₹{amount:,} {needle}")
+            missing.append(f"{typ} INR {amount:,} {needle}")
 
     inc = sum(float(t["amount"]) for t in rows if (t.get("type") or "").upper() == "CREDIT")
     exp = sum(float(t["amount"]) for t in rows if (t.get("type") or "").upper() == "DEBIT")
-    print(f"\nTotals: income=INR {inc:,.0f} expenses=INR {exp:,.0f} net=INR {inc-exp:,.0f}")
-    print(f"Expected income lines sum (spec): INR {sum(a for a,_,t in EXPECTED if t=='CREDIT'):,.0f}")
+    print(f"\nTotals (statement source): income=INR {inc:,.0f} expenses=INR {exp:,.0f} net=INR {inc-exp:,.0f}")
+    print(f"Expected income lines sum (spec): INR {sum(a for a, _, t in EXPECTED if t == 'CREDIT'):,.0f}")
 
     summ = requests.get(
         f"{BASE}/transactions/{uid}/summary",
@@ -119,7 +169,10 @@ def main() -> int:
         params={"month": 5, "year": 2026},
         timeout=30,
     ).json()
-    print(f"API summary May 2026: income={summ.get('total_income')} expense={summ.get('total_expense')} count={summ.get('transaction_count')}")
+    print(
+        f"API summary May 2026: income={summ.get('total_income')} "
+        f"expense={summ.get('total_expense')} count={summ.get('transaction_count')}"
+    )
 
     if missing:
         print("\nMISSING:")

@@ -12,10 +12,17 @@ import {
   ThumbsUp,
   Zap,
 } from "lucide-react";
-import { fetchInsightsSse } from "../../services/api";
+import { fetchInsightsSse, invalidateInsightsCache } from "../../services/api";
 import { ErrorCard } from "../common/ErrorCard";
 import { GlassCard } from "../intro/GlassCard";
 import { SkeletonCard } from "../common/SkeletonCard";
+
+const GENERATED_BY_LABEL = {
+  groq: "Powered by Groq",
+  openai: "Powered by OpenAI",
+  gemini: "Powered by Gemini",
+  fallback: "Rule-based summary",
+};
 
 const verdictMeta = {
   GOOD: { label: "Great financial health", Icon: ThumbsUp, cls: "border-emerald-500/35 bg-emerald-500/10 text-emerald-200" },
@@ -107,41 +114,47 @@ const AIInsightsPanel = ({ userId, month, year, scope = "merged", presentation =
   const [typedDone, setTypedDone] = useState(false);
   const [whyOpen, setWhyOpen] = useState(false);
 
-  const fetchInsights = useCallback(async () => {
-    abortRef.current?.abort();
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
+  const resetAndFetch = useCallback(
+    async ({ refresh = false } = {}) => {
+      abortRef.current?.abort();
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
 
-    setState((prev) => ({
-      ...prev,
-      loading: true,
-      error: "",
-      streamingPulse: false,
-    }));
-    const onEvent = (evt) => {
-      if (evt && (evt.pulse === true || evt.status === "analyzing")) {
-        setState((prev) => ({ ...prev, streamingPulse: true }));
-      }
-    };
-    const runOnce = async () =>
-      fetchInsightsSse(userId, month, year, (e) => {
-        onEvent(e);
-      }, { scope, signal: ctrl.signal });
-
-    try {
-      const data = await runOnce();
       setState({
-        data,
-        loading: false,
+        data: null,
+        loading: true,
         error: "",
-        refreshedAt: new Date(),
+        refreshedAt: null,
         streamingPulse: false,
       });
       setTypedDone(false);
       setWhyOpen(false);
-    } catch {
+
       try {
-        await new Promise((r) => setTimeout(r, 8000));
+        if (refresh) {
+          await invalidateInsightsCache(userId, { month, year, scope }).catch(() => {});
+        }
+      } catch {
+        /* ignore */
+      }
+
+      const onEvent = (evt) => {
+        if (evt && (evt.pulse === true || evt.status === "analyzing")) {
+          setState((prev) => ({ ...prev, streamingPulse: true }));
+        }
+      };
+      const runOnce = async () =>
+        fetchInsightsSse(
+          userId,
+          month,
+          year,
+          (e) => {
+            onEvent(e);
+          },
+          { scope, signal: ctrl.signal, refresh }
+        );
+
+      try {
         const data = await runOnce();
         setState({
           data,
@@ -150,34 +163,60 @@ const AIInsightsPanel = ({ userId, month, year, scope = "merged", presentation =
           refreshedAt: new Date(),
           streamingPulse: false,
         });
-        setTypedDone(false);
-        setWhyOpen(false);
       } catch {
-        setState((prev) => ({
-          data: prev.data,
-          loading: false,
-          error: "Insights are taking longer than usual.",
-          refreshedAt: prev.refreshedAt,
-          streamingPulse: false,
-        }));
+        try {
+          await new Promise((r) => setTimeout(r, 2000));
+          const data = await runOnce();
+          setState({
+            data,
+            loading: false,
+            error: "",
+            refreshedAt: new Date(),
+            streamingPulse: false,
+          });
+        } catch {
+          setState({
+            data: null,
+            loading: false,
+            error: "Insights are taking longer than usual. Try refreshing.",
+            refreshedAt: null,
+            streamingPulse: false,
+          });
+        }
       }
-    }
-  }, [userId, month, year, scope]);
+    },
+    [userId, month, year, scope]
+  );
 
+  const fetchInsights = useCallback(() => resetAndFetch({ refresh: true }), [resetAndFetch]);
+
+  const prevScopeRef = React.useRef(null);
   useEffect(() => {
-    fetchInsights();
+    const scopeChanged = prevScopeRef.current !== null && prevScopeRef.current !== scope;
+    prevScopeRef.current = scope;
+    resetAndFetch({ refresh: scopeChanged });
     return () => abortRef.current?.abort();
-  }, [fetchInsights]);
+  }, [resetAndFetch, scope]);
 
   useEffect(() => {
-    const handler = () => fetchInsights();
+    const handler = () => resetAndFetch({ refresh: true });
     window.addEventListener("dashboardModeChanged", handler);
-    return () => window.removeEventListener("dashboardModeChanged", handler);
-  }, [fetchInsights]);
+    window.addEventListener("smartspend:health-score-changed", handler);
+    window.addEventListener("smartspend:purchase-goals-changed", handler);
+    window.addEventListener("smartspend-financial-sync", handler);
+    return () => {
+      window.removeEventListener("dashboardModeChanged", handler);
+      window.removeEventListener("smartspend:health-score-changed", handler);
+      window.removeEventListener("smartspend:purchase-goals-changed", handler);
+      window.removeEventListener("smartspend-financial-sync", handler);
+    };
+  }, [resetAndFetch]);
 
   const insight = state.data?.insights || {};
   const verdict = verdictMeta[insight.spending_verdict] || verdictMeta.AVERAGE;
   const VerdictIcon = verdict.Icon;
+  const generatedBy = String(insight.generated_by || "").toLowerCase();
+  const providerLabel = GENERATED_BY_LABEL[generatedBy] || null;
 
   const updatedAgo = useMemo(() => {
     if (!state.refreshedAt) return "just now";
@@ -285,10 +324,13 @@ const AIInsightsPanel = ({ userId, month, year, scope = "merged", presentation =
     <GlassCard padding="md" surface="panel" className="border-white/[0.08]">
       {/* ── Header ── */}
       <div className="mb-4 flex items-start justify-between gap-2">
-        <div>
+        <motion.div>
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">AI Insights</p>
           <h3 className="mt-0.5 font-heading text-base font-semibold text-white">Your Financial Overview</h3>
-        </div>
+          {providerLabel ? (
+            <p className="mt-1 text-[10px] font-medium uppercase tracking-wide text-gray-500">{providerLabel}</p>
+          ) : null}
+        </motion.div>
         <button
           type="button"
           onClick={fetchInsights}

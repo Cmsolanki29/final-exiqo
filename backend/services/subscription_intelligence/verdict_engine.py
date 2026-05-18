@@ -115,7 +115,7 @@ def evaluate_subscription(conn: PgConnection, subscription_id: int) -> VerdictRe
             return VerdictResult(
                 verdict="declining",
                 confidence=40,
-                reason="No device link yet - connect SmartSpend Device Intelligence for usage-grounded verdicts.",
+                reason="Link your phone usage in Device Intelligence to get personalised advice.",
                 monthly_waste=round(monthly_cost * 0.15, 2),
                 usage_delta_30d=0.0,
                 substitution=None,
@@ -168,7 +168,7 @@ def evaluate_subscription(conn: PgConnection, subscription_id: int) -> VerdictRe
             return VerdictResult(
                 verdict="dead",
                 confidence=95,
-                reason="No meaningful usage in 60+ days",
+                reason="Almost no usage in the last 60 days — you may be paying for nothing.",
                 monthly_waste=round(monthly_cost, 2),
                 usage_delta_30d=delta,
                 substitution=None,
@@ -184,10 +184,11 @@ def evaluate_subscription(conn: PgConnection, subscription_id: int) -> VerdictRe
                 top_sub = s
 
         if delta < -0.4 and max_growth >= 2.0 and top_sub:
+            alt = top_sub.get("display_name", "another app")
             return VerdictResult(
                 verdict="dead",
                 confidence=92,
-                reason=f"Migrated toward {top_sub.get('display_name', 'another app')}",
+                reason=f"You seem to be using {alt} more instead.",
                 monthly_waste=round(monthly_cost, 2),
                 usage_delta_30d=delta,
                 substitution={"package": top_sub["package"], "label": top_sub.get("display_name", "")},
@@ -197,17 +198,18 @@ def evaluate_subscription(conn: PgConnection, subscription_id: int) -> VerdictRe
             return VerdictResult(
                 verdict="dormant",
                 confidence=80,
-                reason="Less than 2 sessions/month in recent window",
+                reason="You opened this fewer than 2 times in the last 30 days.",
                 monthly_waste=round(monthly_cost * 0.85, 2),
                 usage_delta_30d=delta,
                 substitution=None,
             )
 
         if delta < -0.4:
+            pct = abs(delta * 100)
             return VerdictResult(
                 verdict="declining",
                 confidence=75,
-                reason=f"Usage down {abs(delta * 100):.0f}% vs prior 30 days",
+                reason=f"You used this {pct:.0f}% less than the previous month.",
                 monthly_waste=round(monthly_cost * min(abs(delta), 0.95), 2),
                 usage_delta_30d=delta,
                 substitution=None,
@@ -218,7 +220,7 @@ def evaluate_subscription(conn: PgConnection, subscription_id: int) -> VerdictRe
             return VerdictResult(
                 verdict="upgrade",
                 confidence=85,
-                reason=f"{hours:.0f}h/month in-app - pro tier likely ROI-positive for your workflow",
+                reason=f"You spend about {hours:.0f} hours a month here — a paid plan may be worth it.",
                 monthly_waste=0.0,
                 usage_delta_30d=delta,
                 substitution=None,
@@ -227,7 +229,7 @@ def evaluate_subscription(conn: PgConnection, subscription_id: int) -> VerdictRe
         return VerdictResult(
             verdict="thriving",
             confidence=90,
-            reason="Healthy usage pattern vs prior month",
+            reason="You use this regularly — about the same or more than last month.",
             monthly_waste=0.0,
             usage_delta_30d=delta,
             substitution=None,
@@ -297,7 +299,7 @@ def detect_thriving_subscriptions(conn: PgConnection, user_id: int) -> list[dict
                     "subscription_id": int(sid),
                     "subscription_name": merchant or "",
                     "verdict": "thriving",
-                    "reasoning": "Healthy usage pattern vs prior month",
+                    "reasoning": "You use this regularly — about the same or more than last month.",
                     "confidence_score": 0.90,
                     "current_usage_hours": float(cur_h or 0),
                     "previous_usage_hours": float(prev_h or 0),
@@ -346,8 +348,8 @@ def detect_declining_subscriptions(conn: PgConnection, user_id: int) -> list[dic
                     "subscription_name": merchant or "",
                     "verdict": "declining",
                     "reasoning": (
-                        f"Usage down {abs(int(round(chg_f)))}% vs prior 30 days. "
-                        f"Approx. waste flagged: Rs.{int(round(waste_amount))}/mo."
+                        f"You used this {abs(int(round(chg_f)))}% less last month. "
+                        f"You could save about ₹{int(round(waste_amount))} per month if you cancel."
                     ),
                     "confidence_score": 0.85,
                     "current_usage_hours": cur_f,
@@ -404,7 +406,7 @@ def detect_upgrade_opportunities_for_user(conn: PgConnection, user_id: int) -> l
                     "subscription_id": int(sid),
                     "subscription_name": m,
                     "verdict": "upgrade_recommended",
-                    "reasoning": f"{int(cur_f)}h/month in-app - pro tier likely ROI-positive for your workflow",
+                    "reasoning": f"You spend about {int(cur_f)} hours a month here — a paid plan may be worth it.",
                     "confidence_score": 0.80,
                     "current_usage_hours": cur_f,
                     "previous_usage_hours": float(prev_h or 0),
@@ -446,6 +448,23 @@ def detect_dormant_subscriptions(conn: PgConnection, user_id: int) -> list[dict[
         return []
     finally:
         cur.close()
+
+
+def refresh_all_subscription_verdicts(conn: PgConnection, user_id: int) -> int:
+    """Re-run evaluate_subscription for every row and persist plain-English reasons."""
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id FROM subscriptions WHERE user_id = %s ORDER BY id;", (user_id,))
+        sids = [int(r[0]) for r in cur.fetchall()]
+    finally:
+        cur.close()
+    updated = 0
+    for sid in sids:
+        vr = evaluate_subscription(conn, sid)
+        if vr is not None:
+            persist_verdict(conn, sid, vr)
+            updated += 1
+    return updated
 
 
 def generate_all_verdict_reports(conn: PgConnection, user_id: int) -> dict[str, list[dict[str, Any]]]:

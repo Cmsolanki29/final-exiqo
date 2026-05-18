@@ -57,8 +57,10 @@ def score_scoped_transactions(
         (user_id, since, limit),
     )
     rows = cur.fetchall()
-    from routes.fraud_shield import calculate_fraud_risk_score
+    from routes.fraud_shield import _load_user_history
+    from services.fraud_pipeline import score_transaction_sync
 
+    conn = cur.connection
     alerts: list[dict[str, Any]] = []
     for row in rows:
         tx = _row_to_tx_dict(row)
@@ -69,12 +71,45 @@ def score_scoped_transactions(
             at = datetime.combine(td, tt)
         else:
             at = datetime.now()
-        uh = {"avg_debit": 0, "payee_previous_debit_count": 0, "debits_last_30_min": 0, "debits_last_10_min": 0}
-        result = calculate_fraud_risk_score(tx, uh)
-        risk = int(result.get("risk_score") or 0)
+        uh = _load_user_history(conn, user_id, payee, at)
+        score_tx = {
+            "payee": payee,
+            "merchant": payee,
+            "amount": float(tx.get("amount") or 0),
+            "hour": at.hour,
+            "minute": at.minute,
+            "description": (tx.get("description") or ""),
+            "payment_method": (tx.get("payment_method") or "CARD"),
+        }
+        pr = None
+        try:
+            pr = score_transaction_sync(
+                user_id, score_tx, uh, conn=conn, txn_id=int(tx["id"])
+            )
+            risk = int(pr.risk_score)
+            pattern = pr.pattern_matched or "UNUSUAL_TRANSACTION"
+            warn = (
+                pr.risk_factors[0]
+                if pr.risk_factors
+                else (
+                    f"Flagged by {', '.join(pr.flagged_by)}"
+                    if pr.flagged_by
+                    else "Flagged by FraudShield pipeline"
+                )
+            )
+        except Exception:
+            from routes.fraud_shield import calculate_fraud_risk_score
+
+            result = calculate_fraud_risk_score(score_tx, uh)
+            risk = int(result.get("risk_score") or 0)
+            pattern = result.get("pattern_matched") or "UNUSUAL_TRANSACTION"
+            warn = (
+                (result.get("risk_factors") or ["Unusual transaction"])[0]
+                if isinstance(result.get("risk_factors"), list) and result.get("risk_factors")
+                else "Flagged by FraudShield rules"
+            )
         if risk < min_risk:
             continue
-        pattern = result.get("estimated_fraud_type") or result.get("pattern") or "UNUSUAL_TRANSACTION"
         alerts.append(
             {
                 "id": f"txn-{tx['id']}",
@@ -82,16 +117,16 @@ def score_scoped_transactions(
                 "pattern_matched": pattern,
                 "risk_score": risk,
                 "amount_at_risk": tx["amount"],
-                "warning_message": (result.get("risk_factors") or ["Unusual transaction"])[0]
-                if isinstance(result.get("risk_factors"), list) and result.get("risk_factors")
-                else "Flagged by FraudShield rules",
-                "hinglish_explanation": result.get("security_advice") or "",
+                "warning_message": warn,
+                "hinglish_explanation": "",
                 "user_action": "PENDING",
                 "money_saved": 0.0,
                 "created_at": at.isoformat(),
                 "severity": _severity_from_score(risk),
                 "merchant": payee,
                 "source": "transaction",
+                "flagged_by": list(pr.flagged_by) if pr else [],
+                "models_used": dict(pr.models_used) if pr else {},
             }
         )
     alerts.sort(key=lambda a: (-a["risk_score"], a.get("created_at") or ""))

@@ -14,6 +14,7 @@ from db import get_db
 from services.pattern_predictor import (
     expire_stale_alerts,
     predict_upcoming_charges,
+    prune_alerts_outside_scope,
     upsert_pattern_alerts,
 )
 
@@ -93,6 +94,7 @@ def _json_friendly_alert(row: dict[str, Any]) -> dict[str, Any]:
 def get_active_alerts(user_id: int, conn=Depends(get_db)):
     try:
         expire_stale_alerts(conn, user_id)
+        prune_alerts_outside_scope(conn, user_id)
     except Exception:
         pass
 
@@ -174,10 +176,13 @@ def generate_alerts(user_id: int, conn=Depends(get_db)):
 
     predicted: list[dict[str, Any]] = []
     saved = 0
+    pruned = 0
     try:
         expire_stale_alerts(conn, user_id)
+        prune_alerts_outside_scope(conn, user_id)
         predicted = predict_upcoming_charges(conn, user_id)
         saved = upsert_pattern_alerts(conn, predicted)
+        pruned = prune_alerts_outside_scope(conn, user_id)
     except HTTPException:
         raise
     except Exception as exc:
@@ -187,7 +192,11 @@ def generate_alerts(user_id: int, conn=Depends(get_db)):
         "success": True,
         "predicted_count": len(predicted),
         "new_rows_inserted": saved,
-        "message": f"Predicted {len(predicted)} charge window(s); {saved} new alert row(s).",
+        "pruned_out_of_scope": pruned,
+        "message": (
+            f"Predicted {len(predicted)} charge window(s); {saved} new alert row(s); "
+            f"{pruned} stale alert(s) removed from current view."
+        ),
     }
 
 

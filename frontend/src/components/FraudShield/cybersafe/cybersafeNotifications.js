@@ -30,8 +30,12 @@ export const CYBERSAFE_NOTIFICATIONS = [
   },
 ];
 
-export function mergeCyberSafeNotifications(apiNotifications = []) {
+export const CYBERSAFE_NOTIFICATION_IDS = CYBERSAFE_NOTIFICATIONS.map((n) => n.id);
+
+export function mergeCyberSafeNotifications(apiNotifications = [], { includeCyberSafe = true } = {}) {
   const apiIds = new Set((apiNotifications || []).map((n) => n.id));
-  const extras = CYBERSAFE_NOTIFICATIONS.filter((n) => !apiIds.has(n.id));
+  const extras = includeCyberSafe
+    ? CYBERSAFE_NOTIFICATIONS.filter((n) => !apiIds.has(n.id))
+    : [];
   return [...extras, ...(apiNotifications || [])];
 }

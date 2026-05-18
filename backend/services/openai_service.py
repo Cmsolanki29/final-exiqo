@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from datetime import date
@@ -14,6 +15,9 @@ from openai import OpenAI
 
 from db import get_connection
 from services.dashboard_scope import normalize_dashboard_mode
+from services.insights_llm_waterfall import call_insights_json_waterfall
+
+_log = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 load_dotenv(dotenv_path=_PROJECT_ROOT / ".env")
@@ -195,10 +199,8 @@ def call_dashboard_json_openai_then_groq(
 
 
 # ---------------------------------------------------------------------------
-# Postgres insight cache (6 hours default)
+# Postgres insight cache (per user / month / scope until invalidate or refresh)
 # ---------------------------------------------------------------------------
-
-_INSIGHT_CACHE_TTL_HOURS = 6
 
 
 def _insight_cache_identity(user_data: dict[str, Any]) -> tuple[int, int, int, str]:
@@ -210,14 +212,25 @@ def _insight_cache_identity(user_data: dict[str, Any]) -> tuple[int, int, int, s
 
 
 def get_cached_insight(conn, user_id: int, month: int, year: int, scope: str) -> Any | None:
+    """Return cached insight card only (legacy) or None."""
+    bundle = get_cached_insights_payload(conn, user_id, month, year, scope)
+    if bundle is None:
+        return None
+    ins = bundle.get("insights")
+    return ins if isinstance(ins, dict) else None
+
+
+def get_cached_insights_payload(
+    conn, user_id: int, month: int, year: int, scope: str
+) -> dict[str, Any] | None:
+    """Full SSE payload cached per user/month/scope (skips all LLM when present)."""
     cur = conn.cursor()
     try:
         cur.execute(
             """
             SELECT payload
             FROM insight_cache
-            WHERE user_id = %s AND month = %s AND year = %s AND scope = %s
-              AND generated_at > NOW() - INTERVAL '6 hours';
+            WHERE user_id = %s AND month = %s AND year = %s AND scope = %s;
             """,
             (user_id, month, year, normalize_dashboard_mode(scope)),
         )
@@ -226,10 +239,12 @@ def get_cached_insight(conn, user_id: int, month: int, year: int, scope: str) ->
             return None
         payload = row[0]
         if isinstance(payload, str):
-            return json.loads(payload)
-        return payload
+            payload = json.loads(payload)
+        if isinstance(payload, dict) and isinstance(payload.get("insights"), dict):
+            return payload
+        return None
     except Exception as exc:
-        print(f"[get_cached_insight] {exc}")
+        print(f"[get_cached_insights_payload] {exc}")
         return None
     finally:
         cur.close()
@@ -276,11 +291,17 @@ def invalidate_insight_cache(
     user_id: int,
     month: int | None = None,
     year: int | None = None,
+    scope: str | None = None,
 ) -> None:
-    """Delete cached insights for a user; optional month/year narrows the delete."""
+    """Delete cached insights for a user; optional month/year/scope narrows the delete."""
     cur = conn.cursor()
     try:
-        if month is not None and year is not None:
+        if month is not None and year is not None and scope is not None:
+            cur.execute(
+                "DELETE FROM insight_cache WHERE user_id = %s AND month = %s AND year = %s AND scope = %s;",
+                (user_id, month, year, normalize_dashboard_mode(scope)),
+            )
+        elif month is not None and year is not None:
             cur.execute(
                 "DELETE FROM insight_cache WHERE user_id = %s AND month = %s AND year = %s;",
                 (user_id, month, year),
@@ -366,6 +387,71 @@ def _coerce_insight_card(raw: dict[str, Any], user_data: dict[str, Any]) -> dict
     }
 
 
+def _verdict_from_health_score(health_score: int) -> str:
+    if health_score >= 75:
+        return "GOOD"
+    if health_score >= 55:
+        return "AVERAGE"
+    if health_score >= 40:
+        return "NEEDS_IMPROVEMENT"
+    return "CRITICAL"
+
+
+def generate_rule_based_insight_card(user_data: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic insight card from build_user_data totals — no invented numbers."""
+    nm = user_data.get("name") or "User"
+    hs = int(user_data.get("health_score") or 0)
+    income = float(user_data.get("total_income") or 0)
+    expense = float(user_data.get("total_expense") or 0)
+    saved = float(user_data.get("total_saved") or 0)
+    savings_rate = float(user_data.get("savings_rate") or 0)
+    anomalies = int(user_data.get("anomaly_count") or 0)
+    verdict = _verdict_from_health_score(hs)
+
+    cats = user_data.get("category_breakdown") or []
+    top_cat = ""
+    if isinstance(cats, list) and cats:
+        top = cats[0]
+        if isinstance(top, dict):
+            top_cat = str(top.get("category") or top.get("name") or "")
+
+    raw = {
+        "summary": (
+            f"{nm}, this month you recorded ₹{income:,.0f} income and ₹{expense:,.0f} spend "
+            f"({savings_rate:.1f}% savings rate). Health score is {hs}/100."
+        )[:240],
+        "key_insights": [
+            f"Health score {hs}/100",
+            f"Savings rate {savings_rate:.1f}% on ₹{income:,.0f} income" if income > 0 else "No salary credits detected this month",
+            f"{anomalies} flagged transaction(s) this month" if anomalies else "No anomaly flags this month",
+        ],
+        "warnings": (
+            [f"{anomalies} transactions flagged — review in FraudShield."]
+            if anomalies > 0
+            else []
+        ),
+        "recommendations": [
+            "Set weekly caps on your top 2 spending categories",
+            "Reconcile EMIs and subscriptions against income",
+            "Enable bank UPI alerts for the next 7 days",
+        ],
+        "positive_highlights": (
+            [f"You saved ₹{saved:,.0f} this month."]
+            if saved > 0
+            else ["Your transactions are being tracked in SmartSpend."]
+        ),
+        "spending_verdict": verdict,
+        "health_score": hs,
+        "generated_by": "fallback",
+    }
+    if top_cat:
+        raw["key_insights"].append(f"Largest spend category: {top_cat}")
+    card = _coerce_insight_card(raw, user_data)
+    card["generated_by"] = "fallback"
+    card["health_score"] = hs
+    return card
+
+
 def _normalize_llm_insight_minimal(raw: dict[str, Any]) -> dict[str, Any]:
     """Ensure keys expected by _coerce_insight_card exist (minimal analyst JSON omits some)."""
     if not isinstance(raw, dict):
@@ -378,24 +464,28 @@ def _normalize_llm_insight_minimal(raw: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def generate_monthly_insights(user_data: dict[str, Any]) -> dict[str, Any]:
+def generate_monthly_insights(user_data: dict[str, Any], *, force_refresh: bool = False) -> dict[str, Any]:
     uid, m, y, scope = _insight_cache_identity(user_data)
-    conn = get_connection()
-    try:
-        cached = get_cached_insight(conn, uid, m, y, scope)
-        if cached is not None:
-            return cached
-    finally:
-        conn.close()
+    if not force_refresh:
+        conn = get_connection()
+        try:
+            cached = get_cached_insight(conn, uid, m, y, scope)
+            if cached is not None:
+                if isinstance(cached, dict):
+                    return cached
+        finally:
+            conn.close()
 
     system_prompt = """You are a financial analyst. Given transaction data, return a JSON object with these exact keys:
 {
   "summary": "2 sentence overview of the user's financial month",
   "key_insights": ["insight 1", "insight 2", "insight 3"],
   "recommendations": ["action 1", "action 2", "action 3"],
-  "positive_highlights": ["highlight 1"]
+  "positive_highlights": ["highlight 1"],
+  "warnings": [],
+  "spending_verdict": "GOOD|AVERAGE|NEEDS_IMPROVEMENT|CRITICAL"
 }
-All text must be in plain English. Be specific with numbers. Return only valid JSON, no markdown."""
+All text must be in plain English. Be specific with numbers from the data only. Return only valid JSON, no markdown."""
 
     snap = {
         "month": user_data.get("current_month"),
@@ -415,39 +505,17 @@ All text must be in plain English. Be specific with numbers. Return only valid J
     }
     user_prompt = "Use only these facts (do not invent). Data:\n" + json.dumps(snap, indent=2)
 
-    result = call_dashboard_json_openai_then_groq(
+    raw_llm, provider = call_insights_json_waterfall(
         system_prompt, user_prompt, max_tokens=800, temperature=0.25
     )
-    if not isinstance(result, dict) or not result:
-        nm = user_data.get("name") or "User"
-        result = {
-            "summary": (
-                f"{nm}, you saved ₹{user_data.get('total_saved', 0):,.0f} this month "
-                f"({user_data.get('savings_rate', 0)}% savings rate) — here is your financial overview."
-            )[:240],
-            "key_insights": [
-                f"Health score {user_data.get('health_score', 0)}/100",
-                "Review your top spending categories",
-                f"Flagged transactions this month: {user_data.get('anomaly_count', 0)}",
-            ],
-            "warnings": [],
-            "recommendations": [
-                "Set weekly caps on your top 2 spending categories",
-                "Reconcile your EMIs and subscriptions",
-                "Enable UPI spend alerts for the next 7 days",
-            ],
-            "positive_highlights": ["Your transactions are being tracked — great habit!"],
-            "spending_verdict": "AVERAGE",
-        }
-    else:
-        merged = _normalize_llm_insight_minimal(result)
+    if isinstance(raw_llm, dict) and raw_llm:
+        merged = _normalize_llm_insight_minimal(raw_llm)
         result = _coerce_insight_card(merged, user_data)
+        result["generated_by"] = provider
+        result["health_score"] = int(user_data.get("health_score") or 0)
+    else:
+        result = generate_rule_based_insight_card(user_data)
 
-    conn = get_connection()
-    try:
-        set_cached_insight(conn, uid, m, y, scope, result)
-    finally:
-        conn.close()
     return result
 
 
@@ -577,10 +645,10 @@ Provide specific, actionable recommendations in JSON:
 - budget_suggestion (object: category string keys to INR monthly numbers)
 - monthly_challenge (one string)"""
 
-    result = call_dashboard_json_openai_then_groq(
+    raw_llm, provider = call_insights_json_waterfall(
         system_prompt, user_prompt, max_tokens=1200, temperature=0.35
     )
-    if not isinstance(result, dict) or not result:
+    if not isinstance(raw_llm, dict) or not raw_llm:
         return {
             "priority_actions": [],
             "quick_wins": [
@@ -594,8 +662,10 @@ Provide specific, actionable recommendations in JSON:
             ],
             "budget_suggestion": {},
             "monthly_challenge": "Try to save 10% more than last month",
+            "generated_by": "fallback",
         }
-    return result
+    raw_llm["generated_by"] = provider
+    return raw_llm
 
 
 # ---------------------------------------------------------------------------

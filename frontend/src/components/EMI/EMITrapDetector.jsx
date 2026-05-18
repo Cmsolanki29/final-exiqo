@@ -36,6 +36,7 @@ import { PageHeader } from "../Dashboard/shared/PageHeader";
 import { HeroKpiTile } from "../Dashboard/shared/HeroKpiTile";
 import { SectionTitle } from "../Dashboard/shared/SectionTitle";
 import { inr } from "../../lib/format";
+import LoanEmiCalculator from "./LoanEmiCalculator";
 
 const ACCENT = "#DC2626";
 
@@ -68,6 +69,7 @@ function dispatchPurchaseGoalsChanged(userId) {
   try {
     window.dispatchEvent(new CustomEvent("smartspend:purchase-goals-changed", { detail: { userId } }));
     window.dispatchEvent(new CustomEvent("smartspend-financial-sync", { detail: { userId } }));
+    window.dispatchEvent(new CustomEvent("smartspend:health-score-changed", { detail: { userId } }));
   } catch {
     /* ignore */
   }
@@ -168,6 +170,27 @@ export default function EMITrapDetector({ userId }) {
     window.addEventListener("dashboardModeChanged", handler);
     return () => window.removeEventListener("dashboardModeChanged", handler);
   }, [load]);
+
+  // Two-way sync: reload EMI report + cross-planner data when purchase goals or financial state changes
+  useEffect(() => {
+    const onPurchaseGoalsChanged = (e) => {
+      if (!e?.detail?.userId || e.detail.userId === userId) {
+        load();
+        loadCross();
+      }
+    };
+    const onFinancialSync = (e) => {
+      if (!e?.detail?.userId || e.detail.userId === userId) {
+        loadCross();
+      }
+    };
+    window.addEventListener("smartspend:purchase-goals-changed", onPurchaseGoalsChanged);
+    window.addEventListener("smartspend-financial-sync", onFinancialSync);
+    return () => {
+      window.removeEventListener("smartspend:purchase-goals-changed", onPurchaseGoalsChanged);
+      window.removeEventListener("smartspend-financial-sync", onFinancialSync);
+    };
+  }, [userId, load, loadCross]);
 
   // Load financial engine pre-check snapshot (non-blocking, 8s timeout)
   useEffect(() => {
@@ -584,6 +607,8 @@ export default function EMITrapDetector({ userId }) {
           )}
         </div>
       )}
+
+      <LoanEmiCalculator userId={userId} onAdded={loadCross} />
 
       <GlassCard surface="panel" padding="md" id="emi-calculator" className="rounded-2xl border border-exiqo-purple/20 bg-white/5 backdrop-blur-2xl">
         <SectionTitle

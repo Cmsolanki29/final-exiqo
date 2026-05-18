@@ -62,7 +62,7 @@ def _fetch_transactions(conn, user_id: int, months: int = 18) -> list[dict[str, 
                 "time": tm,
                 "dt": _to_dt(d, tm),
                 "amount": float(amt or 0),
-                "type": tx_type,
+                "type": (tx_type or "").strip().upper(),
                 "merchant": merchant.strip(),
                 "category": category.strip(),
                 "description": desc.strip(),
@@ -83,7 +83,27 @@ def detect_free_trial_traps(grouped: dict[str, list[dict[str, Any]]]) -> list[di
     out: list[dict[str, Any]] = []
     for merchant, items in grouped.items():
         low_m = merchant.lower()
-        if not any(k in low_m for k in ("cloud", "vpn", "secure", "pro", "trial", "app")):
+        if not any(
+            k in low_m
+            for k in (
+                "cloud",
+                "vpn",
+                "secure",
+                "pro",
+                "trial",
+                "app",
+                "apple",
+                "bill",
+                "micro auth",
+                "hotstar",
+                "youtube",
+                "netflix",
+                "prime",
+                "openai",
+                "spotify",
+                "google play",
+            )
+        ):
             continue
         items = sorted(items, key=lambda x: x["dt"])
         for i, tx in enumerate(items):
@@ -250,6 +270,63 @@ def detect_escalating_amounts(grouped: dict[str, list[dict[str, Any]]]) -> list[
     return out
 
 
+def detect_micro_auth_traps(grouped: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Flag ₹1–₹5 verification debits from subscription / app-store merchants."""
+    out: list[dict[str, Any]] = []
+    markers = (
+        "micro auth",
+        "apple.com",
+        ".com/bill",
+        "google play",
+        "play store",
+        "hotstar",
+        "youtube",
+        "netflix",
+        "prime",
+        "openai",
+        "spotify",
+        "verify",
+    )
+    for merchant, items in grouped.items():
+        low_m = merchant.lower()
+        if not any(k in low_m for k in markers):
+            continue
+        items = sorted(items, key=lambda x: x["dt"])
+        for tx in items:
+            if tx["type"] != "DEBIT" or not (0.5 <= tx["amount"] <= 5):
+                continue
+            follow = next(
+                (x for x in items if x["date"] > tx["date"] and x["amount"] >= 99),
+                None,
+            )
+            est = float(follow["amount"]) if follow else 499.0
+            out.append(
+                {
+                    "merchant": merchant,
+                    "pattern_type": "EK_RUPEE_TRAP",
+                    "description": (
+                        f"Micro-authorization ₹{tx['amount']:.0f} on {tx['date']} — "
+                        f"typical free-trial or card-verify pattern. Watch for ~₹{est:.0f} follow-up."
+                    ),
+                    "amount_involved": round(est, 2),
+                    "potential_loss": round(est, 2),
+                    "detected_date": tx["date"].isoformat(),
+                    "severity": _severity("EK_RUPEE_TRAP"),
+                    "action": "Cancel auto-renew in the merchant app before the predicted charge date.",
+                    "evidence": {
+                        "micro_charge": {
+                            "transaction_id": tx["id"],
+                            "date": tx["date"].isoformat(),
+                            "amount": tx["amount"],
+                        },
+                        "estimated_followup": est,
+                    },
+                }
+            )
+            break
+    return out
+
+
 def detect_zombies(grouped: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     today = date.today()
@@ -309,6 +386,10 @@ def detect_rupee_traps(txns: list[dict[str, Any]]) -> dict[str, Any]:
             low_m = merchant.lower()
             suspicious_id = any(k in low_m for k in suspicious_keywords) or ("@" in low_m and "-" in low_m)
             desc_hit = any(k in (tx["description"] or "").lower() for k in ("verify", "test", "confirm"))
+            subscription_micro = any(
+                k in low_m
+                for k in ("micro auth", "apple.com", ".com/bill", "google play", "play store", "hotstar", "youtube")
+            )
 
             risk = 0
             if new_payee:
@@ -319,6 +400,8 @@ def detect_rupee_traps(txns: list[dict[str, Any]]) -> dict[str, Any]:
                 risk += 40
             if desc_hit:
                 risk += 20
+            if subscription_micro:
+                risk = max(risk, 55)
 
             next_7 = [
                 x for x in items[idx + 1 :] if 0 < (x["date"] - tx["date"]).days <= 7 and 50 <= x["amount"] <= 500
@@ -387,7 +470,8 @@ def _detect_patterns(conn, user_id: int) -> dict[str, Any]:
     grouped = _group_by_merchant(txns)
 
     patterns = (
-        detect_free_trial_traps(grouped)
+        detect_micro_auth_traps(grouped)
+        + detect_free_trial_traps(grouped)
         + detect_price_increases(grouped)
         + detect_duplicates(grouped)
         + detect_escalating_amounts(grouped)

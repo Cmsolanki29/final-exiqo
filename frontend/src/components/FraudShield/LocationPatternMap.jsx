@@ -24,6 +24,25 @@ export function LocationPatternMap({ locations = [], embedded = true }) {
       .map((loc) => ({ ...pin(loc.city), count: loc.count, risk: loc.risk, city: loc.city }));
   }, [locations]);
 
+  if (pins.length === 0) {
+    return (
+      <div
+        className={
+          embedded
+            ? "rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+            : "rounded-2xl border border-gray-100 bg-white p-4 shadow-sm"
+        }
+      >
+        <p className={embedded ? "mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500" : "mb-2 text-[10px] font-semibold uppercase text-gray-500"}>
+          Your geography pattern
+        </p>
+        <p className={embedded ? "text-xs leading-relaxed text-gray-500" : "text-xs leading-relaxed text-gray-600"}>
+          No city fingerprints on your transactions yet. When your data includes a location field, we map it here.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div
       className={

@@ -7,6 +7,11 @@ import {
 import { useToast } from "../common/Toast";
 import { GlassCard } from "../intro/GlassCard";
 import { inr } from "../../lib/format";
+import {
+  formatUsage30d,
+  humanizeVerdictReason,
+  verdictDisplayLabel,
+} from "../../utils/subscriptionVerdictCopy";
 
 /**
  * Deep-dive sheet for a verdict row or a lightweight insight-derived row.
@@ -114,14 +119,14 @@ export default function SubscriptionDetailModal({ open, row, userId, onClose, on
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-white/45">Verdict</p>
-              <p className="mt-1 text-sm font-semibold capitalize text-white">{verdictKey.replace(/_/g, " ") || "—"}</p>
+              <p className="mt-1 text-sm font-semibold text-white">{verdictDisplayLabel(verdictKey)}</p>
             </div>
           </div>
 
           <div>
-            <h3 className="mb-2 text-sm font-semibold text-white">AI reasoning</h3>
+            <h3 className="mb-2 text-sm font-semibold text-white">What this means</h3>
             <div className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm leading-relaxed text-white/75">
-              {row.reasoning || row.body || "—"}
+              {humanizeVerdictReason(row.reasoning || row.body, verdictKey) || "—"}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span className="text-xs text-white/50">Confidence</span>
@@ -142,16 +147,16 @@ export default function SubscriptionDetailModal({ open, row, userId, onClose, on
 
           {(typeof row.current_usage_hours === "number" || typeof row.previous_usage_hours === "number") && (
             <div>
-              <h3 className="mb-2 text-sm font-semibold text-white">Usage (30-day window)</h3>
+              <h3 className="mb-2 text-sm font-semibold text-white">How much you used it</h3>
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-2xl border border-cyan-500/25 bg-cyan-500/10 p-4">
-                  <p className="text-[11px] text-white/50">Recent</p>
+                  <p className="text-[11px] text-white/50">Last 30 days</p>
                   <p className="mt-1 text-xl font-bold text-white">
                     {typeof row.current_usage_hours === "number" ? `${row.current_usage_hours.toFixed(1)}h` : "—"}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-[11px] text-white/50">Prior</p>
+                  <p className="text-[11px] text-white/50">Previous 30 days</p>
                   <p className="mt-1 text-xl font-bold text-white">
                     {typeof row.previous_usage_hours === "number" ? `${row.previous_usage_hours.toFixed(1)}h` : "—"}
                   </p>
@@ -159,7 +164,7 @@ export default function SubscriptionDetailModal({ open, row, userId, onClose, on
               </div>
               {pct != null && !Number.isNaN(pct) ? (
                 <div className="mt-3 flex items-center justify-between rounded-2xl border border-white/10 px-4 py-3">
-                  <span className="text-sm text-white/60">Change vs prior</span>
+                  <span className="text-sm text-white/60">Change vs last month</span>
                   <span className={`flex items-center gap-1 text-lg font-bold ${pct >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
                     {pct >= 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
                     {pct >= 0 ? "+" : ""}

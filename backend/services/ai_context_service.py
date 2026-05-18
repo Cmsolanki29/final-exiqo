@@ -296,17 +296,14 @@ def resolve_identity_scope(
     )
 
     if not name_matches:
-        holder_label = doc_holder or "another person"
         scope = {
             "scope": "unlinked_foreign",
             "reason": "different_person",
             "warning_message": (
-                f"This statement appears to belong to a different account holder "
-                f"({holder_label}), not {user_name}. "
-                f"I can only fully analyze your own financial documents. "
-                f"I will share a quick health overview from this statement."
+                f"Hello {user_name}, it seems this is not your account document. "
+                f"I'll still give you a summary."
             ),
-            "nudge_message": None,
+            "nudge_message": "Please link your account in Connected Accounts.",
             "linked_bank_names": linked_bank_names,
             "user_name": user_name,
         }
@@ -328,33 +325,27 @@ def resolve_identity_scope(
     )
 
     if is_bank_linked:
+        # Name matches AND bank matches a connected source → full access
         scope = {
-            "scope": "unlinked_same_bank",
-            "reason": "same_bank_not_connected",
-            "warning_message": (
-                f"This looks like your {doc_bank_label} statement, but this account "
-                f"is not connected to SmartSpend. "
-                f"I can provide a summary for this session. "
-                f"To track it permanently, go to Settings — Connect Account."
-            ),
-            "nudge_message": "Connect this account for full tracking and trends.",
+            "scope": "linked_full",
+            "reason": "name_and_bank_match",
+            "warning_message": None,
+            "nudge_message": None,
             "linked_bank_names": linked_bank_names,
             "user_name": user_name,
         }
         _log.info("resolve_identity_scope: scope=%s reason=%s", scope["scope"], scope["reason"])
         return scope
 
-    linked_str = ", ".join(linked_bank_names) if linked_bank_names else "none connected yet"
+    # Name matches but bank is NOT in the user's connected sources → different bank
     scope = {
-        "scope": "unlinked_foreign",
-        "reason": "different_bank",
+        "scope": "unlinked_same_bank",
+        "reason": "different_bank_not_connected",
         "warning_message": (
-            f"This is a {doc_bank_label} statement. "
-            f"Your linked accounts are: {linked_str}. "
-            f"I will share a health snapshot for this session. "
-            f"To track this account, connect it in Settings — Connect Account."
+            f"Hello {user_name}, this seems to be a different bank account. "
+            f"I'll provide insights but link this account for full access."
         ),
-        "nudge_message": "Go to Connect Account to add this bank.",
+        "nudge_message": "Link this account in Connected Accounts for full tracking and trends.",
         "linked_bank_names": linked_bank_names,
         "user_name": user_name,
     }

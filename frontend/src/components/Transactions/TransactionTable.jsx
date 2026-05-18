@@ -226,14 +226,25 @@ const TransactionTable = ({ userId, month, year, presentation = "default" }) => 
                     </td>
                     <td className="px-3 py-2.5 text-exiqo-glow/70">{tx.payment_method || "—"}</td>
                     <td className="px-3 py-2.5">
-                      <span className="inline-flex items-center gap-1.5">
-                        {tx.anomaly_flag ? (
-                          <span className="h-full w-0.5 rounded-full bg-gradient-to-b from-rose-400 to-rose-600" aria-hidden />
-                        ) : null}
-                        <span className="text-xs font-medium text-exiqo-glow/85">
-                          {tx.anomaly_flag ? `${tx.risk_level} · anomaly` : "Normal"}
-                        </span>
-                      </span>
+                      {(() => {
+                        const risky = tx.anomaly_flag ||
+                          Number(tx.risk_score) >= 60 ||
+                          ["HIGH", "CRITICAL"].includes(String(tx.risk_level || "").toUpperCase());
+                        const level = String(tx.risk_level || (risky ? "HIGH" : "LOW")).toUpperCase();
+                        return (
+                          <span className="inline-flex items-center gap-1.5">
+                            {risky ? (
+                              <span className="h-full w-0.5 rounded-full bg-gradient-to-b from-rose-400 to-rose-600" aria-hidden />
+                            ) : null}
+                            <span className={`text-xs font-medium ${risky ? "text-rose-300" : "text-exiqo-glow/85"}`}>
+                              {risky ? `${level} · ${tx.anomaly_flag ? "anomaly" : "risk"}` : "Normal"}
+                            </span>
+                            {risky && Number(tx.risk_score) > 0 && (
+                              <span className="text-[10px] text-white/35 tabular-nums">{tx.risk_score}</span>
+                            )}
+                          </span>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}

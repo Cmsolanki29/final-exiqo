@@ -11,8 +11,6 @@
  *   GET  /api/risk/review-queue                   getEnrichedReviewQueue()
  *
  * Graceful behaviour:
- *   - When the review queue is empty/unreachable we fall back to a small set
- *     of demo transactions so the page never looks broken in dev.
  *   - 404 from getInvestigation is treated as "no investigation yet" and
  *     surfaces a primary CTA to run one.
  */
@@ -40,14 +38,6 @@ import {
 import { SkeletonCard } from "../../components/common/SkeletonCard";
 import { useToast } from "../../components/common/Toast";
 import { fmtCurrency, fmtRelativeTime } from "../../utils/risk/formatters";
-
-// ── Demo fallback so dev experience is never empty ────────────────────────
-const DEMO_QUEUE = [
-  { id: 9981, transaction_id: 9981, merchant: "Unknown Vendor",        amount: 4999,  risk_score: 82, created_at: new Date(Date.now() -  90_000) },
-  { id: 9974, transaction_id: 9974, merchant: "Intl Marketplace",      amount: 12500, risk_score: 71, created_at: new Date(Date.now() - 5_400_000) },
-  { id: 9968, transaction_id: 9968, merchant: "Lottery Winner Co.",    amount: 1,     risk_score: 58, created_at: new Date(Date.now() - 14_400_000) },
-  { id: 9952, transaction_id: 9952, merchant: "Amazon",                amount: 1299,  risk_score: 22, created_at: new Date(Date.now() - 86_400_000) },
-];
 
 // ── Visual helpers ─────────────────────────────────────────────────────────
 function riskColor(score) {
@@ -259,17 +249,16 @@ const InvestigationViewer = ({ userId }) => {
     setQueueLoading(true);
     setQueueError(false);
     try {
-      const rows = await getEnrichedReviewQueue("pending", 20);
+      const rows = await getEnrichedReviewQueue("pending", 20, userId);
       const items = Array.isArray(rows) ? rows : rows?.items ?? [];
-      if (items.length === 0) throw new Error("empty");
       setQueue(items);
     } catch {
-      setQueue(DEMO_QUEUE);
+      setQueue([]);
       setQueueError(true);
     } finally {
       setQueueLoading(false);
     }
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     loadQueue();
@@ -400,7 +389,7 @@ const InvestigationViewer = ({ userId }) => {
           </p>
           <p className="text-sm font-semibold mt-1.5">
             {queueError ? (
-              <span className="text-amber-300">Demo fallback</span>
+              <span className="text-amber-300">Backend unreachable</span>
             ) : (
               <span className="text-emerald-300">Live backend</span>
             )}

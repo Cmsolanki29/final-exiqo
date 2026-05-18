@@ -156,6 +156,8 @@ def list_transactions(
     year: Optional[int] = Query(None, ge=2000, le=2100),
     category: Optional[str] = Query(None),
     anomaly_only: Optional[bool] = Query(None),
+    connected_source_id: Optional[int] = Query(None, ge=1),
+    uploaded_document_id: Optional[int] = Query(None, ge=1),
     limit: int = Query(50, ge=1, le=200),
     conn=Depends(get_db),
 ):
@@ -188,6 +190,12 @@ def list_transactions(
             params.extend(extra)
         if anomaly_only:
             q += _anomaly_filter_sql(alias="t")
+        if connected_source_id is not None:
+            q += " AND t.connected_source_id = %s"
+            params.append(connected_source_id)
+        if uploaded_document_id is not None:
+            q += " AND t.uploaded_document_id = %s"
+            params.append(uploaded_document_id)
         q += " ORDER BY t.transaction_date DESC, t.transaction_time DESC LIMIT %s"
         params.append(limit)
         cur.execute(q, params)

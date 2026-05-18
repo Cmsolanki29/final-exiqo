@@ -25,7 +25,7 @@ import { SkeletonCard } from "../common/SkeletonCard";
 import { inr } from "../../lib/format";
 import { FRAUD_SHIELD_PHASES } from "./fraudshieldPhases";
 import FraudEducationSwipe from "./FraudEducationSwipe";
-import FraudAlertsList from "./FraudAlertsList";
+import UnifiedFraudAlerts from "./UnifiedFraudAlerts";
 import FraudStats from "./FraudStats";
 import TransactionChecker from "./TransactionChecker";
 import FraudShieldLiveEventsTab from "./FraudShieldLiveEventsTab";
@@ -64,7 +64,6 @@ const TABS = [
 
 const TAB_IDS = new Set(TABS.map((t) => t.id));
 
-const AlertsCenter = lazy(() => import("../../pages/risk/AlertsCenter"));
 const BehaviorProfile = lazy(() => import("../../pages/risk/BehaviorProfile"));
 const DeviceTrust = lazy(() => import("../../pages/risk/DeviceTrust"));
 const InvestigationViewer = lazy(() => import("../../pages/risk/InvestigationViewer"));
@@ -95,6 +94,8 @@ const legacyNavigate = (setTab) => (legacyId) => {
 };
 
 function PhaseShowcase() {
+  const phases = FRAUD_SHIELD_PHASES;
+
   return (
     <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#0a0a1f]/90 via-violet-950/30 to-[#0f172a]/90 p-6 shadow-[0_0_60px_-20px_rgba(124,58,237,0.35)] backdrop-blur-xl md:p-8">
       <div
@@ -110,17 +111,15 @@ function PhaseShowcase() {
           <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-violet-300/80">12-Phase AI protection stack</p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-white md:text-3xl">FraudShield control room</h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-gray-300">
-            Twelve independent layers score, explain, and escalate risk before money moves. One surface — the same bar as
-            enterprise fraud stacks, tuned for clarity.
+            Twelve integrated layers protect every transaction — from ingestion and features through models, graph signals,
+            explainability, and automated investigation.
           </p>
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 shadow-[0_0_24px_-8px_rgba(16,185,129,0.5)]">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
-          </span>
-          <span className="text-xs font-bold uppercase tracking-wide text-emerald-200">🛡 All 12 layers active</span>
-        </div>
+        <motion.div className="flex max-w-[14rem] flex-col items-end gap-1 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-2.5 text-right shadow-[0_0_24px_-8px_rgba(16,185,129,0.25)]">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-200/90">Stack status</span>
+          <span className="text-xs font-semibold leading-snug text-white">12 / 12 active</span>
+          <span className="text-[10px] text-emerald-300/80">All phases operational</span>
+        </motion.div>
       </div>
 
       <div className="relative mb-4 hidden h-px w-full overflow-hidden rounded-full bg-gradient-to-r from-transparent via-white/25 to-transparent md:block" aria-hidden>
@@ -132,7 +131,7 @@ function PhaseShowcase() {
       </div>
 
       <div className="relative grid snap-x snap-mandatory grid-flow-col auto-cols-[minmax(148px,1fr)] gap-3 overflow-x-auto pb-2 md:grid-flow-row md:grid-cols-3 lg:grid-cols-4 md:overflow-visible">
-        {FRAUD_SHIELD_PHASES.map((ph, idx) => {
+        {phases.map((ph, idx) => {
           const Ico = ICON_MAP[ph.icon] || Shield;
           return <PhaseCard key={ph.key} phase={ph} Icon={Ico} index={idx} />;
         })}
@@ -172,7 +171,7 @@ function StatStrip({ safetyScore, blocked, saved, loading, error, onRetry }) {
         <div className="mt-1 flex flex-wrap items-center gap-4">
           <TrustRing score={safetyAnim} max={100} size={100} stroke={7} label="Score" />
           <p className="max-w-[10rem] text-xs leading-relaxed text-gray-400">
-            Blended model + rules confidence on your last 30 days of activity.
+            Derived from flagged items and risk scores on your current dashboard view.
           </p>
         </div>
       ),
@@ -185,7 +184,7 @@ function StatStrip({ safetyScore, blocked, saved, loading, error, onRetry }) {
         <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
           <p className="text-3xl font-bold tabular-nums tracking-tight text-white">{Math.round(blockedAnim)}</p>
           <MiniSparkline seed={blocked} className="opacity-90" />
-          <p className="w-full text-xs text-gray-400">This month · FraudShield + bank rules</p>
+          <p className="w-full text-xs text-gray-400">From alerts you marked blocked (all time)</p>
         </div>
       ),
     },
@@ -419,17 +418,7 @@ const FraudShieldPage = ({ userId, userName }) => {
 
           {tab === "alerts" && (
             <div className="space-y-4">
-              <h2 className="text-lg font-bold text-white">Alerts & review queue</h2>
-              <p className="text-sm text-gray-400">
-                Phase 8 review queue with Phase 9 investigation hooks — same backend, unified surface.
-              </p>
-              <Suspense fallback={tabFallback}>
-                <AlertsCenter userId={userId} />
-              </Suspense>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                <h3 className="mb-2 text-sm font-semibold text-white">FraudShield alerts (consumer)</h3>
-                <FraudAlertsList userId={userId} onAlertsChanged={onAlertsChanged} />
-              </div>
+              <UnifiedFraudAlerts userId={userId} onAlertsChanged={onAlertsChanged} />
             </div>
           )}
 
@@ -461,7 +450,7 @@ const FraudShieldPage = ({ userId, userName }) => {
                   below to watch a live-style trace, then review real queue items.
                 </p>
               </div>
-              <InvestigationConsole />
+              <InvestigationConsole userId={userId} />
               <Suspense fallback={tabFallback}>
                 <InvestigationViewer userId={userId} />
               </Suspense>

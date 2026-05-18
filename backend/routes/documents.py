@@ -329,6 +329,22 @@ async def upload_statement(
         file_type=ext,
         size_kb=size_kb,
     )
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM transactions
+            WHERE user_id = %s AND connected_source_id = %s
+            """,
+            (user_id, source_id),
+        )
+        cleared = cur.rowcount
+        if cleared:
+            logger.warning(
+                "[upload] cleared %s prior transactions for source_id=%s user_id=%s",
+                cleared,
+                source_id,
+                user_id,
+            )
     conn.commit()
 
     try:
@@ -372,6 +388,26 @@ async def upload_statement(
             from services.financial_engine import recalculate_financial_state
             from services.openai_service import invalidate_insight_cache
 
+            imported = int(result.get("imported") or 0)
+            if imported > 0:
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    DELETE FROM transactions
+                    WHERE user_id = %s AND connected_source_id IS NULL
+                    """,
+                    (user_id,),
+                )
+                purged = cur.rowcount
+                cur.close()
+                if purged:
+                    logger.warning(
+                        "[upload] purged %s non-statement transactions user_id=%s",
+                        purged,
+                        user_id,
+                    )
+                    result["orphan_transactions_purged"] = purged
+
             today = _date.today()
             invalidate_insight_cache(conn, user_id, today.month, today.year)
             recalculate_financial_state(
@@ -385,11 +421,12 @@ async def upload_statement(
 
             sync_monthly_summaries_for_document(conn, user_id, result.get("date_range"))
             try:
-                from services.ml_model import ml_detector
+                from services.fraud_pipeline import run_post_upload_pipeline
 
-                ml_detector.detect_and_update(user_id, process_all=False)
+                pipeline_summary = run_post_upload_pipeline(user_id, conn)
+                result["fraud_pipeline"] = pipeline_summary
             except Exception:
-                logger.exception("[upload] ML anomaly pass failed user_id=%s", user_id)
+                logger.exception("[upload] FraudShield pipeline failed user_id=%s", user_id)
             conn.commit()
         except Exception:
             logger.exception("[upload] post-upload recalc failed user_id=%s", user_id)
@@ -658,6 +695,48 @@ async def update_dashboard_mode(request: Request, conn=Depends(get_db)):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+def _purge_connected_source(cur, *, user_id: int, source_id: int) -> dict[str, int]:
+    """Delete all rows tied to a connected source (transactions, alerts, uploads)."""
+    counts = {"transactions": 0, "fraud_alerts": 0, "uploaded_documents": 0}
+
+    cur.execute(
+        """
+        SELECT id FROM transactions
+        WHERE user_id = %s AND connected_source_id = %s
+        """,
+        (user_id, source_id),
+    )
+    txn_ids = [int(r[0]) for r in cur.fetchall()]
+    if txn_ids:
+        cur.execute(
+            "DELETE FROM fraud_alerts WHERE user_id = %s AND transaction_id = ANY(%s::int[])",
+            (user_id, txn_ids),
+        )
+        counts["fraud_alerts"] = cur.rowcount
+        cur.execute(
+            "DELETE FROM transactions WHERE user_id = %s AND connected_source_id = %s",
+            (user_id, source_id),
+        )
+        counts["transactions"] = cur.rowcount
+
+    cur.execute(
+        """
+        DELETE FROM uploaded_documents
+        WHERE user_id = %s AND connected_source_id = %s
+        """,
+        (user_id, source_id),
+    )
+    counts["uploaded_documents"] = cur.rowcount
+
+    cur.execute(
+        "DELETE FROM connected_sources WHERE id = %s AND user_id = %s RETURNING id",
+        (source_id, user_id),
+    )
+    if not cur.fetchone():
+        raise HTTPException(status_code=404, detail="Source not found or not owned by this user")
+    return counts
+
+
 @router.delete("/sources/{source_id}")
 def delete_connected_source(
     source_id: int,
@@ -672,20 +751,10 @@ def delete_connected_source(
         )
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail="Source not found or not owned by this user")
-
-        # Delete transactions linked to this source
-        cur.execute(
-            "DELETE FROM transactions WHERE source_id = %s AND user_id = %s",
-            (source_id, user_id),
-        )
-        # Delete the source itself
-        cur.execute(
-            "DELETE FROM connected_sources WHERE id = %s AND user_id = %s",
-            (source_id, user_id),
-        )
+        counts = _purge_connected_source(cur, user_id=user_id, source_id=source_id)
 
     conn.commit()
-    return {"success": True, "deleted_source_id": source_id}
+    return {"success": True, "deleted_source_id": source_id, **counts}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

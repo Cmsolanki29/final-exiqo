@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
 
 from psycopg2.extensions import connection as PgConnection
+
+from services.dashboard_scope import fetch_dashboard_mode, transaction_scope_sql
 
 
 def _to_dt(d: date, t: Any) -> datetime:
@@ -16,19 +18,23 @@ def _to_dt(d: date, t: Any) -> datetime:
     return datetime.combine(d, t)
 
 
-def _fetch_txns(conn: PgConnection, user_id: int, months: int = 6) -> list[dict[str, Any]]:
+def _fetch_txns(conn: PgConnection, user_id: int, months: int = 8) -> list[dict[str, Any]]:
+    """Transactions visible in the user's current dashboard mode."""
     cur = conn.cursor()
     try:
+        mode = fetch_dashboard_mode(cur, user_id)
+        scope = transaction_scope_sql("t", mode)
         cur.execute(
-            """
-            SELECT id, transaction_date, transaction_time, amount::float, COALESCE(type, ''),
-                   COALESCE(merchant, ''), COALESCE(description, '')
-            FROM transactions
-            WHERE user_id = %s
-              AND transaction_date >= (CURRENT_DATE - %s::interval)
-            ORDER BY transaction_date ASC, transaction_time ASC;
+            f"""
+            SELECT t.id, t.transaction_date, t.transaction_time, t.amount::float,
+                   COALESCE(t.type, ''), COALESCE(t.merchant, ''), COALESCE(t.description, '')
+            FROM transactions t
+            WHERE t.user_id = %s
+              AND t.transaction_date >= (CURRENT_DATE - (%s || ' months')::interval)
+              AND ({scope})
+            ORDER BY t.transaction_date ASC, t.transaction_time ASC;
             """,
-            (user_id, f"{int(months)} months"),
+            (user_id, int(months)),
         )
         rows = cur.fetchall()
     finally:
@@ -43,7 +49,7 @@ def _fetch_txns(conn: PgConnection, user_id: int, months: int = 6) -> list[dict[
                 "time": tm,
                 "dt": _to_dt(d, tm),
                 "amount": float(amt or 0),
-                "type": (tx_type or "").strip(),
+                "type": (tx_type or "").strip().upper(),
                 "merchant": (merchant or "").strip(),
                 "description": (desc or "").strip(),
             }
@@ -53,13 +59,49 @@ def _fetch_txns(conn: PgConnection, user_id: int, months: int = 6) -> list[dict[
 
 def _trial_merchant(merchant: str) -> bool:
     low = merchant.lower()
-    return any(k in low for k in ("cloud", "vpn", "secure", "trial", "pro", "app", "fit", "plus"))
+    return any(
+        k in low
+        for k in (
+            "cloud",
+            "vpn",
+            "secure",
+            "trial",
+            "pro",
+            "app",
+            "fit",
+            "plus",
+            "apple",
+            "bill",
+            "micro auth",
+            "hotstar",
+            "youtube",
+            "netflix",
+            "prime",
+            "openai",
+            "spotify",
+            "google play",
+            "paytm",
+        )
+    )
+
+
+def _micro_auth_merchant(merchant: str) -> bool:
+    low = merchant.lower()
+    return any(
+        k in low
+        for k in ("micro auth", "apple.com", ".com/bill", "verify", "google *play", "play store")
+    )
+
+
+def _amounts_similar(a: float, b: float, tolerance: float = 0.12) -> bool:
+    if a <= 0 or b <= 0:
+        return False
+    return abs(a - b) / max(a, b) <= tolerance
 
 
 def predict_upcoming_charges(conn: PgConnection, user_id: int) -> list[dict[str, Any]]:
     """Return alert dicts ready for INSERT into pattern_alerts."""
     today = date.today()
-    now = datetime.now()
     txns = _fetch_txns(conn, user_id, months=8)
     alerts: list[dict[str, Any]] = []
 
@@ -70,78 +112,84 @@ def predict_upcoming_charges(conn: PgConnection, user_id: int) -> list[dict[str,
     for m in by_merchant:
         by_merchant[m].sort(key=lambda x: x["dt"])
 
-    # --- Free trial ending (small charge, follow-up large known OR predicted window) ---
+    scheduled: set[tuple[str, str]] = set()
+
+    # --- Free trial ending ---
     for merchant, items in by_merchant.items():
-        if not _trial_merchant(merchant):
+        if not _trial_merchant(merchant) and not _micro_auth_merchant(merchant):
             continue
         for i, tx in enumerate(items):
-            if tx["amount"] > 10:
+            if tx["amount"] > 10 or tx["amount"] < 0.5:
                 continue
-            if tx["amount"] < 0.5:
-                continue
-            # Look for large follow-up same merchant after this tx
             follow = None
             for nxt in items[i + 1 :]:
                 if nxt["amount"] >= 99 and (nxt["date"] - tx["date"]).days >= 3:
                     follow = nxt
                     break
             if follow:
-                # Upcoming renewal: next cycle ~ same gap after follow
-                gap = (follow["date"] - tx["date"]).days
-                gap = max(7, min(gap, 90))
+                gap = max(7, min((follow["date"] - tx["date"]).days, 90))
                 next_charge = follow["date"] + timedelta(days=gap)
                 if next_charge > today:
-                    alerts.append(
-                        _alert_row(
-                            user_id,
-                            "free_trial_ending",
-                            merchant,
-                            float(follow["amount"]),
-                            next_charge,
-                            follow["id"],
-                            0.82,
-                            {"trial_anchor": tx["date"].isoformat(), "last_paid": follow["date"].isoformat()},
-                        )
-                    )
-            else:
-                # No follow-up yet — predict common trial lengths from small charge date
-                for days in (7, 14, 30):
-                    end = tx["date"] + timedelta(days=days)
-                    if end > today:
-                        est = _estimate_avg_debit(conn, user_id, merchant) or 499.0
+                    key = (merchant, "free_trial_ending")
+                    if key not in scheduled:
+                        scheduled.add(key)
                         alerts.append(
                             _alert_row(
                                 user_id,
                                 "free_trial_ending",
                                 merchant,
-                                float(est),
-                                end,
-                                tx["id"],
-                                0.65,
-                                {"trial_start": tx["date"].isoformat(), "assumed_days": days},
+                                float(follow["amount"]),
+                                next_charge,
+                                follow["id"],
+                                0.82,
+                                {
+                                    "trial_anchor": tx["date"].isoformat(),
+                                    "last_paid": follow["date"].isoformat(),
+                                },
                             )
                         )
+            else:
+                for days in (7, 14, 30):
+                    end = tx["date"] + timedelta(days=days)
+                    if end > today:
+                        est = _estimate_avg_debit(conn, user_id, merchant) or _default_followup_amount(merchant)
+                        key = (merchant, "free_trial_ending")
+                        if key not in scheduled:
+                            scheduled.add(key)
+                            alerts.append(
+                                _alert_row(
+                                    user_id,
+                                    "free_trial_ending",
+                                    merchant,
+                                    float(est),
+                                    end,
+                                    tx["id"],
+                                    0.65,
+                                    {"trial_start": tx["date"].isoformat(), "assumed_days": days},
+                                )
+                            )
                         break
 
-    # --- Monthly renewal (same amount, ~28–32 day gaps) ---
+    # --- Monthly renewal (same amount, ~26–35 day gaps) ---
     for merchant, items in by_merchant.items():
         if len(items) < 2:
             continue
-        amounts = [round(x["amount"], 2) for x in items if x["amount"] >= 49]
-        if len(amounts) < 2:
+        deb = sorted([x for x in items if x["amount"] >= 49], key=lambda x: x["dt"])
+        if len(deb) < 2:
             continue
-        last_amt = amounts[-1]
-        same = [x for x in items if x["type"] == "DEBIT" and round(x["amount"], 2) == last_amt]
+        last_amt = round(deb[-1]["amount"], 2)
+        same = [x for x in deb if round(x["amount"], 2) == last_amt]
         if len(same) < 2:
             continue
         dates = [x["date"] for x in same]
         intervals = [(dates[i + 1] - dates[i]).days for i in range(len(dates) - 1)]
-        if not intervals:
+        if not intervals or not all(26 <= iv <= 35 for iv in intervals):
             continue
-        if all(26 <= iv <= 35 for iv in intervals):
-            last_d = dates[-1]
-            next_d = last_d + timedelta(days=30)
-            if next_d > today:
+        next_d = dates[-1] + timedelta(days=30)
+        if next_d > today:
+            key = (merchant, "renewal_upcoming")
+            if key not in scheduled:
+                scheduled.add(key)
                 alerts.append(
                     _alert_row(
                         user_id,
@@ -155,12 +203,12 @@ def predict_upcoming_charges(conn: PgConnection, user_id: int) -> list[dict[str,
                     )
                 )
 
-    # --- One-rupee trap predicted ---
+    # --- One-rupee trap predicted (skip if free-trial alert already scheduled) ---
     for merchant, items in by_merchant.items():
+        if (merchant, "free_trial_ending") in scheduled:
+            continue
         for tx in items:
-            if tx["amount"] > 1.0:
-                continue
-            if tx["type"] != "DEBIT":
+            if tx["amount"] > 1.0 or tx["type"] != "DEBIT":
                 continue
             large_later = any(
                 y["merchant"] == merchant and y["amount"] > 100 and y["date"] > tx["date"] for y in items
@@ -169,55 +217,82 @@ def predict_upcoming_charges(conn: PgConnection, user_id: int) -> list[dict[str,
                 continue
             pred = tx["date"] + timedelta(days=7)
             if pred > today:
+                est = _estimate_avg_debit(conn, user_id, merchant) or _default_followup_amount(merchant)
                 alerts.append(
                     _alert_row(
                         user_id,
                         "one_rupee_trap_predicted",
                         merchant,
-                        499.0,
+                        float(est),
                         pred,
                         tx["id"],
                         0.55,
-                        {"verification_date": tx["date"].isoformat(), "verification_amount": tx["amount"]},
+                        {
+                            "verification_date": tx["date"].isoformat(),
+                            "verification_amount": tx["amount"],
+                        },
                     )
                 )
                 break
 
-    # --- Price increase (reactive heads-up, optional next bill at new price) ---
+    # --- Price increase: recurring baseline then higher last charge ---
     for merchant, items in by_merchant.items():
-        if len(items) < 2:
+        deb = sorted([x for x in items if x["type"] == "DEBIT" and x["amount"] >= 49], key=lambda x: x["dt"])
+        if len(deb) < 3:
             continue
-        deb = [x for x in items if x["amount"] >= 10]
-        if len(deb) < 2:
+        last = deb[-1]
+        if (today - last["date"]).days > 60:
             continue
-        a, b = deb[-2], deb[-1]
-        if b["amount"] > a["amount"] * 1.1 and b["date"] >= today - timedelta(days=45):
-            inc_pct = (b["amount"] - a["amount"]) / max(a["amount"], 1) * 100
-            if inc_pct > 10:
-                alerts.append(
-                    _alert_row(
-                        user_id,
-                        "price_increase",
-                        merchant,
-                        float(b["amount"]),
-                        b["date"],
-                        b["id"],
-                        0.95,
-                        {
-                            "old_price": float(a["amount"]),
-                            "new_price": float(b["amount"]),
-                            "increase_pct": round(inc_pct, 1),
-                        },
-                    )
-                )
+        hist = deb[:-1]
+        rounded = [round(x["amount"], 0) for x in hist]
+        common_amt, cnt = Counter(rounded).most_common(1)[0]
+        if cnt < 2:
+            continue
+        baseline = float(common_amt)
+        if last["amount"] <= baseline * 1.1:
+            continue
+        inc_pct = (last["amount"] - baseline) / max(baseline, 1) * 100
+        if inc_pct <= 10:
+            continue
+        next_d = last["date"] + timedelta(days=30)
+        if next_d <= today:
+            next_d = today + timedelta(days=7)
+        alerts.append(
+            _alert_row(
+                user_id,
+                "price_increase",
+                merchant,
+                float(last["amount"]),
+                next_d,
+                last["id"],
+                0.88,
+                {
+                    "old_price": baseline,
+                    "new_price": float(last["amount"]),
+                    "increase_pct": round(inc_pct, 1),
+                },
+            )
+        )
 
-    # Dedupe by (merchant, charge_date, pattern_type) keeping highest confidence
     keyed: dict[tuple[str, date, str], dict[str, Any]] = {}
     for a in alerts:
         k = (a["merchant_name"], a["charge_date"], a["pattern_type"])
         if k not in keyed or (a["predicted_confidence"] or 0) > (keyed[k].get("predicted_confidence") or 0):
             keyed[k] = a
     return sorted(keyed.values(), key=lambda x: (x["charge_date"], -float(x["predicted_confidence"] or 0)))
+
+
+def _default_followup_amount(merchant: str) -> float:
+    low = merchant.lower()
+    if "openai" in low:
+        return 1999.0
+    if "apple" in low or "bill" in low:
+        return 499.0
+    if "youtube" in low or "hotstar" in low:
+        return 299.0
+    if "prime" in low or "amazon" in low:
+        return 125.0
+    return 499.0
 
 
 def _alert_row(
@@ -230,10 +305,7 @@ def _alert_row(
     confidence: float,
     details: dict[str, Any],
 ) -> dict[str, Any]:
-    """Build one alert payload matching pattern_alerts columns."""
     first = charge_date - timedelta(days=3)
-    if pattern_type == "renewal_upcoming" and charge_date - date.today() > timedelta(days=20):
-        first = charge_date - timedelta(days=3)
     deadline = datetime.combine(charge_date, datetime.min.time()) - timedelta(hours=12)
     return {
         "user_id": user_id,
@@ -252,10 +324,13 @@ def _alert_row(
 def _estimate_avg_debit(conn: PgConnection, user_id: int, merchant: str) -> float | None:
     cur = conn.cursor()
     try:
+        mode = fetch_dashboard_mode(cur, user_id)
+        scope = transaction_scope_sql("t", mode)
         cur.execute(
-            """
-            SELECT AVG(amount)::float FROM transactions
-            WHERE user_id = %s AND type = 'DEBIT' AND merchant = %s AND amount > 15;
+            f"""
+            SELECT AVG(t.amount)::float FROM transactions t
+            WHERE t.user_id = %s AND t.type = 'DEBIT' AND t.merchant = %s AND t.amount > 15
+              AND ({scope});
             """,
             (user_id, merchant),
         )
@@ -265,8 +340,46 @@ def _estimate_avg_debit(conn: PgConnection, user_id: int, merchant: str) -> floa
         cur.close()
 
 
+def prune_alerts_outside_scope(conn: PgConnection, user_id: int) -> int:
+    """Expire pending alerts that no longer match dashboard-visible transactions."""
+    cur = conn.cursor()
+    try:
+        mode = fetch_dashboard_mode(cur, user_id)
+        scope = transaction_scope_sql("t", mode)
+        cur.execute(
+            f"""
+            UPDATE pattern_alerts pa
+            SET status = 'expired', updated_at = NOW()
+            WHERE pa.user_id = %s
+              AND pa.status IN ('pending', 'snoozed')
+              AND (
+                (
+                  pa.source_transaction_id IS NOT NULL
+                  AND NOT EXISTS (
+                    SELECT 1 FROM transactions t
+                    WHERE t.id = pa.source_transaction_id
+                      AND t.user_id = pa.user_id
+                      AND ({scope})
+                  )
+                )
+                OR NOT EXISTS (
+                  SELECT 1 FROM transactions t
+                  WHERE t.user_id = pa.user_id
+                    AND LOWER(TRIM(COALESCE(t.merchant, ''))) = LOWER(TRIM(pa.merchant_name))
+                    AND t.type = 'DEBIT'
+                    AND ({scope})
+                    AND t.transaction_date >= (CURRENT_DATE - INTERVAL '8 months')
+                )
+              );
+            """,
+            (user_id,),
+        )
+        return cur.rowcount or 0
+    finally:
+        cur.close()
+
+
 def upsert_pattern_alerts(conn: PgConnection, alerts: list[dict[str, Any]]) -> int:
-    """Insert new pattern_alerts; skip duplicates. Returns rows inserted."""
     if not alerts:
         return 0
     cur = conn.cursor()

@@ -41,6 +41,7 @@ const NAV_ITEMS = [
   { id: "festival",      label: "Festivals & Event Planner", icon: Sparkles, group: "Planning",        description: "Budget for Diwali, Holi & more"         },
   { id: "purchase",      label: "Purchase Planner",  icon: ShoppingCart,    group: "Planning",        description: "Plan large purchases with AI help"      },
   { id: "cybersafe-connect", label: "CyberSafe Connect", icon: ShieldCheck, group: "Risk Awareness", description: "Report fraud to Cybercell · 24hr window" },
+  { id: "fraud-shield", label: "FraudShield Vigil", icon: ShieldAlert, group: "Risk Awareness", description: "Mule detection · real-time transaction risk" },
   { id: "settings",      label: "Settings",          icon: Settings,        group: "System",          description: "App preferences & configuration"        },
 ];
 const GROUP_ORDER = ["Workspace", "AI Intelligence", "Financial OS", "Planning", "Risk Awareness", "System"];

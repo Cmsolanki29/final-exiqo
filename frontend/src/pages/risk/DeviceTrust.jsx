@@ -28,69 +28,6 @@ import { TrustRing01 } from "../../components/FraudShield/TrustRing";
 import { fmtCurrency, fmtRelativeTime } from "../../utils/risk/formatters";
 import { getDevices } from "../../services/riskApi";
 
-const DEMO_DEVICES = [
-  {
-    id: "d1",
-    name: "iPhone 15 Pro",
-    type: "mobile",
-    os: "iOS 17.4",
-    browser: "Safari",
-    trust_score: 0.96,
-    status: "trusted",
-    last_seen: new Date(Date.now() - 3600_000),
-    first_seen: new Date(Date.now() - 90 * 86400_000),
-    location: "Mumbai, IN",
-    risk_flags: [],
-    txn_count: 842,
-    avg_amount: 1850,
-  },
-  {
-    id: "d2",
-    name: "MacBook Pro",
-    type: "desktop",
-    os: "macOS 14.4",
-    browser: "Chrome 123",
-    trust_score: 0.88,
-    status: "trusted",
-    last_seen: new Date(Date.now() - 86400_000),
-    first_seen: new Date(Date.now() - 180 * 86400_000),
-    location: "Mumbai, IN",
-    risk_flags: [],
-    txn_count: 1204,
-    avg_amount: 4200,
-  },
-  {
-    id: "d3",
-    name: "Samsung Galaxy S23",
-    type: "mobile",
-    os: "Android 14",
-    browser: "Chrome Mobile",
-    trust_score: 0.61,
-    status: "review",
-    last_seen: new Date(Date.now() - 7 * 86400_000),
-    first_seen: new Date(Date.now() - 14 * 86400_000),
-    location: "Bangalore, IN",
-    risk_flags: ["new_location", "infrequent_use"],
-    txn_count: 34,
-    avg_amount: 6200,
-  },
-  {
-    id: "d4",
-    name: "Unknown Device",
-    type: "desktop",
-    os: "Windows 11",
-    browser: "Firefox 124",
-    trust_score: 0.22,
-    status: "alert",
-    last_seen: new Date(Date.now() - 8 * 86400_000),
-    first_seen: new Date(Date.now() - 8 * 86400_000),
-    location: "Singapore, SG",
-    risk_flags: ["new_location", "new_device", "unusual_hour"],
-    txn_count: 3,
-    avg_amount: 45000,
-  },
-];
-
 const FLAG_LABELS = {
   new_location: "New location",
   new_device: "First seen",
@@ -110,11 +47,13 @@ function DeviceIcon({ type }) {
 /** Approximate pin positions on a stylised India silhouette box (0–100 coords). */
 function pinForLocation(loc) {
   const l = (loc || "").toLowerCase();
+  if (!l || l === "unknown") return null;
   if (l.includes("mumbai")) return { cx: 22, cy: 58, label: "Mumbai" };
   if (l.includes("bangalore") || l.includes("bengaluru")) return { cx: 38, cy: 72, label: "Bengaluru" };
   if (l.includes("delhi")) return { cx: 35, cy: 38, label: "Delhi" };
   if (l.includes("singapore")) return { cx: 88, cy: 78, label: "Singapore", offshore: true };
-  return { cx: 50, cy: 50, label: loc?.split(",")[0] || "?" };
+  const label = (loc || "").split(",")[0]?.trim() || "?";
+  return { cx: 50, cy: 50, label };
 }
 
 function IndiaPinMap({ devices }) {
@@ -123,9 +62,12 @@ function IndiaPinMap({ devices }) {
     const out = [];
     (devices || []).forEach((d) => {
       const key = (d.location || "").trim();
-      if (!key || seen.has(key)) return;
+      if (!key || key.toLowerCase() === "unknown") return;
+      const pin = pinForLocation(d.location);
+      if (!pin) return;
+      if (seen.has(key)) return;
       seen.add(key);
-      out.push({ ...pinForLocation(d.location), id: d.id, loc: key });
+      out.push({ ...pin, id: d.id, loc: key });
     });
     return out;
   }, [devices]);
@@ -133,6 +75,12 @@ function IndiaPinMap({ devices }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
       <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">Where you bank from</p>
+      {pins.length === 0 ? (
+        <p className="text-center text-xs leading-relaxed text-gray-500">
+          No city or region on your transactions yet. When statements include a location, pins appear here.
+        </p>
+      ) : (
+        <div>
       <svg viewBox="0 0 100 100" className="mx-auto h-36 w-full max-w-[220px]" aria-hidden>
         <defs>
           <linearGradient id="inMapFill" x1="0" y1="0" x2="1" y2="1">
@@ -164,10 +112,12 @@ function IndiaPinMap({ devices }) {
         {pins.map((p) => (
           <li key={p.id} className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5">
             {p.label}
-            {p.offshore ? " · offshore" : ""}
+            {p.offshore ? " - offshore" : ""}
           </li>
         ))}
       </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -436,7 +386,6 @@ const DeviceTrust = ({ userId = 1, onNavigate, embedded = false }) => {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [, setError] = useState(null);
-  const [usingDemo, setUsingDemo] = useState(false);
   const [expanded, setExpanded] = useState(null);
   const [actionLabel, setActionLabel] = useState({});
 
@@ -450,16 +399,9 @@ const DeviceTrust = ({ userId = 1, onNavigate, embedded = false }) => {
         if (!cancelled) {
           const devs = res?.devices ?? (Array.isArray(res) ? res : []);
           if (Array.isArray(devs) && devs.length > 0) {
-            setDevices(
-              devs.map((d, i) => ({
-                ...d,
-                txn_count: d.txn_count ?? 40 + (i * 17) % 200,
-                avg_amount: d.avg_amount ?? 1200 + (i * 331) % 8000,
-              }))
-            );
+            setDevices(devs.map((d) => ({ ...d })));
           } else {
             setDevices([]);
-            setUsingDemo(false);
           }
           setLoading(false);
         }
@@ -467,7 +409,6 @@ const DeviceTrust = ({ userId = 1, onNavigate, embedded = false }) => {
       .catch(() => {
         if (!cancelled) {
           setDevices([]);
-          setUsingDemo(false);
           setError("Could not load payment channels.");
           setLoading(false);
         }

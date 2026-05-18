@@ -14,6 +14,7 @@ from services.subscription_intelligence import (
     persist_verdict,
     schedule_reminders_for_subscription,
 )
+from services.subscription_intelligence.reminder_scheduler import apply_reminder_showcase_variety
 
 
 def _upsert_sub_row(
@@ -36,15 +37,17 @@ def _upsert_sub_row(
     billing_day: int,
     next_billing_date: date,
     is_pro: bool,
+    reminder_escalation_tier: int = 1,
 ) -> None:
     cur.execute(
         """
         INSERT INTO subscriptions (
           user_id, merchant, amount, billing_cycle, category, status,
           usage_score, last_used_days, monthly_cost, times_charged, first_charged, last_charged,
-          intelligence_category, linked_app_package, billing_day, next_billing_date, currency, sub_lifecycle, is_pro
+          intelligence_category, linked_app_package, billing_day, next_billing_date, currency,
+          sub_lifecycle, is_pro, reminder_escalation_tier
         ) VALUES (
-          %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'INR','active',%s
+          %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'INR','active',%s,%s
         )
         ON CONFLICT (user_id, merchant) DO UPDATE SET
           amount = EXCLUDED.amount,
@@ -61,7 +64,8 @@ def _upsert_sub_row(
           linked_app_package = EXCLUDED.linked_app_package,
           billing_day = EXCLUDED.billing_day,
           next_billing_date = EXCLUDED.next_billing_date,
-          is_pro = EXCLUDED.is_pro;
+          is_pro = EXCLUDED.is_pro,
+          reminder_escalation_tier = EXCLUDED.reminder_escalation_tier;
         """,
         (
             user_id,
@@ -81,6 +85,7 @@ def _upsert_sub_row(
             billing_day,
             next_billing_date,
             is_pro,
+            reminder_escalation_tier,
         ),
     )
 
@@ -206,7 +211,6 @@ def run_seed_for_user(conn: PgConnection, user_id: int, *, wipe_device: bool = T
             am.append((d, m, max(1, m // 22), m // 5 if d.weekday() >= 5 else 0))
         _bulk_usage(cur, user_id, "in.amazon.mShop.android.shopping", am)
 
-        nb = today + timedelta(days=3)
         common = dict(
             billing_cycle="MONTHLY",
             status="ACTIVE",
@@ -215,20 +219,20 @@ def run_seed_for_user(conn: PgConnection, user_id: int, *, wipe_device: bool = T
             times_charged=12,
             first_charged=today - timedelta(days=300),
             last_charged=today - timedelta(days=5),
-            billing_day=nb.day,
-            next_billing_date=nb,
         )
 
+        # (merchant, amount, category, icat, package, is_pro, days_until_billing, reminder_tier)
         rows = [
-            ("Netflix India", 649, "Entertainment", "video", "com.netflix.mediaclient", False),
-            ("Spotify Premium", 119, "Entertainment", "music", "com.spotify.music", False),
-            ("Amazon Prime", 1499 / 12, "Entertainment", "video", "in.amazon.mShop.android.shopping", False),
-            ("YouTube Premium", 129, "Entertainment", "music", "com.google.android.youtube", False),
-            ("LinkedIn Premium", 999, "Finance & Investment", "professional", "com.linkedin.android", False),
-            ("ChatGPT Plus", 1999, "Bills & Utilities", "productivity", "com.openai.chatgpt", False),
-            ("Canva Pro", 499, "Bills & Utilities", "productivity", "com.canva.editor", False),
+            ("Netflix India", 649, "Entertainment", "video", "com.netflix.mediaclient", False, 3, 1),
+            ("Spotify Premium", 119, "Entertainment", "music", "com.spotify.music", False, 8, 1),
+            ("Amazon Prime", 1499 / 12, "Entertainment", "video", "in.amazon.mShop.android.shopping", False, 10, 2),
+            ("YouTube Premium", 129, "Entertainment", "music", "com.google.android.youtube", False, 2, 1),
+            ("LinkedIn Premium", 999, "Finance & Investment", "professional", "com.linkedin.android", False, 15, 2),
+            ("ChatGPT Plus", 1999, "Bills & Utilities", "productivity", "com.openai.chatgpt", False, 12, 2),
+            ("Canva Pro", 499, "Bills & Utilities", "productivity", "com.canva.editor", False, 4, 1),
         ]
-        for merchant, amt, cat, icat, pkg, is_pro in rows:
+        for merchant, amt, cat, icat, pkg, is_pro, bill_offset, reminder_tier in rows:
+            nb = today + timedelta(days=bill_offset)
             _upsert_sub_row(
                 cur,
                 user_id,
@@ -245,9 +249,10 @@ def run_seed_for_user(conn: PgConnection, user_id: int, *, wipe_device: bool = T
                 last_charged=common["last_charged"],
                 intelligence_category=icat,
                 linked_app_package=pkg,
-                billing_day=common["billing_day"],
-                next_billing_date=common["next_billing_date"],
+                billing_day=nb.day,
+                next_billing_date=nb,
                 is_pro=is_pro,
+                reminder_escalation_tier=reminder_tier,
             )
 
         cur.execute("SELECT id FROM subscriptions WHERE user_id=%s ORDER BY id;", (user_id,))
@@ -257,5 +262,6 @@ def run_seed_for_user(conn: PgConnection, user_id: int, *, wipe_device: bool = T
             if vr is not None:
                 persist_verdict(conn, sid, vr)
                 schedule_reminders_for_subscription(conn, sid)
+        apply_reminder_showcase_variety(conn, user_id)
     finally:
         cur.close()

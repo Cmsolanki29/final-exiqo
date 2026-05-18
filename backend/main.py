@@ -67,6 +67,7 @@ from routes import (
     emi_affordability_check,
     emi_detector,
     festival_important_days,
+    festival_planner_ext,
     festival_predictor,
     financial_state,
     fraud_shield,
@@ -100,6 +101,10 @@ try:
     from core.redis import init_redis, close_redis
     from workers.retrain_feed_consumer import retrain_feed_consumer
     from workers.review_queue_worker import run_assignment_cycle
+    from workers.alert_consumer import alert_consumer
+    from workers.feature_materializer import feature_materializer
+    from workers.drift_monitor_worker import DriftMonitorWorker
+    from workers.retrain_scheduler import RetrainScheduler
     _RISK_ENGINE_OK = True
 except Exception as _risk_err:
     _RISK_ENGINE_OK = False
@@ -174,6 +179,21 @@ async def lifespan(app: FastAPI):
             await init_redis()
         except Exception as _e:
             print(f"[RiskEngine] Pool/Redis init skipped: {_e}")
+
+        try:
+            from core.redis import get_redis
+            from services.event_bus.local_bus import setup_default_handlers
+
+            setup_default_handlers()
+            if get_redis() is None:
+                print(
+                    "[RiskEngine] Redis not running — using in-process event bus + "
+                    "Postgres/memory feature fallbacks (all FraudShield phases active)."
+                )
+            else:
+                print("[RiskEngine] Redis connected — stream consumers + local durability.")
+        except Exception as _lb:
+            print(f"[RiskEngine] Local event bus setup skipped: {_lb}")
         try:
             global _risk_scheduler
             _risk_scheduler = AsyncIOScheduler(timezone="UTC")
@@ -181,13 +201,51 @@ async def lifespan(app: FastAPI):
                 run_assignment_cycle, "interval", minutes=5,
                 id="review_queue_worker", replace_existing=True,
             )
+            try:
+                feature_materializer.start(_risk_scheduler)
+            except Exception as _fm:
+                print(f"[RiskEngine] FeatureMaterializer schedule skipped: {_fm}")
+            try:
+                DriftMonitorWorker().start(_risk_scheduler)
+            except Exception as _dm:
+                print(f"[RiskEngine] DriftMonitor schedule skipped: {_dm}")
+            try:
+                RetrainScheduler().start(_risk_scheduler)
+            except Exception as _rs:
+                print(f"[RiskEngine] RetrainScheduler schedule skipped: {_rs}")
             _risk_scheduler.start()
         except Exception as _e:
             print(f"[RiskEngine] Scheduler skipped: {_e}")
         try:
-            asyncio.create_task(retrain_feed_consumer.start())
-        except Exception as _e:
-            print(f"[RiskEngine] Background tasks skipped: {_e}")
+            from core.db import get_pool
+            from services.event_bus.publisher import event_publisher
+
+            pool = get_pool()
+            if pool is not None:
+                event_publisher.set_pool(pool)
+        except Exception as _ep:
+            print(f"[RiskEngine] Event publisher pool skipped: {_ep}")
+
+        try:
+            from core.redis import get_redis as _get_redis
+
+            if _get_redis() is not None:
+                for name, worker in (
+                    ("AlertConsumer", alert_consumer),
+                    ("RetrainFeedConsumer", retrain_feed_consumer),
+                ):
+                    try:
+                        asyncio.create_task(worker.start())
+                        print(f"[RiskEngine] {name} started (Redis streams)")
+                    except Exception as _we:
+                        print(f"[RiskEngine] {name} failed to start (non-fatal): {_we}")
+            else:
+                print(
+                    "[RiskEngine] Stream consumers skipped (no Redis); "
+                    "alerts/retrain run via local_bus on publish."
+                )
+        except Exception as _we:
+            print(f"[RiskEngine] Worker startup skipped: {_we}")
 
     if os.getenv("PATTERN_ALERT_CRON", "0") == "1":
         async def _pattern_alert_loop() -> None:
@@ -297,11 +355,58 @@ app.include_router(fraud_shield.router, prefix="/api")
 app.include_router(simulator.router, prefix="/api")
 app.include_router(festival_important_days.router, prefix="/api")
 app.include_router(festival_predictor.router, prefix="/api")
+app.include_router(festival_planner_ext.router, prefix="/api")
 app.include_router(purchase_planner.router, prefix="/api")
 app.include_router(financial_state.router, prefix="/api")
 app.include_router(pattern_alerts.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(trip_planner.router, prefix="/api")
+
+# Direct registration (avoids stale router modules on Windows reload).
+from routes.festival_important_days import ReminderToggleBody, toggle_important_day_reminder
+from routes.festival_predictor import (
+    CreateEventBody,
+    FestivalUpdateSavingsBody,
+    create_planned_event,
+    festival_event_details,
+    update_festival_savings,
+)
+
+
+@app.post("/api/festivals/{user_id}/planner/event", tags=["Festival Planner"])
+def main_planner_create_event(user_id: int, body: CreateEventBody, conn=Depends(get_db)):
+    return create_planned_event(user_id, body, conn)
+
+
+@app.put("/api/festivals/{user_id}/planner/reminder/{event_id}", tags=["Festival Planner"])
+def main_planner_toggle_reminder(
+    user_id: int, event_id: int, body: ReminderToggleBody, conn=Depends(get_db)
+):
+    return toggle_important_day_reminder(user_id, event_id, body, conn)
+
+
+@app.put("/api/festivals/{user_id}/planner/savings", tags=["Festival Planner"])
+def main_planner_update_savings(user_id: int, body: FestivalUpdateSavingsBody, conn=Depends(get_db)):
+    return update_festival_savings(user_id, body, conn)
+
+
+@app.get("/api/festivals/{user_id}/planner/event-details/{festival_name}", tags=["Festival Planner"])
+def main_planner_event_details(
+    user_id: int,
+    festival_name: str,
+    festival_date: str | None = None,
+    refresh: bool = True,
+    conn=Depends(get_db),
+):
+    return festival_event_details(user_id, festival_name, festival_date, refresh, conn)
+
+
+@app.on_event("startup")
+def _log_festival_planner_routes() -> None:
+    paths = sorted(
+        r.path for r in app.routes if getattr(r, "path", None) and "planner/event" in r.path
+    )
+    print(f"[smartspend] Festival planner API routes: {paths or 'MISSING'}")
 
 # ── Phase 1-8 routers ──────────────────────────────────────────────────────
 if _RISK_ENGINE_OK:
@@ -438,13 +543,30 @@ def health() -> dict[str, Any]:
         }
     except Exception as exc:  # noqa: BLE001
         pdf = {"ok": False, "version": None, "error": f"{type(exc).__name__}: {exc}"}
+    redis_status = "unavailable"
+    try:
+        from core.redis import get_redis
+
+        if get_redis() is not None:
+            redis_status = "connected"
+        else:
+            redis_status = "fallback_local_bus"
+    except Exception:
+        redis_status = "not_configured"
+
     return {
         "status": "healthy" if ok else "degraded",
         "db": "connected" if ok else "disconnected",
+        "redis": redis_status,
         "ml": "ready",
         "version": "2.0.0",
         "python_executable": sys.executable,
         "pdfplumber": pdf,
+        "fraud_shield_note": (
+            "Redis optional — FraudShield uses in-process events + Postgres/memory features when Redis is off."
+            if redis_status != "connected"
+            else None
+        ),
     }
 
 

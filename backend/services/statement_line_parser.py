@@ -71,7 +71,7 @@ def parse_axis_style_statement(text: str) -> list[dict[str, Any]]:
     Parse lines like ``05-May MSEDCL BILL AUTOPAY 1860`` from Axis sample statements.
     Returns monster-compatible dicts: date, description, amount, type, category.
     """
-    if not text or "date narration" not in text.lower():
+    if not text:
         return []
 
     year, default_month = _statement_year_month(text)
@@ -110,4 +110,9 @@ def parse_axis_style_statement(text: str) -> list[dict[str, Any]]:
                 "category": category,
             }
         )
+    # Require table header OR enough DD-Mon rows (pdfplumber sometimes drops headers).
+    if not out:
+        return []
+    if "date narration" not in text.lower() and len(out) < 8:
+        return []
     return out

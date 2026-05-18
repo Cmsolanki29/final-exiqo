@@ -6,8 +6,54 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, Bell, BellRing, CheckCircle2, Info, X } from "lucide-react";
-import { getNotifications, markNotificationsRead } from "../../services/api";
-import { mergeCyberSafeNotifications } from "../FraudShield/cybersafe/cybersafeNotifications";
+import { useAuth } from "../../context/AuthContext";
+import { getNotifications, getSubscriptionRemindersPending, markNotificationsRead } from "../../services/api";
+import {
+  CYBERSAFE_NOTIFICATION_IDS,
+  mergeCyberSafeNotifications,
+} from "../FraudShield/cybersafe/cybersafeNotifications";
+import {
+  enrichReminderRow,
+  normalizeRemindersForDisplay,
+  reminderCadencePhrase,
+  reminderShortTag,
+  snoozeRequiresAccountability,
+  subscriptionTierBadge,
+} from "../../utils/reminderBadges";
+import SubscriptionReminderNotifItem from "./SubscriptionReminderNotifItem";
+
+const MARK_ALL_SESSION_KEY = (userId) => `ss_notifs_marked_all_${userId}`;
+
+function subRemindersToNotifs(reminders) {
+  const shown = normalizeRemindersForDisplay(reminders).filter(
+    (r) => String(r.state || "").toLowerCase() === "shown"
+  );
+  return shown.map((raw) => {
+    const r = enrichReminderRow(raw);
+    const cadence = reminderShortTag(r.reminder_type);
+    const tier = subscriptionTierBadge(r.reminder_escalation_tier).label;
+    const when = reminderCadencePhrase(r.reminder_type);
+    const tierNum = Number(r.reminder_escalation_tier ?? 1);
+    const locked = snoozeRequiresAccountability(tierNum);
+    const isCancel = (r.current_verdict || "").toUpperCase() === "CANCEL";
+    const amt = r.monthly_cost ? `₹${Math.round(r.monthly_cost).toLocaleString("en-IN")}/mo` : "";
+    return {
+      id: `sub-reminder-${r.id}`,
+      type: locked ? "alert" : isCancel ? "alert" : "warning",
+      title: `${r.merchant || "Subscription"} · ${cadence} · ${tier}`,
+      body: `${when}${amt ? ` · ${amt}` : ""}${locked ? " · Tier 2+ — respond below" : isCancel ? " · Consider cancelling" : r.next_billing_date ? ` · Bills on ${r.next_billing_date}` : ""}`,
+      is_read: false,
+      created_at: r.fire_at,
+      _sub_reminder: true,
+      _reminder: r,
+      _locked: locked,
+    };
+  });
+}
+
+function countUnread(notifications) {
+  return (notifications || []).filter((n) => !n.is_read).length;
+}
 
 const TYPE_CONFIG = {
   alert: { icon: AlertTriangle, color: "text-rose-300", bg: "bg-rose-500/10 border-rose-500/25" },
@@ -56,7 +102,7 @@ function CyberSafeNotifItem({ n, onMarkRead }) {
     : "";
 
   return (
-    <div
+    <motion.div
       className={`rounded-xl border bg-[#1a1d27] p-3 ${!n.is_read ? "ring-1 ring-inset ring-white/10" : "opacity-70"}`}
       style={{ borderLeftWidth: 4, borderLeftColor: cfg.border }}
     >
@@ -89,11 +135,22 @@ function CyberSafeNotifItem({ n, onMarkRead }) {
           </button>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
-function NotifItem({ n, onMarkRead }) {
+function NotifItem({ n, onMarkRead, userId, onReminderResolved, onOpenReminders }) {
+  if (n._sub_reminder) {
+    return (
+      <SubscriptionReminderNotifItem
+        n={n}
+        userId={userId}
+        onResolved={onReminderResolved}
+        onOpenReminders={onOpenReminders}
+      />
+    );
+  }
+
   if (n.type?.startsWith("cybersafe_")) {
     return <CyberSafeNotifItem n={n} onMarkRead={onMarkRead} />;
   }
@@ -129,45 +186,92 @@ function NotifItem({ n, onMarkRead }) {
   );
 }
 
+function visibleNotifications(merged, dismissedIds) {
+  return merged.filter((n) => n._locked || !dismissedIds.has(n.id));
+}
+
 export default function NotificationsBell({ userId }) {
+  const { user } = useAuth();
+  const subscriptionUserId =
+    user?.id != null && Number(user.id) > 0 ? Number(user.id) : null;
+
   const [open, setOpen] = useState(false);
   const [data, setData] = useState({ unread_count: 0, notifications: [] });
-  const [dismissedCyberSafe, setDismissedCyberSafe] = useState(() => new Set());
+  const [dismissedIds, setDismissedIds] = useState(() => new Set());
+  const [cyberSafeSuppressed, setCyberSafeSuppressed] = useState(false);
   const [loading, setLoading] = useState(false);
   const panelRef = useRef(null);
 
   const load = useCallback(async () => {
-    if (!userId) return;
+    if (!userId && !subscriptionUserId) return;
     setLoading(true);
     try {
-      const res = await getNotifications(userId, { limit: 20, unreadOnly: false });
-      const merged = mergeCyberSafeNotifications(res?.notifications || []);
-      const filtered = merged.filter((n) => !dismissedCyberSafe.has(n.id));
-      const unreadApi = res?.unread_count ?? 0;
-      const cyberUnread = filtered.filter((n) => n.type?.startsWith("cybersafe_") && !n.is_read).length;
+      const [res, subRes] = await Promise.allSettled([
+        userId ? getNotifications(userId, { limit: 20, unreadOnly: false }) : Promise.resolve({ notifications: [] }),
+        subscriptionUserId
+          ? getSubscriptionRemindersPending(subscriptionUserId, { include_upcoming: true })
+          : Promise.resolve({ reminders: [] }),
+      ]);
+      const apiNotifs = res.status === "fulfilled" ? (res.value?.notifications || []) : [];
+      const subReminders = subRes.status === "fulfilled" ? subRemindersToNotifs(subRes.value?.reminders) : [];
+
+      const merged = mergeCyberSafeNotifications([...apiNotifs, ...subReminders], {
+        includeCyberSafe: !cyberSafeSuppressed,
+      });
+      const filtered = visibleNotifications(merged, dismissedIds);
+
+      setDismissedIds((prev) => {
+        const lockedIds = merged.filter((n) => n._locked).map((n) => n.id);
+        if (!lockedIds.some((id) => prev.has(id))) return prev;
+        const next = new Set(prev);
+        for (const id of lockedIds) next.delete(id);
+        return next;
+      });
+
       setData({
-        unread_count: unreadApi + cyberUnread,
         notifications: filtered,
+        unread_count: countUnread(filtered),
       });
     } catch {
-      const merged = mergeCyberSafeNotifications([]);
-      const filtered = merged.filter((n) => !dismissedCyberSafe.has(n.id));
+      const merged = mergeCyberSafeNotifications([], { includeCyberSafe: !cyberSafeSuppressed });
+      const filtered = visibleNotifications(merged, dismissedIds);
       setData({
-        unread_count: filtered.filter((n) => !n.is_read).length,
         notifications: filtered,
+        unread_count: countUnread(filtered),
       });
     } finally {
       setLoading(false);
     }
-  }, [userId, dismissedCyberSafe]);
+  }, [userId, subscriptionUserId, dismissedIds, cyberSafeSuppressed]);
+
+  useEffect(() => {
+    setData({ unread_count: 0, notifications: [] });
+    setDismissedIds(new Set());
+    setCyberSafeSuppressed(false);
+    setOpen(false);
+    if (!userId) return;
+    try {
+      setCyberSafeSuppressed(sessionStorage.getItem(MARK_ALL_SESSION_KEY(userId)) === "1");
+    } catch {
+      /* ignore */
+    }
+  }, [userId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   useEffect(() => {
-    const interval = setInterval(load, 60_000);
+    const interval = setInterval(load, 30_000);
     return () => clearInterval(interval);
+  }, [load]);
+
+  useEffect(() => {
+    const onRemindersChanged = () => {
+      void load();
+    };
+    window.addEventListener("smartspend:reminders-changed", onRemindersChanged);
+    return () => window.removeEventListener("smartspend:reminders-changed", onRemindersChanged);
   }, [load]);
 
   useEffect(() => {
@@ -179,49 +283,84 @@ export default function NotificationsBell({ userId }) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
+  const handleReminderResolved = useCallback((notifId) => {
+    setDismissedIds((s) => new Set(s).add(String(notifId)));
+    setData((d) => {
+      const notifications = d.notifications.filter((n) => n.id !== notifId);
+      return { notifications, unread_count: countUnread(notifications) };
+    });
+    void load();
+  }, [load]);
+
+  const handleOpenReminders = useCallback(() => {
+    setOpen(false);
+    window.dispatchEvent(
+      new CustomEvent("smartspend:navigate", { detail: { tab: "subscriptions", subView: "reminders" } }),
+    );
+  }, []);
+
   const handleMarkRead = async (notifId) => {
-    if (String(notifId).startsWith("cs-")) {
-      setDismissedCyberSafe((s) => new Set(s).add(notifId));
-      setData((d) => ({
-        ...d,
-        unread_count: Math.max(0, d.unread_count - 1),
-        notifications: d.notifications.map((n) => (n.id === notifId ? { ...n, is_read: true } : n)),
-      }));
+    const id = String(notifId);
+    const item = (data.notifications || []).find((n) => n.id === notifId);
+    if (id.startsWith("sub-reminder-")) {
+      if (item?._locked) return;
+      setDismissedIds((s) => new Set(s).add(id));
+      setData((d) => {
+        const notifications = d.notifications.filter((n) => n.id !== notifId);
+        return { notifications, unread_count: countUnread(notifications) };
+      });
+      return;
+    }
+    if (id.startsWith("cs-")) {
+      setDismissedIds((s) => new Set(s).add(id));
+      setData((d) => {
+        const notifications = d.notifications.filter((n) => n.id !== notifId);
+        return { notifications, unread_count: countUnread(notifications) };
+      });
       return;
     }
     try {
       await markNotificationsRead(userId, { notification_ids: [notifId] });
-      setData((d) => ({
-        ...d,
-        unread_count: Math.max(0, d.unread_count - 1),
-        notifications: d.notifications.map((n) => (n.id === notifId ? { ...n, is_read: true } : n)),
-      }));
+      setData((d) => {
+        const notifications = d.notifications.map((n) =>
+          n.id === notifId ? { ...n, is_read: true } : n,
+        );
+        return { notifications, unread_count: countUnread(notifications) };
+      });
     } catch {
       /* silent */
     }
   };
 
   const handleMarkAll = async () => {
-    const cyberIds = (data.notifications || []).filter((n) => String(n.id).startsWith("cs-")).map((n) => n.id);
-    setDismissedCyberSafe((s) => {
-      const next = new Set(s);
-      cyberIds.forEach((id) => next.add(id));
-      return next;
-    });
+    const locked = (data.notifications || []).filter((n) => n._locked);
+    const dismissable = (data.notifications || []).filter((n) => !n._locked);
+    const dismissIds = dismissable.map((n) => n.id);
+
+    setDismissedIds((s) => new Set([...s, ...dismissIds, ...CYBERSAFE_NOTIFICATION_IDS]));
+    setCyberSafeSuppressed(true);
+    try {
+      sessionStorage.setItem(MARK_ALL_SESSION_KEY(userId), "1");
+    } catch {
+      /* ignore */
+    }
+
     try {
       await markNotificationsRead(userId, { mark_all: true });
     } catch {
       /* silent */
     }
-    setData((d) => ({
-      ...d,
-      unread_count: 0,
-      notifications: d.notifications.map((n) => ({ ...n, is_read: true })),
-    }));
+
+    setData({
+      notifications: locked,
+      unread_count: countUnread(locked),
+    });
+    if (locked.length === 0) setOpen(false);
   };
 
-  const unread = data.unread_count || 0;
+  const unread = data.unread_count ?? 0;
   const notifs = data.notifications || [];
+  const badgeLabel = unread > 9 ? "9+" : String(unread);
 
   return (
     <div className="relative" ref={panelRef}>
@@ -232,14 +371,16 @@ export default function NotificationsBell({ userId }) {
           if (!open) load();
         }}
         className="relative flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-exiqo-glow/80 transition hover:bg-white/[0.10] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
-        aria-label={`Notifications${unread > 0 ? ` (${unread} unread)` : ""}`}
+        aria-label={`Notifications (${unread} unread)`}
       >
         {unread > 0 ? <BellRing className="h-4.5 w-4.5" aria-hidden /> : <Bell className="h-4.5 w-4.5" aria-hidden />}
-        {unread > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">
-            {unread > 9 ? "9+" : unread}
-          </span>
-        )}
+        <span
+          className={`absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full px-0.5 text-[10px] font-bold tabular-nums ${
+            unread > 0 ? "bg-rose-500 text-white" : "border border-white/20 bg-white/10 text-gray-400"
+          }`}
+        >
+          {badgeLabel}
+        </span>
       </button>
 
       <AnimatePresence>
@@ -256,16 +397,18 @@ export default function NotificationsBell({ userId }) {
               <div className="flex items-center gap-2">
                 <BellRing className="h-4 w-4 text-exiqo-glow/60" aria-hidden />
                 <span className="text-sm font-semibold text-white">Notifications</span>
-                {unread > 0 && (
-                  <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300">
-                    {unread} new
-                  </span>
-                )}
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums ${
+                    unread > 0 ? "bg-rose-500/20 text-rose-300" : "bg-white/10 text-gray-500"
+                  }`}
+                >
+                  {unread} new
+                </span>
               </div>
-              {unread > 0 && (
+              {notifs.length > 0 && unread > 0 && (
                 <button
                   type="button"
-                  onClick={handleMarkAll}
+                  onClick={() => void handleMarkAll()}
                   className="text-[11px] text-gray-500 underline transition hover:text-white"
                 >
                   Mark all read
@@ -288,7 +431,14 @@ export default function NotificationsBell({ userId }) {
                 </div>
               )}
               {notifs.map((n) => (
-                <NotifItem key={n.id} n={n} onMarkRead={handleMarkRead} />
+                <NotifItem
+                  key={n.id}
+                  n={n}
+                  userId={subscriptionUserId ?? userId}
+                  onMarkRead={handleMarkRead}
+                  onReminderResolved={handleReminderResolved}
+                  onOpenReminders={handleOpenReminders}
+                />
               ))}
             </div>
           </motion.div>

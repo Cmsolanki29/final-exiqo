@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+﻿import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "../common/Toast";
 import { getApiBaseUrl } from "../../services/apiBaseUrl";
@@ -72,8 +72,8 @@ export default function RealTimeFraudFeed({ userId = 1 }) {
             newEvents.forEach((evt) => {
               if (evt.risk_score > 0.7) {
                 showToast(
-                  `🚨 Suspicious: ₹${Number(evt.amount).toLocaleString("en-IN")} to ${evt.merchant} — Risk: ${(evt.risk_score * 100).toFixed(0)}%`,
-                  "warning"
+                  `Suspicious: ₹${Number(evt.amount).toLocaleString("en-IN")} to ${evt.merchant} — Risk: ${(evt.risk_score * 100).toFixed(0)}%`,
+                  "warning",
                 );
               }
             });
@@ -133,10 +133,10 @@ export default function RealTimeFraudFeed({ userId = 1 }) {
       setInvestigationSteps([]);
 
       const steps = [
-        "🔍 Checking transaction history...",
-        "🔍 Analyzing merchant reputation...",
-        "🔍 Checking time pattern...",
-        "🔍 Evaluating geo-velocity...",
+        "Checking transaction history...",
+        "Analyzing merchant reputation...",
+        "Checking time pattern...",
+        "Evaluating geo-velocity...",
       ];
       steps.forEach((step, i) => {
         setTimeout(() => setInvestigationSteps((prev) => [...prev, step]), i * 800);
@@ -156,7 +156,10 @@ export default function RealTimeFraudFeed({ userId = 1 }) {
           const verdict = String(data.decision || data.recommended_action || "REVIEW").toUpperCase();
           setInvestigationResult({
             verdict: verdict === "BLOCK" || verdict === "DENY" ? "BLOCK" : verdict === "ALLOW" ? "ALLOW" : "REVIEW",
-            confidence: data.confidence != null ? `${Math.round(Number(data.confidence) * (Number(data.confidence) <= 1 ? 100 : 1))}%` : null,
+            confidence:
+              data.confidence != null
+                ? `${Math.round(Number(data.confidence) * (Number(data.confidence) <= 1 ? 100 : 1))}%`
+                : null,
             narrative: data.narrative || data.summary || "",
             fallback: false,
           });
@@ -168,15 +171,14 @@ export default function RealTimeFraudFeed({ userId = 1 }) {
           verdict: event.risk_score > 0.8 ? "BLOCK" : "REVIEW",
           confidence: `${(event.risk_score * 100).toFixed(0)}%`,
           narrative:
-            "AI Investigation unavailable. ML analysis: " +
-            (event.risk_factors || []).join(", "),
+            "AI Investigation unavailable. ML analysis: " + (event.risk_factors || []).join(", "),
           fallback: true,
         });
       } finally {
         setInvestigationLoading(false);
       }
     },
-    [apiBase, userId]
+    [apiBase, userId],
   );
 
   useEffect(() => {
@@ -198,16 +200,8 @@ export default function RealTimeFraudFeed({ userId = 1 }) {
   }, [apiBase]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="space-y-4"
-    >
-      <motion.div
-        className="flex items-center justify-between"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-      >
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+      <motion.div className="flex items-center justify-between" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
         <motion.div className="flex items-center gap-2">
           <span
             className={`h-3 w-3 rounded-full ${isRunning ? "bg-green-500 animate-pulse" : "bg-red-500"}`}
@@ -218,14 +212,14 @@ export default function RealTimeFraudFeed({ userId = 1 }) {
         </motion.div>
       </motion.div>
 
-      <div className="flex gap-3 flex-wrap">
+      <motion.div className="flex flex-wrap gap-3">
         <button
           type="button"
           onClick={handleStart}
           disabled={isRunning}
           className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium"
         >
-          ▶ Start Live Demo
+          Start Live Demo
         </button>
         <button
           type="button"
@@ -233,16 +227,16 @@ export default function RealTimeFraudFeed({ userId = 1 }) {
           disabled={!isRunning}
           className="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-700 disabled:opacity-50 text-white text-sm font-medium"
         >
-          ⏹ Stop
+          Stop
         </button>
         <button
           type="button"
           onClick={handleReset}
           className="px-4 py-2 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 text-sm font-medium border border-red-500/30"
         >
-          🔄 Reset Demo Data
+          Reset Demo Data
         </button>
-      </div>
+      </motion.div>
 
       <div className="flex gap-6 text-sm text-gray-400">
         <span>
@@ -256,12 +250,12 @@ export default function RealTimeFraudFeed({ userId = 1 }) {
         </span>
       </div>
 
-      <div className="space-y-2 max-h-[500px] overflow-y-auto">
+      <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
         <AnimatePresence>
           {events.length === 0 && !isRunning && (
-            <div className="text-center py-12 text-gray-500">
+            <motion.div className="text-center py-12 text-gray-500">
               Click &quot;Start Live Demo&quot; to begin real-time fraud detection
-            </div>
+            </motion.div>
           )}
           {events.map((evt) => (
             <motion.div
@@ -272,15 +266,14 @@ export default function RealTimeFraudFeed({ userId = 1 }) {
               transition={{ duration: 0.3 }}
               className={`p-4 rounded-lg border-l-4 ${getCardStyle(evt.risk_score)}`}
             >
-              <motion.div className="flex justify-between items-start">
-                <div>
+              <motion.div className="flex justify-between items-start gap-4">
+                <div className="min-w-0 flex-1">
                   <span className="text-white font-medium">{evt.merchant}</span>
                   <span className="text-white font-bold ml-2">
                     ₹{Number(evt.amount).toLocaleString("en-IN")}
                   </span>
                   <motion.div className="text-xs text-gray-400 mt-1">
-                    {evt.payment_method} • {evt.category} •{" "}
-                    {new Date(evt.timestamp).toLocaleTimeString()}
+                    {evt.payment_method} · {evt.category} · {new Date(evt.timestamp).toLocaleTimeString()}
                   </motion.div>
                   {evt.risk_score > 0.6 && evt.risk_factors && (
                     <div className="flex flex-wrap gap-1 mt-2">
@@ -295,15 +288,15 @@ export default function RealTimeFraudFeed({ userId = 1 }) {
                     </div>
                   )}
                 </div>
-                <div className="text-right">
+                <div className="text-right shrink-0">
                   <span className={`text-sm font-bold ${getScoreColor(evt.risk_score)}`}>
                     {(evt.risk_score * 100).toFixed(0)}%
                   </span>
-                  <motion.div
+                  <span
                     className={`text-xs px-2 py-0.5 rounded-full mt-1 inline-block ${getBadgeStyle(evt.risk_score)}`}
                   >
                     {getRiskLabel(evt.risk_score)}
-                  </motion.div>
+                  </span>
                 </div>
               </motion.div>
               {evt.risk_score > 0.8 && (
@@ -313,7 +306,7 @@ export default function RealTimeFraudFeed({ userId = 1 }) {
                   disabled={investigationLoading && investigating?.id === evt.id}
                   className="mt-3 px-3 py-1.5 rounded-md bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 text-xs font-medium border border-purple-500/30 disabled:opacity-50"
                 >
-                  🔍 Investigate with AI
+                  Investigate with AI
                 </button>
               )}
             </motion.div>
@@ -328,7 +321,7 @@ export default function RealTimeFraudFeed({ userId = 1 }) {
           className="p-4 rounded-lg bg-gray-800/80 border border-purple-500/30"
         >
           <h3 className="text-purple-300 font-medium mb-3">
-            🔍 AI Investigation: {investigating.merchant} ₹
+            AI Investigation: {investigating.merchant} ₹
             {Number(investigating.amount).toLocaleString("en-IN")}
           </h3>
           <div className="space-y-2">
@@ -348,18 +341,16 @@ export default function RealTimeFraudFeed({ userId = 1 }) {
           </div>
           {investigationResult && !investigationLoading && (
             <div className="mt-4 p-3 rounded-lg bg-gray-900/50 border border-gray-700">
-              <div
+              <motion.div
                 className={`text-lg font-bold ${
                   investigationResult.verdict === "BLOCK" ? "text-red-400" : "text-yellow-400"
                 }`}
               >
-                ⚠️ VERDICT: {investigationResult.verdict}
+                VERDICT: {investigationResult.verdict}
                 {investigationResult.fallback ? " (fallback)" : ""}
-              </div>
+              </motion.div>
               {investigationResult.confidence && (
-                <div className="text-sm text-gray-400">
-                  Confidence: {investigationResult.confidence}
-                </div>
+                <div className="text-sm text-gray-400">Confidence: {investigationResult.confidence}</div>
               )}
               {investigationResult.narrative && (
                 <p className="text-sm text-gray-300 mt-2">{investigationResult.narrative}</p>

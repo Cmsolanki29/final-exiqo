@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Landmark, CreditCard, Eye, EyeOff, Plus } from "lucide-react";
-import { getConnectedSources, toggleSourceVisibility, updateDashboardMode } from "../../services/api";
+import { Landmark, CreditCard, Eye, EyeOff, Plus, Trash2 } from "lucide-react";
+import { getConnectedSources, toggleSourceVisibility, updateDashboardMode, deleteConnectedSource } from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 
 function iconForType(t) {
@@ -44,6 +44,7 @@ export default function ConnectedAccountsSettings({ userId, onGoUpload }) {
   const [mode, setMode] = useState("merged");
   const [savingMode, setSavingMode] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
+  const [removingId, setRemovingId] = useState(null);
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -86,13 +87,45 @@ export default function ConnectedAccountsSettings({ userId, onGoUpload }) {
       await reloadUser();
       // Notify all modules to re-fetch with updated account visibility
       try {
-        window.dispatchEvent(new CustomEvent("dashboardModeChanged", { detail: { mode } }));
+        window.dispatchEvent(new CustomEvent("dashboardModeChanged", { detail: { mode, userId } }));
+        window.dispatchEvent(new CustomEvent("smartspend:health-score-changed", { detail: { userId } }));
+        window.dispatchEvent(new CustomEvent("smartspend:purchase-goals-changed", { detail: { userId } }));
+        window.dispatchEvent(new CustomEvent("smartspend-financial-sync", { detail: { userId } }));
       } catch {
         /* ignore */
       }
     } catch (e) {
       setSources(snapshot);
       setErr(e instanceof Error ? e.message : "Update failed");
+    }
+  };
+
+  const onRemoveSource = async (sourceId, institutionName) => {
+    if (!window.confirm(`Remove "${institutionName}" and all its transactions? This cannot be undone.`)) return;
+    const sid = Number(sourceId);
+    if (!Number.isFinite(sid) || sid < 1) {
+      setErr("Invalid account id. Reload this page and try again.");
+      return;
+    }
+    setRemovingId(sid);
+    setErr("");
+    const snapshot = sources.map((s) => ({ ...s }));
+    setSources((rows) => rows.filter((s) => Number(s.id) !== sid));
+    try {
+      await deleteConnectedSource({ userId, sourceId: sid });
+      await load();
+      await reloadUser();
+      try {
+        window.dispatchEvent(new CustomEvent("dashboardModeChanged", { detail: { mode, userId } }));
+        window.dispatchEvent(new CustomEvent("smartspend:health-score-changed", { detail: { userId } }));
+        window.dispatchEvent(new CustomEvent("smartspend:purchase-goals-changed", { detail: { userId } }));
+        window.dispatchEvent(new CustomEvent("smartspend-financial-sync", { detail: { userId } }));
+      } catch { /* ignore */ }
+    } catch (e) {
+      setSources(snapshot);
+      setErr(e instanceof Error ? e.message : "Could not remove source");
+    } finally {
+      setRemovingId(null);
     }
   };
 
@@ -109,9 +142,12 @@ export default function ConnectedAccountsSettings({ userId, onGoUpload }) {
       await load();
       setSaveOk(true);
       window.setTimeout(() => setSaveOk(false), 3200);
-      // Notify Dashboard + TransactionTable to re-fetch with the new mode
+      // Notify Dashboard + InsightsTab + AIInsightsPanel to re-fetch with the new mode
       try {
-        window.dispatchEvent(new CustomEvent("dashboardModeChanged", { detail: { mode: savedMode } }));
+        window.dispatchEvent(new CustomEvent("dashboardModeChanged", { detail: { mode: savedMode, userId } }));
+        window.dispatchEvent(new CustomEvent("smartspend:health-score-changed", { detail: { userId } }));
+        window.dispatchEvent(new CustomEvent("smartspend:purchase-goals-changed", { detail: { userId } }));
+        window.dispatchEvent(new CustomEvent("smartspend-financial-sync", { detail: { userId } }));
       } catch {
         /* ignore */
       }
@@ -195,16 +231,28 @@ export default function ConnectedAccountsSettings({ userId, onGoUpload }) {
                     </p>
                   </div>
                 </div>
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-white/80">
-                  {vis ? <Eye className="h-4 w-4 text-emerald-300" /> : <EyeOff className="h-4 w-4 text-white/35" />}
-                  <span>On dashboard</span>
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-violet-500"
-                    checked={vis}
-                    onChange={(e) => onToggleVisible(s.id, e.target.checked)}
-                  />
-                </label>
+                <div className="flex items-center gap-3">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-white/80">
+                    {vis ? <Eye className="h-4 w-4 text-emerald-300" /> : <EyeOff className="h-4 w-4 text-white/35" />}
+                    <span>On dashboard</span>
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-violet-500"
+                      checked={vis}
+                      onChange={(e) => onToggleVisible(s.id, e.target.checked)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={removingId === s.id}
+                    onClick={() => onRemoveSource(s.id, s.institution_name)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-xs font-semibold text-rose-300 transition hover:bg-rose-500/20 disabled:opacity-50"
+                    aria-label={`Remove ${s.institution_name}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                    {removingId === s.id ? "Removing…" : "Remove"}
+                  </button>
+                </div>
               </li>
             );
           })}

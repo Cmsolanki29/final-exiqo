@@ -1,14 +1,14 @@
 # start-backend.ps1
-# Kills any process listening on the backend port (default 8765) then starts
+# Kills any process listening on the backend port (default 8001) then starts
 # uvicorn fresh with --reload. Stops the "zombie uvicorn worker on port 8000"
 # problem from happening again.
 #
 # Usage:
-#   .\start-backend.ps1            # uses port 8765 (avoids many Windows Hyper-V 8001 blocks)
+#   .\start-backend.ps1            # uses port 8001 (must match frontend/package.json "proxy")
 #   .\start-backend.ps1 -Port 8000 # use a different port
 
 param(
-    [int]$Port = 8810
+    [int]$Port = 8002
 )
 
 # 0) Stop every python process whose command line is uvicorn targeting this port

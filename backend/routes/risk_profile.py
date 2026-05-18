@@ -21,11 +21,15 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from core.db import get_pool
 from core.config import get_settings
+from schemas.feedback import ReviewDecision
 from services.dashboard_scope import normalize_dashboard_mode, transaction_scope_sql
+from utils.auth import get_current_user_id
 
 router = APIRouter(prefix="/risk", tags=["risk-profile"])
 
@@ -311,6 +315,8 @@ async def get_devices(user_id: int) -> dict[str, Any]:
             "location":    location,
             "risk_flags":  risk_flags,
             "uses":        uses,
+            "txn_count":   uses,
+            "avg_amount":  None,
         })
 
     total     = len(devices)
@@ -475,6 +481,55 @@ async def get_enriched_review_queue(
         "total":  len(items),
         "status": status,
         "items":  items,
+    }
+
+
+@router.post("/review-queue/{queue_id}/self-resolve")
+async def self_resolve_review_queue(
+    queue_id: UUID,
+    body: ReviewDecision,
+    auth_user_id: int = Depends(get_current_user_id),
+) -> dict[str, Any]:
+    """Resolve a pending review-queue row for the signed-in user (no admin token)."""
+    if body.resolution not in ("fraud", "legitimate"):
+        raise HTTPException(
+            status_code=400,
+            detail="resolution must be fraud or legitimate for self-service",
+        )
+    try:
+        pool = get_pool()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    async with pool.acquire() as conn:
+        rq = await conn.fetchrow(
+            """
+            SELECT rq.id, rq.status, t.user_id
+            FROM review_queue rq
+            JOIN transactions t ON t.id = rq.transaction_id
+            WHERE rq.id = $1
+            """,
+            queue_id,
+        )
+    if rq is None:
+        raise HTTPException(status_code=404, detail="Queue item not found")
+    if int(rq["user_id"]) != auth_user_id:
+        raise HTTPException(status_code=403, detail="Not your queue item")
+    if rq["status"] == "resolved":
+        return {"acknowledged": True, "queue_id": str(queue_id), "resolution": body.resolution, "note": "already resolved"}
+
+    from services.feedback.feedback_service import feedback_service  # noqa: PLC0415
+
+    await feedback_service.record_analyst_decision(
+        queue_id=queue_id,
+        resolution=body.resolution,
+        reviewer_id=None,
+        notes=(body.notes or "").strip() or "self-service (FraudShield)",
+    )
+    return {
+        "acknowledged": True,
+        "queue_id": str(queue_id),
+        "resolution": body.resolution,
     }
 
 

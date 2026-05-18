@@ -13,8 +13,11 @@ from pydantic import BaseModel, Field
 from db import get_db
 from services.ai_service import call_groq
 from services.dashboard_scope import fetch_dashboard_mode, transaction_scope_sql
+from services.financial_constraints import monthly_surplus_snapshot
 
 router = APIRouter(prefix="/festivals", tags=["Festival Predictor"])
+
+HORIZON_DAYS = 183
 
 INDIAN_FESTIVALS_2026: list[dict[str, Any]] = [
     {"name": "Holi", "date": "2026-03-29", "typical_categories": ["Clothes", "Food", "Colors"]},
@@ -134,6 +137,65 @@ def _food_delivery_monthly(conn, user_id: int) -> float:
     return v
 
 
+def _calendar_lookup(festival_name: str) -> Optional[dict[str, Any]]:
+    for fest in INDIAN_FESTIVALS_2026:
+        if _match_db_name(festival_name, fest["name"]):
+            return fest
+    return None
+
+
+def _calendar_date_for_name(festival_name: str) -> Optional[date]:
+    cal = _calendar_lookup(festival_name)
+    if not cal:
+        return None
+    return datetime.strptime(cal["date"], "%Y-%m-%d").date()
+
+
+def _typical_categories(festival_name: str) -> list[str]:
+    cal = _calendar_lookup(festival_name)
+    if cal and cal.get("typical_categories"):
+        return list(cal["typical_categories"])
+    return ["Gifts", "Food", "Travel"]
+
+
+def _horizon_end(today: date) -> date:
+    return date.fromordinal(today.toordinal() + HORIZON_DAYS)
+
+
+def _resolve_festival_date(
+    conn,
+    user_id: int,
+    festival_name: str,
+    explicit: Optional[date] = None,
+) -> date:
+    if explicit is not None:
+        return explicit
+    cal_d = _calendar_date_for_name(festival_name)
+    if cal_d is not None:
+        return cal_d
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT festival_date, festival_name
+        FROM festival_budgets
+        WHERE user_id = %s AND festival_date >= CURRENT_DATE - INTERVAL '30 days'
+        ORDER BY festival_date ASC;
+        """,
+        (user_id,),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    for fd, fnm in rows:
+        if _match_db_name(festival_name, str(fnm)):
+            if isinstance(fd, date):
+                return fd
+            return datetime.strptime(str(fd)[:10], "%Y-%m-%d").date()
+    raise HTTPException(
+        400,
+        "Unknown event. Add it with “Add event plan” and a future date, or pick a name from the calendar.",
+    )
+
+
 def _fetch_budget_row(conn, user_id: int, fest_name: str, fest_date: date) -> Optional[tuple[Any, ...]]:
     cur = conn.cursor()
     cur.execute(
@@ -141,16 +203,153 @@ def _fetch_budget_row(conn, user_id: int, fest_name: str, fest_date: date) -> Op
         SELECT id, last_year_spent, planned_budget, saved_so_far, monthly_target,
                days_remaining, status, category_breakdown, festival_name
         FROM festival_budgets
-        WHERE user_id = %s AND EXTRACT(YEAR FROM festival_date) = %s;
+        WHERE user_id = %s AND festival_date = %s;
         """,
-        (user_id, fest_date.year),
+        (user_id, fest_date),
     )
     rows = cur.fetchall()
+    if not rows:
+        cur.execute(
+            """
+            SELECT id, last_year_spent, planned_budget, saved_so_far, monthly_target,
+                   days_remaining, status, category_breakdown, festival_name
+            FROM festival_budgets
+            WHERE user_id = %s AND EXTRACT(YEAR FROM festival_date) = %s;
+            """,
+            (user_id, fest_date.year),
+        )
+        rows = cur.fetchall()
     cur.close()
     for r in rows:
         if _match_db_name(fest_name, r[8]):
             return r
     return None
+
+
+def _iter_upcoming_festival_slots(
+    conn,
+    user_id: int,
+    today: date,
+    horizon: date,
+) -> list[tuple[str, date, bool]]:
+    """Return (name, date, is_custom) sorted by date — DB rows plus calendar defaults."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT festival_name, festival_date
+        FROM festival_budgets
+        WHERE user_id = %s AND festival_date > %s AND festival_date <= %s
+        ORDER BY festival_date ASC, festival_name ASC;
+        """,
+        (user_id, today, horizon),
+    )
+    db_rows = cur.fetchall()
+    cur.close()
+
+    out: list[tuple[str, date, bool]] = []
+    covered: set[tuple[str, str]] = set()
+    names_from_db: set[str] = set()
+
+    for fnm, fd in db_rows:
+        d = fd if isinstance(fd, date) else datetime.strptime(str(fd)[:10], "%Y-%m-%d").date()
+        name = str(fnm)
+        key = (_norm_name(name), d.isoformat())
+        covered.add(key)
+        names_from_db.add(_norm_name(name))
+        cal_d = _calendar_date_for_name(name)
+        is_custom = cal_d is None or cal_d != d
+        out.append((name, d, is_custom))
+
+    for fest in INDIAN_FESTIVALS_2026:
+        d = datetime.strptime(fest["date"], "%Y-%m-%d").date()
+        if d <= today or d > horizon:
+            continue
+        if _norm_name(fest["name"]) in names_from_db:
+            continue
+        key = (_norm_name(fest["name"]), d.isoformat())
+        if key in covered:
+            continue
+        out.append((fest["name"], d, False))
+
+    out.sort(key=lambda x: (x[1], x[0]))
+    return out
+
+
+def _build_festival_payload(
+    conn,
+    user_id: int,
+    user_name: str,
+    fest_name: str,
+    fest_date: date,
+    today: date,
+    income: float,
+    food_m: float,
+    sub_m: float,
+    *,
+    is_custom: bool = False,
+    refresh_ai: bool = True,
+) -> dict[str, Any]:
+    days_rem = (fest_date - today).days
+    months_rem = max(days_rem / 30.0, 0.25)
+
+    row = _fetch_budget_row(conn, user_id, fest_name, fest_date)
+    last_year = float(row[1] or 0) if row else 0.0
+    planned = float(row[2] or 0) if row and row[2] else 0.0
+    saved = float(row[3] or 0) if row else 0.0
+    cat = row[7] if row else None
+    if isinstance(cat, str):
+        try:
+            cat = json.loads(cat)
+        except json.JSONDecodeError:
+            cat = {}
+    if not isinstance(cat, dict):
+        cat = {}
+
+    recommended = planned if planned > 0 else round(last_year * 1.0526) if last_year > 0 else round(income * 0.08)
+    gap = max(0.0, recommended - saved)
+    monthly_need = gap / months_rem
+    weekly_need = monthly_need / 4.33
+    daily_need = monthly_need / 30.0
+
+    ai_advice, saving_tip, if_no = ("", "", "")
+    if refresh_ai:
+        ai_advice, saving_tip, if_no = generate_festival_ai_blocks(
+            user_name,
+            fest_name,
+            income,
+            days_rem,
+            last_year,
+            monthly_need,
+            recommended,
+            saved,
+            food_m,
+            sub_m,
+        )
+
+    urgency = _urgency(days_rem)
+    progress_pct = round(100.0 * saved / recommended, 1) if recommended > 0 else 0.0
+    linked_goals = _linked_purchase_goals(conn, user_id, fest_name, fest_date)
+    return {
+        "festival_name": fest_name,
+        "festival_date": fest_date.isoformat(),
+        "days_remaining": days_rem,
+        "months_remaining": round(months_rem, 2),
+        "last_year_spent": round(last_year, 2),
+        "recommended_budget": round(recommended, 2),
+        "saved_so_far": round(saved, 2),
+        "progress_pct": progress_pct,
+        "monthly_saving_needed": round(monthly_need, 2),
+        "weekly_saving_needed": round(weekly_need, 2),
+        "daily_saving_needed": round(daily_need, 2),
+        "urgency": urgency,
+        "category_breakdown": cat,
+        "linked_goals": linked_goals,
+        "ai_advice": ai_advice,
+        "saving_tip": saving_tip,
+        "if_no_saving_warning": if_no,
+        "is_custom": is_custom,
+        "suggested_categories": _typical_categories(fest_name),
+    }
 
 
 def _parse_groq_triple(text: str) -> tuple[str, str, str]:
@@ -265,6 +464,14 @@ class SetBudgetBody(BaseModel):
     festival_name: str = Field(..., min_length=1)
     planned_budget: float = Field(..., ge=0)
     category_budgets: dict[str, float] = {}
+    festival_date: Optional[date] = None
+
+
+class CreateEventBody(BaseModel):
+    festival_name: str = Field(..., min_length=1, max_length=120)
+    festival_date: date
+    planned_budget: float = Field(default=0, ge=0)
+    category_budgets: dict[str, float] = Field(default_factory=dict)
 
 
 @router.post("/{user_id}/set-budget")
@@ -276,21 +483,7 @@ def set_festival_budget(user_id: int, body: SetBudgetBody, conn=Depends(get_db))
         raise HTTPException(404, "User not found")
 
     today = date.today()
-    fest_date: Optional[date] = None
-    for f in INDIAN_FESTIVALS_2026:
-        if _norm_name(f["name"]) == _norm_name(body.festival_name) or _match_db_name(
-            body.festival_name, f["name"]
-        ):
-            fest_date = datetime.strptime(f["date"], "%Y-%m-%d").date()
-            break
-    if fest_date is None:
-        for f in INDIAN_FESTIVALS_2026:
-            if body.festival_name.lower() in f["name"].lower():
-                fest_date = datetime.strptime(f["date"], "%Y-%m-%d").date()
-                break
-    if fest_date is None:
-        cur.close()
-        raise HTTPException(400, "Unknown festival name for 2026 calendar")
+    fest_date = _resolve_festival_date(conn, user_id, body.festival_name, body.festival_date)
 
     days_rem = (fest_date - today).days
     months_rem = max(days_rem / 30.0, 0.25)
@@ -348,6 +541,23 @@ def set_festival_budget(user_id: int, body: SetBudgetBody, conn=Depends(get_db))
     except Exception:
         pass
 
+    cash = monthly_surplus_snapshot(conn, user_id)
+    avail = float(cash["available_monthly_surplus"])
+    planned = float(body.planned_budget)
+    monthly_festival_burden = monthly_needed
+    feasible = monthly_festival_burden <= avail + 1.0
+    warning = None
+    if not feasible:
+        warning = (
+            f"Festival saving pace (₹{monthly_festival_burden:,.0f}/mo) exceeds available surplus "
+            f"(₹{avail:,.0f}/mo after EMIs and purchase goals). Reduce budget or defer purchases."
+        )
+    elif planned > avail * max(months_rem, 1) * 1.15 and months_rem < 3:
+        warning = (
+            f"Lump-sum budget ₹{planned:,.0f} is tight vs monthly surplus ₹{avail:,.0f} "
+            f"with active EMIs ₹{cash['active_emi_monthly']:,.0f}/mo."
+        )
+
     return {
         "success": True,
         "festival_name": body.festival_name,
@@ -356,12 +566,17 @@ def set_festival_budget(user_id: int, body: SetBudgetBody, conn=Depends(get_db))
         "monthly_saving_needed": round(monthly_needed, 2),
         "weekly_saving_needed": round(monthly_needed / 4.33, 2),
         "daily_saving_needed": round(monthly_needed / 30.0, 2),
+        "emi_constraints": cash,
+        "budget_feasible": feasible,
+        "warning": warning,
+        "suggested_budget_max": round(max(0.0, avail * max(months_rem, 0.25)), 2),
     }
 
 
 class FestivalUpdateSavingsBody(BaseModel):
     festival_name: str = Field(..., min_length=1)
     amount_saved: float = Field(..., ge=0)
+    festival_date: Optional[date] = None
 
 
 def _linked_purchase_goals(conn, user_id: int, fest_name: str, fest_date: date) -> list[dict[str, Any]]:
@@ -430,14 +645,7 @@ def update_festival_savings(user_id: int, body: FestivalUpdateSavingsBody, conn=
         cur.close()
         raise HTTPException(404, "User not found")
 
-    fest_date: Optional[date] = None
-    for f in INDIAN_FESTIVALS_2026:
-        if _match_db_name(body.festival_name, f["name"]):
-            fest_date = datetime.strptime(f["date"], "%Y-%m-%d").date()
-            break
-    if fest_date is None:
-        cur.close()
-        raise HTTPException(400, "Unknown festival name for 2026 calendar")
+    fest_date = _resolve_festival_date(conn, user_id, body.festival_name, body.festival_date)
 
     row = _fetch_budget_row(conn, user_id, body.festival_name, fest_date)
     today = date.today()
@@ -495,6 +703,122 @@ def update_festival_savings(user_id: int, body: FestivalUpdateSavingsBody, conn=
     }
 
 
+@router.post("/{user_id}/events")
+def create_planned_event(user_id: int, body: CreateEventBody, conn=Depends(get_db)) -> dict[str, Any]:
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM users WHERE id = %s;", (user_id,))
+    urow = cur.fetchone()
+    if not urow:
+        cur.close()
+        raise HTTPException(404, "User not found")
+    user_name = (urow[0] or "User").strip()
+    cur.close()
+
+    today = date.today()
+    horizon = _horizon_end(today)
+    if body.festival_date <= today:
+        raise HTTPException(400, "Event date must be in the future.")
+    if body.festival_date > horizon:
+        raise HTTPException(400, f"Event must fall within the next {HORIZON_DAYS} days.")
+
+    fest_name = body.festival_name.strip()
+    fest_date = body.festival_date
+    days_rem = (fest_date - today).days
+    months_rem = max(days_rem / 30.0, 0.25)
+    planned = float(body.planned_budget or 0)
+    remaining = max(0.0, planned)
+    monthly_needed = remaining / months_rem if months_rem else 0.0
+    cb_json = json.dumps(body.category_budgets or {})
+
+    cur = conn.cursor()
+    row = _fetch_budget_row(conn, user_id, fest_name, fest_date)
+    if row:
+        cur.execute(
+            """
+            UPDATE festival_budgets
+            SET planned_budget = CASE WHEN %s > 0 THEN %s ELSE planned_budget END,
+                category_breakdown = CASE WHEN %s::jsonb <> '{}'::jsonb THEN %s::jsonb ELSE category_breakdown END,
+                days_remaining = %s, monthly_target = %s, festival_date = %s
+            WHERE id = %s;
+            """,
+            (planned, planned, cb_json, cb_json, days_rem, monthly_needed, fest_date, row[0]),
+        )
+    else:
+        cur.execute(
+            """
+            INSERT INTO festival_budgets (
+              user_id, festival_name, festival_date, last_year_spent, planned_budget,
+              saved_so_far, monthly_target, days_remaining, status, category_breakdown
+            ) VALUES (%s, %s, %s, 0, %s, 0, %s, %s, 'UPCOMING', %s::jsonb);
+            """,
+            (user_id, fest_name, fest_date, planned, monthly_needed, days_rem, cb_json),
+        )
+    cur.close()
+
+    try:
+        from services.financial_engine import recalculate_financial_state as _rfs
+
+        _rfs(conn, user_id, "festival_event_created", None, f"Event plan added: {fest_name}.")
+    except Exception:
+        pass
+
+    cal_d = _calendar_date_for_name(fest_name)
+    is_custom = cal_d is None or cal_d != fest_date
+    card = _build_festival_payload(
+        conn,
+        user_id,
+        user_name,
+        fest_name,
+        fest_date,
+        today,
+        _user_income(conn, user_id),
+        _food_delivery_monthly(conn, user_id),
+        _subscription_monthly_total(conn, user_id),
+        is_custom=is_custom,
+        refresh_ai=True,
+    )
+    cash = monthly_surplus_snapshot(conn, user_id)
+    return {"success": True, "event": card, "emi_constraints": cash}
+
+
+@router.get("/{user_id}/events/{festival_name}/details")
+def festival_event_details(
+    user_id: int,
+    festival_name: str,
+    festival_date: Optional[str] = None,
+    refresh: bool = True,
+    conn=Depends(get_db),
+) -> dict[str, Any]:
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM users WHERE id = %s;", (user_id,))
+    urow = cur.fetchone()
+    if not urow:
+        cur.close()
+        raise HTTPException(404, "User not found")
+    user_name = (urow[0] or "User").strip()
+    cur.close()
+
+    explicit: Optional[date] = None
+    if festival_date:
+        explicit = datetime.strptime(festival_date[:10], "%Y-%m-%d").date()
+    fest_d = _resolve_festival_date(conn, user_id, festival_name, explicit)
+    today = date.today()
+    card = _build_festival_payload(
+        conn,
+        user_id,
+        user_name,
+        festival_name,
+        fest_d,
+        today,
+        _user_income(conn, user_id),
+        _food_delivery_monthly(conn, user_id),
+        _subscription_monthly_total(conn, user_id),
+        is_custom=_calendar_date_for_name(festival_name) is None or _calendar_date_for_name(festival_name) != fest_d,
+        refresh_ai=refresh,
+    )
+    return {"event": card}
+
+
 @router.get("/{user_id}")
 def upcoming_festivals(user_id: int, conn=Depends(get_db)):
     cur = conn.cursor()
@@ -507,7 +831,7 @@ def upcoming_festivals(user_id: int, conn=Depends(get_db)):
     cur.close()
 
     today = date.today()
-    horizon = date.fromordinal(today.toordinal() + 183)
+    horizon = _horizon_end(today)
     income = _user_income(conn, user_id)
     avg_saved = _avg_monthly_saved(conn, user_id)
     food_m = _food_delivery_monthly(conn, user_id)
@@ -517,72 +841,23 @@ def upcoming_festivals(user_id: int, conn=Depends(get_db)):
     total_budget = 0.0
     monthly_sum = 0.0
 
-    for fest in INDIAN_FESTIVALS_2026:
-        d = datetime.strptime(fest["date"], "%Y-%m-%d").date()
-        if d <= today or d > horizon:
-            continue
-
-        days_rem = (d - today).days
-        months_rem = max(days_rem / 30.0, 0.25)
-
-        row = _fetch_budget_row(conn, user_id, fest["name"], d)
-        last_year = float(row[1] or 0) if row else 0.0
-        planned = float(row[2] or 0) if row and row[2] else 0.0
-        saved = float(row[3] or 0) if row else 0.0
-        cat = row[7] if row else None
-        if isinstance(cat, str):
-            try:
-                cat = json.loads(cat)
-            except json.JSONDecodeError:
-                cat = {}
-        if not isinstance(cat, dict):
-            cat = {}
-
-        recommended = planned if planned > 0 else round(last_year * 1.0526) if last_year > 0 else round(income * 0.08)
-        gap = max(0.0, recommended - saved)
-        monthly_need = gap / months_rem
-        weekly_need = monthly_need / 4.33
-        daily_need = monthly_need / 30.0
-
-        ai_advice, saving_tip, if_no = generate_festival_ai_blocks(
+    for fest_name, fest_date, is_custom in _iter_upcoming_festival_slots(conn, user_id, today, horizon):
+        card = _build_festival_payload(
+            conn,
+            user_id,
             user_name,
-            fest["name"],
+            fest_name,
+            fest_date,
+            today,
             income,
-            days_rem,
-            last_year,
-            monthly_need,
-            recommended,
-            saved,
             food_m,
             sub_m,
+            is_custom=is_custom,
+            refresh_ai=True,
         )
-
-        urgency = _urgency(days_rem)
-        progress_pct = round(100.0 * saved / recommended, 1) if recommended > 0 else 0.0
-        linked_goals = _linked_purchase_goals(conn, user_id, fest["name"], d)
-        upcoming.append(
-            {
-                "festival_name": fest["name"],
-                "festival_date": fest["date"],
-                "days_remaining": days_rem,
-                "months_remaining": round(months_rem, 2),
-                "last_year_spent": round(last_year, 2),
-                "recommended_budget": round(recommended, 2),
-                "saved_so_far": round(saved, 2),
-                "progress_pct": progress_pct,
-                "monthly_saving_needed": round(monthly_need, 2),
-                "weekly_saving_needed": round(weekly_need, 2),
-                "daily_saving_needed": round(daily_need, 2),
-                "urgency": urgency,
-                "category_breakdown": cat,
-                "linked_goals": linked_goals,
-                "ai_advice": ai_advice,
-                "saving_tip": saving_tip,
-                "if_no_saving_warning": if_no,
-            }
-        )
-        total_budget += recommended
-        monthly_sum += monthly_need
+        upcoming.append(card)
+        total_budget += float(card["recommended_budget"])
+        monthly_sum += float(card["monthly_saving_needed"])
 
     upcoming.sort(key=lambda x: x["days_remaining"])
 
@@ -603,8 +878,10 @@ def upcoming_festivals(user_id: int, conn=Depends(get_db)):
         gap_items.append(f"Trim food delivery (~{round(min(food_m * 0.35, gap_month * 0.5)):,} ₹/mo suggested cut).")
 
     on_track = gap_month <= max(500, monthly_sum * 0.15) if monthly_sum > 0 else True
+    cash = monthly_surplus_snapshot(conn, user_id)
     return {
         "upcoming_festivals": upcoming,
+        "emi_constraints": cash,
         "total_festival_budget_needed": round(total_budget, 2),
         "months_to_save": round(max([x["months_remaining"] for x in upcoming] or [0]), 2),
         "monthly_total_target": round(monthly_sum, 2),

@@ -107,6 +107,20 @@ class EventPublisher:
 
         logger.debug("event_published topic=%s", topic)
 
+        # -------- No-Redis: in-process dispatch (Phase 1 / 8 fallback) -------- #
+        if redis is None:
+            try:
+                from services.event_bus.local_bus import dispatch, setup_default_handlers
+
+                setup_default_handlers()
+                await dispatch(topic, payload)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "event_publish_local_dispatch_failed topic=%s error=%s",
+                    topic,
+                    exc,
+                )
+
     def set_pool(self, pool) -> None:
         """Inject the asyncpg pool after the publisher is created (used in lifespan)."""
         self._pool = pool

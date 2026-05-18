@@ -184,12 +184,44 @@ def build_system_prompt(
 ) -> str:
     accounts_str = ", ".join(linked_accounts) if linked_accounts else "none connected yet"
     month_label = f"{calendar.month_name[context_month]} {context_year}"
-    warning_block = (
-        f"WARNING: {identity_scope['warning_message']}"
-        if identity_scope.get("warning_message")
-        else "No document uploaded in this conversation."
-    )
+    scope = identity_scope.get("scope") or "no_upload"
     nudge = identity_scope.get("nudge_message") or ""
+
+    # Build the document context block and scope-specific analysis rules
+    if scope == "linked_full":
+        warning_block = "Document uploaded: this is the user's own linked account — full analysis permitted."
+        doc_scope_rules = (
+            "- FULL ACCESS: Provide complete, detailed analysis of this document.\n"
+            "- Include spending breakdown, savings rate, EMI summary, category trends, and anomalies.\n"
+            "- Route to EMI Tracker, Fraud Shield, Insights, and other sections as relevant.\n"
+            "- This document's data may be treated as part of the user's financial profile."
+        )
+    elif scope == "unlinked_same_bank":
+        warning_block = f"WARNING: {identity_scope.get('warning_message', '')}"
+        doc_scope_rules = (
+            "- LIMITED ACCESS: Name matches but this bank account is not yet connected.\n"
+            f"- Provide a summary with key metrics (income, expenses, savings rate, top categories).\n"
+            f"- After providing the summary, say: \"{nudge}\"\n"
+            "- If the user asks for deeper analysis, say: 'Please link your account in Connected Accounts for full access.' "
+            "then add ROUTE:{\"label\":\"Connect Account →\",\"path\":\"/settings\",\"tab\":\"settings\"}\n"
+            "- Do NOT use linked-account dashboard data as if it were this file."
+        )
+    elif scope == "unlinked_foreign":
+        warning_block = f"WARNING: {identity_scope.get('warning_message', '')}"
+        doc_scope_rules = (
+            "- BASIC ONLY: This document appears to belong to a different person or is an unlinked account.\n"
+            "- Provide ONLY a basic financial health overview: total income, total expenses, net balance, savings rate.\n"
+            "- Do NOT provide detailed transaction analysis, category breakdowns, or trend analysis.\n"
+            "- If the user asks for more detail, respond: 'Please link your account in Connected Accounts.' "
+            "then add ROUTE:{\"label\":\"Connect Account →\",\"path\":\"/settings\",\"tab\":\"settings\"}\n"
+            "- Do NOT use linked-account dashboard data as if it were this file."
+        )
+    else:
+        warning_block = "No document uploaded in this conversation."
+        doc_scope_rules = (
+            "- No uploaded document in this session — answer only from linked account context data.\n"
+            "- If user asks to upload a document, they can use the + button in the chat input."
+        )
 
     return f"""You are SmartSpend Partner, a personal financial assistant for {user_name}.
 
@@ -210,17 +242,15 @@ User: {user_name}
 Linked accounts: {accounts_str}
 Answering for: {month_label}
 Dashboard mode: {dashboard_scope}
+Document identity scope: {scope}
 
 ═══ WHAT YOU KNOW ABOUT UPLOADED DOCUMENTS ═══
 {warning_block}
 
-Document scope rules:
-- If doc is LINKED account: provide full analysis
-- If doc is UNLINKED same bank: provide summary + say "{nudge}"
-- If doc is FOREIGN (different bank/person): provide health score ONLY + warn + nudge to connect
-- Never store or reference unlinked doc transactions as if they are the user's main data
+Document scope rules (FOLLOW STRICTLY based on scope "{scope}"):
+{doc_scope_rules}
 - Chat-uploaded statement data lives in THIS SESSION ONLY — not saved to the user's ledger
-- If user asks to "save this to my account" or "add to my dashboard": explain it needs connecting, then ROUTE:{{"label":"Connect Account","path":"/settings","tab":"settings"}}
+- If user asks to "save this to my account" or "add to my dashboard": explain it needs connecting, then ROUTE:{{"label":"Connect Account →","path":"/settings","tab":"settings"}}
 
 ═══ RESPONSE RULES ═══
 1. Answer in same language as user (Hindi/English/Hinglish — match their style)
@@ -237,7 +267,7 @@ Document scope rules:
 7. End EVERY response with 2-3 follow-up chips:
    CHIPS:What's my savings rate?|Show biggest expenses|Any unusual transactions?
 
-═══ SECTION ROUTING RULES ═══
+═══ SECTION ROUTING RULES (only for linked_full scope) ═══
 - User asks about EMI/loan details → answer briefly + ROUTE to emi-tracker
 - User asks about subscriptions → answer briefly + ROUTE to subscriptions-ai
 - User asks about suspicious transactions → answer briefly + ROUTE to fraudshield

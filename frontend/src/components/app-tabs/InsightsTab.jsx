@@ -72,6 +72,19 @@ export default function InsightsTab({ userId, month, year, setActiveTab }) {
     return () => window.removeEventListener("dashboardModeChanged", handler);
   }, [fetchHealth]);
 
+  // Re-fetch health score whenever financial data changes (new account, new EMI, new goal, etc.)
+  useEffect(() => {
+    const handler = () => fetchHealth();
+    window.addEventListener("smartspend:health-score-changed", handler);
+    window.addEventListener("smartspend:purchase-goals-changed", handler);
+    window.addEventListener("smartspend-financial-sync", handler);
+    return () => {
+      window.removeEventListener("smartspend:health-score-changed", handler);
+      window.removeEventListener("smartspend:purchase-goals-changed", handler);
+      window.removeEventListener("smartspend-financial-sync", handler);
+    };
+  }, [fetchHealth]);
+
   const savingsRate =
     health?.savings_rate ?? health?.components?.savings_rate_pct ?? null;
   const scoreReady = !healthLoading && !healthError && health != null;
@@ -107,7 +120,7 @@ export default function InsightsTab({ userId, month, year, setActiveTab }) {
         "/emi": "emi",
         "/subscriptions": "subscriptions",
         "/subscriptions-ai": "subscriptions",
-        "/fraud-shield": "fraud",
+        "/fraud-shield": "fraud-shield",
         "/fraud": "fraud",
         "/transactions": "transactions",
         "/dashboard": "dashboard",
@@ -145,7 +158,13 @@ export default function InsightsTab({ userId, month, year, setActiveTab }) {
                   : undefined
             }
             captionLoading={healthLoading}
-            delta={savingsRate != null ? savingsRate - 10 : null}
+            delta={
+              health?.trend === "IMPROVING"
+                ? 5
+                : health?.trend === "DECLINING"
+                  ? -5
+                  : null
+            }
             accentHex={ACCENT}
             loading={healthLoading}
           />

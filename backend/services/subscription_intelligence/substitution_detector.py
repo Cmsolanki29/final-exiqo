@@ -166,11 +166,14 @@ def detect_category_migrations(conn: PgConnection, user_id: int) -> list[dict[st
                         "insight_type": "migration_detected",
                         "primary_subscription_id": int(dec_id),
                         "secondary_subscription_id": int(thr_id),
-                        "title": "Subscription migration detected",
-                        "description": f"You shifted time from {dec_name} toward {thr_name} within {category}.",
+                        "title": "You switched apps",
+                        "description": (
+                            f"Your time moved from {dec_name} to {thr_name} "
+                            f"(same type of app: {category})."
+                        ),
                         "recommendation": (
-                            f"If the new habit stuck, cancel {dec_name} to save "
-                            f"Rs.{int(round(dec_cost_f))}/month."
+                            f"If you prefer {thr_name} now, cancelling {dec_name} "
+                            f"could save about ₹{int(round(dec_cost_f))} per month."
                         ),
                         "potential_savings_monthly": dec_cost_f,
                         "potential_savings_yearly": round(dec_cost_f * 12, 2),

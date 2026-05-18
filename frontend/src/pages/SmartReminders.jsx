@@ -21,40 +21,18 @@ import { SkeletonCard } from "../components/common/SkeletonCard";
 import { PageHeader } from "../components/Dashboard/shared/PageHeader";
 import { GlassCard } from "../components/intro/GlassCard";
 import { inr } from "../lib/format";
+import { humanizeVerdictReason, verdictDisplayLabel } from "../utils/subscriptionVerdictCopy";
+import {
+  normalizeRemindersForDisplay,
+  snoozeRequiresAccountability as snoozeNeedsReason,
+  urgencyFromFireAt,
+} from "../utils/reminderBadges";
+import ReminderBadges from "../components/Subscriptions/ReminderBadges";
 
 const ACCOUNTABILITY_MIN = 10;
 
-/** Tier ≥2 = escalated renewal cadence — API requires min-length accountability text for remind_later. */
 function snoozeRequiresAccountability(r) {
-  return Number(r?.reminder_escalation_tier ?? 1) >= 2;
-}
-
-/** Maps scheduler keys (t10, t3, …) to “T-10 style” renewal windows from live subscription rows. */
-const REMINDER_CADENCE_DAYS = {
-  t20: 20,
-  t15: 15,
-  t10: 10,
-  t7: 7,
-  t5: 5,
-  t3: 3,
-  t2: 2,
-  t1: 1,
-};
-
-function reminderWindowLabel(reminderType) {
-  const k = String(reminderType || "").toLowerCase();
-  const days = REMINDER_CADENCE_DAYS[k];
-  if (days != null) {
-    return `T-${days} (${days} day${days === 1 ? "" : "s"} before renewal charge)`;
-  }
-  return reminderType ? String(reminderType).toUpperCase() : "Renewal";
-}
-
-function reminderShortTag(reminderType) {
-  const k = String(reminderType || "").toLowerCase();
-  const days = REMINDER_CADENCE_DAYS[k];
-  if (days != null) return `T-${days}`;
-  return (reminderType || "ALT").toUpperCase();
+  return snoozeNeedsReason(r?.reminder_escalation_tier);
 }
 
 function daysFromToday(iso) {
@@ -78,23 +56,17 @@ function buildReminderNarrative(r) {
     }
   }
   if (r.current_verdict) {
-    parts.push(`Behaviour verdict: ${String(r.current_verdict).replace(/_/g, " ")}.`);
+    parts.push(`Status: ${verdictDisplayLabel(r.current_verdict)}.`);
   }
   if (r.verdict_reason && String(r.verdict_reason).trim()) {
-    parts.push(String(r.verdict_reason).trim());
+    parts.push(humanizeVerdictReason(r.verdict_reason, r.current_verdict));
   }
   const waste = Number(r.verdict_monthly_waste);
   if (waste > 0) {
-    parts.push(`Potential waste from low usage (model): ~${inr(waste)}/mo.`);
-  }
-  if (r.intelligence_category) {
-    parts.push(`Plan type: ${String(r.intelligence_category).replace(/_/g, " ")}.`);
-  }
-  if (r.linked_app_package) {
-    parts.push(`Usage source (linked package): ${r.linked_app_package}.`);
+    parts.push(`You might save about ${inr(waste)} per month if you cancel.`);
   }
   if (parts.length === 0) {
-    return "Renewal reminder tied to this subscription’s billing cycle and linked app usage in your workspace.";
+    return "Reminder before your next subscription charge, based on how you use the linked app.";
   }
   return parts.join(" ");
 }
@@ -106,33 +78,11 @@ function hoursUntilFire(iso) {
   return (t - Date.now()) / (1000 * 60 * 60);
 }
 
-function urgencyFromHours(h) {
-  if (h == null) return { label: "Scheduled", ring: "border-white/15 bg-white/[0.04]", badge: "bg-white/10 text-white/80" };
-  if (h < 24)
-    return {
-      label: "Critical",
-      ring: "border-rose-500/35 bg-rose-500/10",
-      badge: "bg-rose-500/90 text-white",
-    };
-  if (h < 72)
-    return {
-      label: "Urgent",
-      ring: "border-amber-500/35 bg-amber-500/10",
-      badge: "bg-amber-500/90 text-white",
-    };
-  return {
-    label: "Upcoming",
-    ring: "border-cyan-500/30 bg-cyan-500/10",
-    badge: "bg-cyan-600/90 text-white",
-  };
-}
-
-function statePillClass(state) {
-  if (state === "shown")
-    return "bg-rose-500/25 text-rose-100 ring-1 ring-rose-500/30";
-  if (state === "pending") return "bg-cyan-500/20 text-cyan-100 ring-1 ring-cyan-500/25";
-  if (state === "snoozed") return "bg-violet-500/25 text-violet-100 ring-1 ring-violet-500/30";
-  return "bg-white/10 text-white/70 ring-1 ring-white/15";
+function urgencyRingFromHours(h) {
+  if (h == null) return "border-white/15 bg-white/[0.04]";
+  if (h < 24) return "border-rose-500/35 bg-rose-500/10";
+  if (h < 72) return "border-amber-500/35 bg-amber-500/10";
+  return "border-cyan-500/30 bg-cyan-500/10";
 }
 
 /** variant: active = due (shown), snoozed = remind later, scheduled = future pending */
@@ -140,7 +90,7 @@ function ReminderQueueCard({ r, variant, onCancelNow, onOpenSnooze, onKeep }) {
   const h = hoursUntilFire(r.fire_at);
   const isActive = variant === "active";
   const u = isActive
-    ? urgencyFromHours(h)
+    ? { ...urgencyFromFireAt(r.fire_at), ring: urgencyRingFromHours(h) }
     : variant === "snoozed"
       ? {
           label: "Deferred",
@@ -199,18 +149,12 @@ function ReminderQueueCard({ r, variant, onCancelNow, onOpenSnooze, onKeep }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${u.badge}`}>{u.label}</span>
-            <span
-              className="rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-0.5 text-[10px] font-semibold uppercase text-white/60"
-              title={reminderWindowLabel(r.reminder_type)}
-            >
-              {reminderShortTag(r.reminder_type)}
-            </span>
-            {r.state ? (
-              <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${statePillClass(r.state)}`}>
-                {r.state}
+            {!isActive ? (
+              <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${u.badge}`}>
+                {u.label}
               </span>
             ) : null}
+            <ReminderBadges reminder={r} showUrgency={isActive} />
           </div>
           <h3 className="font-heading text-lg font-semibold text-white">{r.merchant || "Subscription"}</h3>
           <p className="mt-2 text-sm leading-relaxed text-white/70">{buildReminderNarrative(r)}</p>
@@ -301,7 +245,7 @@ export default function SmartReminders({ onBack }) {
           /* non-fatal — list may still load */
         }
         const data = await getSubscriptionRemindersPending(uid, { include_upcoming: true });
-        const list = Array.isArray(data?.reminders) ? data.reminders : [];
+        const list = normalizeRemindersForDisplay(data?.reminders);
         setReminders(
           [...list].sort((a, b) => String(a.fire_at || "").localeCompare(String(b.fire_at || "")))
         );
@@ -330,6 +274,7 @@ export default function SmartReminders({ onBack }) {
   const postAction = async (reminderId, payload) => {
     if (!uid) return;
     await postSubscriptionReminderAction(uid, reminderId, payload);
+    window.dispatchEvent(new CustomEvent("smartspend:reminders-changed"));
     await load({ silent: true });
   };
 
@@ -373,6 +318,7 @@ export default function SmartReminders({ onBack }) {
         try {
           await postSubscriptionReminderAction(uid, r.id, { action: "remind_later" });
           showToast("Reminder snoozed ~24h", "success");
+          window.dispatchEvent(new CustomEvent("smartspend:reminders-changed"));
           await load({ silent: true });
         } catch (e) {
           showToast(e?.message || "Could not snooze", "error");
@@ -399,6 +345,7 @@ export default function SmartReminders({ onBack }) {
       showToast("Reminder snoozed ~24h — please revisit soon", "success");
       setSnoozeTarget(null);
       setSnoozeReason("");
+      window.dispatchEvent(new CustomEvent("smartspend:reminders-changed"));
       await load({ silent: true });
     } catch (e) {
       setReasonError(e?.message || "Could not snooze");
@@ -462,7 +409,7 @@ export default function SmartReminders({ onBack }) {
       <GlassCard surface="panel" padding="md" className="border-violet-500/20">
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">Smart subscription reminder system</p>
         <p className="mt-2 text-sm text-white/70">
-          Billing &amp; renewal tracking, T-10 / T-3 / T-1 cadences (denser T-15→T-1 after escalation), snooze 24h
+          Reminders fire at T-15, T-10, T-5, T-3, or T-1 before renewal — Tier 1 is lighter; Tier 2+ adds more nudges
           without a note on <strong className="text-white/90">tier 1</strong>, mandatory short reason on{" "}
           <strong className="text-white/90">tier 2+</strong> remind-later, plus cancel / keep — wired to your live{" "}
           <code className="rounded bg-black/30 px-1 text-[11px]">scheduled_reminders</code> and{" "}
@@ -476,7 +423,7 @@ export default function SmartReminders({ onBack }) {
             <span className="text-emerald-400">✔</span> Escalation when tiers increase
           </li>
           <li className="flex gap-2">
-            <span className="text-emerald-400">✔</span> Tier 1: one-tap snooze · Tier 2+: 10+ char reason (API)
+            <span className="text-emerald-400">✔</span> Tier 1: snooze without a reason · Tier 2+: short reason required
           </li>
           <li className="flex gap-2">
             <span className="text-emerald-400">✔</span> Cancel now / keep — updates reminder + subscription state

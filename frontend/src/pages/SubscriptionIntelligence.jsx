@@ -22,13 +22,20 @@ import { PageHeader } from "../components/Dashboard/shared/PageHeader";
 import { GlassCard } from "../components/intro/GlassCard";
 import SubscriptionDetailModal from "../components/Subscriptions/SubscriptionDetailModal";
 import { inr } from "../lib/format";
+import {
+  VERDICT_BUCKETS_UI,
+  formatUsage30d,
+  humanizeInsightType,
+  humanizeMigration,
+  humanizeVerdictReason,
+} from "../utils/subscriptionVerdictCopy";
 
-const VERDICT_BUCKETS = [
-  { key: "thriving", title: "Thriving", Icon: TrendingUp, accent: "emerald" },
-  { key: "declining", title: "Declining", Icon: TrendingDown, accent: "amber" },
-  { key: "dormant", title: "Dormant", Icon: AlertTriangle, accent: "orange" },
-  { key: "upgrade_recommended", title: "Upgrade recommended", Icon: Zap, accent: "purple" },
-];
+const BUCKET_ICONS = {
+  TrendingUp,
+  TrendingDown,
+  AlertTriangle,
+  Zap,
+};
 
 const accentRing = {
   emerald: "ring-emerald-500/30 border-emerald-500/20 bg-emerald-500/10",
@@ -146,9 +153,9 @@ export default function SubscriptionIntelligence({ onOpenReminders }) {
   return (
     <div className="mx-auto max-w-5xl space-y-8 pb-4">
       <PageHeader
-        eyebrow="AI + behaviour"
-        title="Subscription intelligence"
-        subtitle="Verdicts, category migrations, savings rollups, and unread insights — refreshed from your live data."
+        eyebrow="Your subscriptions"
+        title="Subscription check-up"
+        subtitle="See which bills are worth keeping, which to review, and how much you could save — based on your real usage."
         accentHex="#22d3ee"
         rightSlot={
           <div className="flex flex-wrap justify-end gap-2">
@@ -192,7 +199,7 @@ export default function SubscriptionIntelligence({ onOpenReminders }) {
           </div>
           <div>
             <h2 className="font-heading text-lg font-semibold text-white">Savings dashboard</h2>
-            <p className="text-sm text-white/55">From tracked cancellations and waste avoided (subscription savings ledger).</p>
+            <p className="text-sm text-white/55">Money saved when you cancelled or stopped paying for unused subscriptions.</p>
           </div>
         </div>
         {savingsLoading && !savings ? (
@@ -229,26 +236,26 @@ export default function SubscriptionIntelligence({ onOpenReminders }) {
           <StatTile
             label="Subscriptions tracked"
             value={String(s.subscriptions_tracked ?? 0)}
-            hint="In intelligence scope"
+            hint="Linked to your account"
             ring="cyan"
             icon={<CheckCircle className="h-4 w-4 text-emerald-300" aria-hidden />}
           />
           <StatTile
-            label="Thriving"
+            label="Worth keeping"
             value={String(s.thriving_count ?? 0)}
-            hint="Healthy usage"
+            hint="Used regularly"
             ring="emerald"
             icon={<TrendingUp className="h-4 w-4 text-emerald-300" aria-hidden />}
           />
           <StatTile
             label="At risk"
             value={String(s.at_risk_count ?? 0)}
-            hint="Declining + dormant"
+            hint="Dropping or barely used"
             ring="amber"
             icon={<AlertTriangle className="h-4 w-4 text-amber-200" aria-hidden />}
           />
           <StatTile
-            label="Flagged waste"
+            label="Possible savings"
             value={`${inr(s.verdict_monthly_waste_sum_inr || 0)}/mo`}
             hint={`~${inr(s.verdict_yearly_waste_sum_inr || 0)} /yr`}
             ring="rose"
@@ -260,8 +267,10 @@ export default function SubscriptionIntelligence({ onOpenReminders }) {
       {/* Verdicts */}
       {summary?.verdicts ? (
         <section className="space-y-4">
-          <h2 className="font-heading text-xl font-semibold text-white">AI verdicts</h2>
-          {VERDICT_BUCKETS.map(({ key, title, Icon, accent }) => {
+          <h2 className="font-heading text-xl font-semibold text-white">What we found</h2>
+          <p className="text-sm text-white/55">Plain summary from your app usage and subscription charges.</p>
+          {VERDICT_BUCKETS_UI.map(({ key, title, hint, IconKey, accent }) => {
+            const Icon = BUCKET_ICONS[IconKey] || TrendingUp;
             const list = summary.verdicts[key] || [];
             if (!list.length) return null;
             return (
@@ -273,7 +282,10 @@ export default function SubscriptionIntelligence({ onOpenReminders }) {
               >
                 <div className="mb-3 flex items-center gap-2">
                   <Icon className="h-5 w-5 text-white/80" aria-hidden />
-                  <h3 className="font-semibold text-white">{title}</h3>
+                  <div className="min-w-0">
+                    <h3 className="font-semibold text-white">{title}</h3>
+                    {hint ? <p className="text-xs text-white/50">{hint}</p> : null}
+                  </div>
                   <span className="ml-auto text-xs font-semibold text-white/50">{list.length}</span>
                 </div>
                 <ul className="space-y-3">
@@ -285,6 +297,7 @@ export default function SubscriptionIntelligence({ onOpenReminders }) {
                           setDetailRow({
                             ...v,
                             verdict: key,
+                            reasoning: humanizeVerdictReason(v.reasoning, key),
                           })
                         }
                         className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-left transition hover:border-violet-400/40 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50"
@@ -292,10 +305,12 @@ export default function SubscriptionIntelligence({ onOpenReminders }) {
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                           <div className="min-w-0">
                             <p className="font-semibold text-white">{v.subscription_name || "Subscription"}</p>
-                            <p className="mt-1 text-sm leading-relaxed text-white/65">{v.reasoning}</p>
+                            <p className="mt-1 text-sm leading-relaxed text-white/65">
+                              {humanizeVerdictReason(v.reasoning, key)}
+                            </p>
                             {typeof v.current_usage_hours === "number" ? (
                               <p className="mt-2 text-xs text-white/45">
-                                Usage (30d): {v.current_usage_hours.toFixed(1)}h / mo
+                                {formatUsage30d(v.current_usage_hours)}
                               </p>
                             ) : null}
                           </div>
@@ -311,9 +326,12 @@ export default function SubscriptionIntelligence({ onOpenReminders }) {
               </GlassCard>
             );
           })}
-          {VERDICT_BUCKETS.every(({ key }) => !(summary.verdicts[key] || []).length) ? (
+          {VERDICT_BUCKETS_UI.every(({ key }) => !(summary.verdicts[key] || []).length) ? (
             <GlassCard surface="panel" padding="md" className="border-white/10">
-              <p className="text-sm text-white/60">No verdict buckets yet. Link usage or add subscriptions, then refresh.</p>
+              <p className="text-sm text-white/60">
+                No results yet. Connect your apps or add subscriptions, then tap{" "}
+                <strong className="text-white/80">Refresh analysis</strong>.
+              </p>
             </GlassCard>
           ) : null}
         </section>
@@ -322,7 +340,7 @@ export default function SubscriptionIntelligence({ onOpenReminders }) {
       {/* Migrations */}
       <section className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <h2 className="font-heading text-xl font-semibold text-white">Category migrations</h2>
+          <h2 className="font-heading text-xl font-semibold text-white">App switches we noticed</h2>
           {migrations?.length ? (
             <button
               type="button"
@@ -330,13 +348,15 @@ export default function SubscriptionIntelligence({ onOpenReminders }) {
               disabled={persisting}
               className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-cyan-400/35 bg-cyan-500/15 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/25 disabled:opacity-50 md:min-h-0"
             >
-              {persisting ? "Saving…" : "Persist to insight feed"}
+              {persisting ? "Saving…" : "Save to my insights"}
             </button>
           ) : null}
         </div>
         {migrations?.length ? (
           <ul className="space-y-3">
-            {migrations.map((m) => (
+            {migrations.map((raw) => {
+              const m = humanizeMigration(raw);
+              return (
               <li key={`${m.primary_subscription_id}-${m.secondary_subscription_id}`}>
                 <GlassCard surface="panel" padding="md" className="border-cyan-500/20 ring-1 ring-cyan-500/15">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -346,18 +366,21 @@ export default function SubscriptionIntelligence({ onOpenReminders }) {
                       <p className="mt-2 text-sm font-medium text-cyan-200/90">{m.recommendation}</p>
                     </div>
                     <div className="shrink-0 text-right lg:pl-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-white/45">Potential</p>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-white/45">You could save</p>
                       <p className="text-xl font-bold text-emerald-300">{inr(m.potential_savings_monthly)}/mo</p>
                       <p className="text-xs text-white/50">{inr(m.potential_savings_yearly)} / yr</p>
                     </div>
                   </div>
                 </GlassCard>
               </li>
-            ))}
+            );
+            })}
           </ul>
         ) : (
           <GlassCard surface="panel" padding="md" className="border-white/10">
-            <p className="text-sm text-white/60">No migrations detected yet. When usage shifts within a category, they will appear here.</p>
+            <p className="text-sm text-white/60">
+              When you start using one app instead of another (for example Spotify → YouTube Music), we will show it here.
+            </p>
           </GlassCard>
         )}
       </section>
@@ -386,7 +409,7 @@ export default function SubscriptionIntelligence({ onOpenReminders }) {
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-white/40">
-                            {ins.insight_type?.replace(/_/g, " ")}
+                            {humanizeInsightType(ins.insight_type)}
                           </p>
                           <h3 className="font-semibold text-white">{ins.title}</h3>
                           <p className="mt-2 whitespace-pre-wrap text-sm text-white/65">{ins.body}</p>

@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TOKEN_ACCESS_KEY } from "../../services/api";
+import { renderMarkdownLite, TypewriterText } from "../common/TypewriterText";
 
 const MONTH_LABELS = [
   "January", "February", "March", "April", "May", "June",
@@ -58,68 +59,6 @@ function parseMessage(raw) {
   return { clean, routes, chips };
 }
 
-// ── Markdown-lite renderer ─────────────────────────────────────────────────
-function renderMarkdownLite(text) {
-  if (!text) return null;
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={i}>{part.slice(2, -2)}</strong>;
-    }
-    return part.split("\n").map((line, j, arr) => (
-      <span key={`${i}-${j}`}>
-        {line}
-        {j < arr.length - 1 && <br />}
-      </span>
-    ));
-  });
-}
-
-// ── Typewriter component (12ms per char, blinking cursor) ─────────────────
-function TypewriterText({ text, isStreaming }) {
-  const [pos, setPos] = useState(0);
-  const textRef = useRef(text);
-
-  // Keep ref in sync with latest text without restarting the interval
-  useEffect(() => { textRef.current = text; });
-
-  // Single interval started on mount — ticks at 12ms
-  useEffect(() => {
-    const id = setInterval(() => {
-      setPos((p) => (p >= textRef.current.length ? p : p + 1));
-    }, 12);
-    return () => clearInterval(id);
-  }, []);
-
-  // When streaming ends, flush any remaining characters immediately
-  useEffect(() => {
-    if (!isStreaming) setPos(textRef.current.length);
-  }, [isStreaming]);
-
-  const displayed = text.slice(0, pos);
-  const showCursor = isStreaming || pos < text.length;
-
-  return (
-    <>
-      {renderMarkdownLite(displayed)}
-      {showCursor && (
-        <span
-          aria-hidden
-          style={{
-            display: "inline-block",
-            width: 2,
-            height: "1em",
-            background: "#a78bfa",
-            marginLeft: 3,
-            verticalAlign: "text-bottom",
-            borderRadius: 1,
-            animation: "ss-cursor-blink 0.65s step-end infinite",
-          }}
-        />
-      )}
-    </>
-  );
-}
-
 // ── Timestamp ─────────────────────────────────────────────────────────────
 const fmt = (ts) =>
   new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -141,13 +80,27 @@ function UserBubble({ content, timestamp }) {
   );
 }
 
-// ── AI bubble ─────────────────────────────────────────────────────────────
-function SystemNoticeBubble({ content, timestamp }) {
+// ── System notice bubble (identity warning + optional Connect Account button) ──
+function SystemNoticeBubble({ content, timestamp, showConnectButton, onConnect }) {
   return (
     <div className="mb-3 flex justify-center" style={{ animation: "ss-fade-up 0.22s ease-out both" }}>
       <div className="max-w-[92%] rounded-xl border border-amber-500/35 bg-amber-500/12 px-4 py-3 text-xs leading-relaxed text-amber-100">
         {content}
         <span className="mt-1 block text-[10px] text-amber-200/50">{fmt(timestamp)}</span>
+        {showConnectButton && (
+          <button
+            type="button"
+            onClick={onConnect}
+            className="mt-2.5 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-amber-100 transition-all hover:-translate-y-0.5 active:scale-95"
+            style={{
+              background: "linear-gradient(135deg,rgba(217,119,6,0.30),rgba(245,158,11,0.18))",
+              border: "1px solid rgba(245,158,11,0.45)",
+              boxShadow: "0 2px 8px rgba(217,119,6,0.2)",
+            }}
+          >
+            Connect Account →
+          </button>
+        )}
       </div>
     </div>
   );
@@ -288,6 +241,7 @@ export default function SmartSpendChatbot({ onNavigate, month, year, dashboardSc
   const [llmOnline, setLlmOnline] = useState(true);
   const [uploadBanner, setUploadBanner] = useState(null);
   const [uploadedDocMeta, setUploadedDocMeta] = useState(null);
+  const [identityScope, setIdentityScope] = useState(null);
   const bottomRef = useRef(null);
   const fileRef = useRef(null);
   const hasUserMessagedRef = useRef(false);
@@ -459,6 +413,8 @@ export default function SmartSpendChatbot({ onNavigate, month, year, dashboardSc
           identity_reason: result.reason,
         });
       }
+      // Store identity scope so message renderer can show the Connect Account button
+      setIdentityScope(result.identity_scope || null);
       if (result.warning_message) {
         setMessages((prev) => [
           ...prev,
@@ -466,6 +422,7 @@ export default function SmartSpendChatbot({ onNavigate, month, year, dashboardSc
             id: `sys-${Date.now()}`,
             role: "system",
             content: result.warning_message,
+            identity_scope: result.identity_scope,
             timestamp: Date.now(),
           },
         ]);
@@ -525,6 +482,7 @@ export default function SmartSpendChatbot({ onNavigate, month, year, dashboardSc
               try { await fetch(`/api/ai/session/${sessionId}`, { method: "DELETE", headers: authHeaders() }); } catch { /* ignore */ }
               setMessages([]);
               setUploadedDocMeta(null);
+              setIdentityScope(null);
               hasUserMessagedRef.current = false;
               try {
                 const res = await fetch("/api/ai/session", { headers: authHeaders() });
@@ -590,7 +548,17 @@ export default function SmartSpendChatbot({ onNavigate, month, year, dashboardSc
             return <UserBubble key={msg.id} content={msg.content} timestamp={msg.timestamp ?? Date.now()} />;
           }
           if (msg.role === "system") {
-            return <SystemNoticeBubble key={msg.id} content={msg.content} timestamp={msg.timestamp ?? Date.now()} />;
+            const msgScope = msg.identity_scope || identityScope;
+            const isUnlinked = msgScope === "unlinked_foreign" || msgScope === "unlinked_same_bank";
+            return (
+              <SystemNoticeBubble
+                key={msg.id}
+                content={msg.content}
+                timestamp={msg.timestamp ?? Date.now()}
+                showConnectButton={isUnlinked}
+                onConnect={() => onNavigate?.({ tab: "settings", path: "/settings" })}
+              />
+            );
           }
           return (
             <AiBubble

@@ -81,6 +81,15 @@ export default function UploadStatement({ userId, initialSourceType }) {
       if (fileRef.current) fileRef.current.value = "";
       loadHistory();
       loadSources();
+      // Notify all modules to recalculate health score and insights after new account upload
+      try {
+        window.dispatchEvent(new CustomEvent("dashboardModeChanged", { detail: { userId } }));
+        window.dispatchEvent(new CustomEvent("smartspend:health-score-changed", { detail: { userId } }));
+        window.dispatchEvent(new CustomEvent("smartspend:purchase-goals-changed", { detail: { userId } }));
+        window.dispatchEvent(new CustomEvent("smartspend-financial-sync", { detail: { userId } }));
+      } catch {
+        /* ignore */
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

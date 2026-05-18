@@ -234,23 +234,53 @@ const DarkPatternDetector = ({ userId }) => {
     [timelineEvents, selectedKey],
   );
 
-  const totalThreats = patternsData?.total_dark_patterns ?? 0;
-  const atRisk = patternsData?.total_money_at_risk || 0;
+  const totalThreats =
+    (patternsData?.total_dark_patterns ?? 0) +
+    (rupeeData?.traps?.length ?? 0) +
+    (proactive?.counts?.total ?? 0);
+  const proactiveAtRisk = useMemo(() => {
+    const buckets = proactive?.alerts || {};
+    const all = [...(buckets.critical || []), ...(buckets.urgent || []), ...(buckets.upcoming || [])];
+    return all.reduce((sum, a) => sum + Number(a.charge_amount || 0), 0);
+  }, [proactive]);
+
+  const atRisk = (patternsData?.total_money_at_risk || 0) + proactiveAtRisk;
   const recoverable = patternsData?.potential_refunds || 0;
   const criticalCount = patternsData?.critical_count ?? 0;
 
   const protectionPct = useMemo(() => {
-    if (!timelineEvents.length) return 100;
-    const penalty = Math.min(40, criticalCount * 9 + Math.min(15, totalThreats * 2));
-    return Math.max(58, Math.round(100 - penalty));
-  }, [timelineEvents.length, criticalCount, totalThreats]);
+    const proactiveTotal = proactive?.counts?.total ?? 0;
+    const proactiveCritical = proactive?.counts?.critical ?? 0;
+    const rupeeCount = rupeeData?.traps?.length ?? 0;
+    if (!timelineEvents.length && proactiveTotal === 0 && rupeeCount === 0) return 100;
+    const penalty = Math.min(
+      48,
+      criticalCount * 9 +
+        Math.min(15, totalThreats * 2) +
+        Math.min(14, proactiveCritical * 4) +
+        Math.min(10, Math.max(0, proactiveTotal - proactiveCritical)) +
+        Math.min(8, rupeeCount * 4),
+    );
+    return Math.max(50, Math.round(100 - penalty));
+  }, [
+    timelineEvents.length,
+    criticalCount,
+    totalThreats,
+    proactive?.counts?.total,
+    proactive?.counts?.critical,
+    rupeeData?.traps?.length,
+  ]);
 
   const onScan = async () => {
     setBusy(true);
     try {
       await scanDarkPatterns(userId);
+      await generatePatternAlerts(userId);
       await load();
       await loadProactive();
+      showToast("Scan complete — dark patterns and upcoming charges refreshed");
+    } catch (e) {
+      showToast(e?.message || "Scan failed");
     } finally {
       setBusy(false);
     }
@@ -384,10 +414,16 @@ const DarkPatternDetector = ({ userId }) => {
 
       {/* Action strip */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="inline-flex items-center gap-2 rounded-xl border-2 border-green-500/45 bg-green-500/15 px-3 py-2">
-              <Zap className="h-5 w-5 shrink-0 text-green-400" />
-              <span className="text-sm font-bold text-green-300">Live analysis</span>
-            </div>
+            <button
+              type="button"
+              onClick={onScan}
+              disabled={busy}
+              title="Re-scan transactions and refresh predictions"
+              className="inline-flex items-center gap-2 rounded-xl border-2 border-green-500/45 bg-green-500/15 px-3 py-2 transition hover:bg-green-500/25 disabled:opacity-50"
+            >
+              <Zap className={`h-5 w-5 shrink-0 text-green-400 ${busy ? "animate-pulse" : ""}`} />
+              <span className="text-sm font-bold text-green-300">{busy ? "Analyzing…" : "Live analysis"}</span>
+            </button>
             <button
               type="button"
               onClick={onScan}

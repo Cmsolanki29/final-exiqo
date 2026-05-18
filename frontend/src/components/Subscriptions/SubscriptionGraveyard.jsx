@@ -34,6 +34,13 @@ import { useToast } from "../common/Toast";
 import { ErrorCard } from "../common/ErrorCard";
 import { PageHeader } from "../Dashboard/shared/PageHeader";
 import { inr } from "../../lib/format";
+import { humanizeVerdictReason } from "../../utils/subscriptionVerdictCopy";
+import ReminderBadges, { ReminderCadenceLine } from "./ReminderBadges";
+import {
+  enrichReminderRow,
+  normalizeRemindersForDisplay,
+  snoozeRequiresAccountability,
+} from "../../utils/reminderBadges";
 
 const DEMO_MODE =
   process.env.REACT_APP_DEMO_MODE === "true" || process.env.REACT_APP_DEMO_MODE === "1";
@@ -154,9 +161,11 @@ export default function SubscriptionGraveyard({ userId }) {
 
   const pollReminders = useCallback(async () => {
     try {
-      const r = await getSubscriptionRemindersPending(userId);
-      const first = (r.reminders || [])[0];
-      setBanner(first || null);
+      const r = await getSubscriptionRemindersPending(userId, { include_upcoming: true });
+      const normalized = normalizeRemindersForDisplay(r.reminders);
+      const first =
+        normalized.find((x) => String(x.state || "").toLowerCase() === "shown") || normalized[0];
+      setBanner(first ? enrichReminderRow(first) : null);
     } catch {
       /* ignore */
     }
@@ -420,7 +429,7 @@ export default function SubscriptionGraveyard({ userId }) {
           animate={{ opacity: 1, y: 0 }}
           className="rounded-2xl border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-50 backdrop-blur-md"
         >
-          <span className="font-semibold">Escalated accountability.</span> Renewal reminders now follow the denser T-15 → T-1 cadence after you kept subscriptions through a full billing cycle without cancelling.
+          <span className="font-semibold">Tier 2 reminders active.</span> You will get more renewal nudges (T-15 down to T-1) after keeping a subscription through a full billing cycle.
         </motion.div>
       ) : null}
 
@@ -432,15 +441,15 @@ export default function SubscriptionGraveyard({ userId }) {
         >
           <div className="flex items-start gap-3">
             <Bell className="mt-0.5 h-5 w-5 shrink-0 text-amber-200" />
-            <div>
+            <div className="min-w-0">
               <p className="text-sm font-semibold text-white">Renewal reminder — {banner.merchant}</p>
-              <p className="text-xs text-gray-400">
-                {banner.reminder_type} · {inr(banner.monthly_cost)}/mo
-              </p>
+              <ReminderBadges reminder={banner} className="mt-2" />
+              <p className="mt-1 text-xs text-gray-400">{inr(banner.monthly_cost)}/month</p>
+              <ReminderCadenceLine reminder={banner} />
               <p className="mt-2 text-[11px] text-amber-200/80">
-                {Number(banner.reminder_escalation_tier ?? 1) >= 2
-                  ? "“Remind later” opens an accountability prompt — required on escalation tier 2+."
-                  : "Tier 1 cycle: “Remind later” snoozes ~24h without a written reason."}
+                {snoozeRequiresAccountability(banner.reminder_escalation_tier)
+                  ? "Remind later asks why you are keeping this subscription (Tier 2+)."
+                  : "Remind later snoozes about 24 hours — no reason needed on Tier 1."}
               </p>
             </div>
           </div>
@@ -641,7 +650,11 @@ export default function SubscriptionGraveyard({ userId }) {
                   <p className="mt-1 text-xs text-gray-500 tabular-nums">
                     {inr(s.monthly_cost || s.amount)} / mo · {s.linked_app_package ? "Linked app" : "No app link"}
                   </p>
-                  {s.verdict_reason ? <p className="mt-2 text-xs text-gray-400">{s.verdict_reason}</p> : null}
+                  {s.verdict_reason ? (
+                    <p className="mt-2 text-xs text-gray-400">
+                      {humanizeVerdictReason(s.verdict_reason, s.current_verdict)}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {s.verdict_confidence != null ? (

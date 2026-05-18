@@ -24,6 +24,8 @@ class EnhancedIsolationForest:
     Uses 8 engineered features + StandardScaler + per-user category stats.
     """
 
+    DETECTOR_VERSION = "isolation-forest-v2.0"
+
     def __init__(self) -> None:
         self.models: dict[int, IsolationForest] = {}
         self.scalers: dict[int, StandardScaler] = {}
@@ -412,6 +414,89 @@ class EnhancedIsolationForest:
         finally:
             cursor.close()
             conn.close()
+
+    def score_single(
+        self,
+        user_id: int,
+        txn: dict[str, Any],
+        features: dict[str, Any] | None = None,
+    ) -> Any:
+        """Score one transaction in-process (Phase 3 / HybridScorer hot path)."""
+        from schemas.score import ScoreResult
+
+        t0 = time.perf_counter()
+        uid = int(user_id)
+        if uid not in self.models:
+            ms = (time.perf_counter() - t0) * 1000
+            return ScoreResult.cold_start(
+                detector_version=self.DETECTOR_VERSION, latency_ms=ms
+            )
+
+        hour = txn.get("hour_of_day")
+        if hour is None:
+            hour = txn.get("hour", 12)
+        row = {
+            "amount": float(txn.get("amount") or 0),
+            "type": str(txn.get("type") or "DEBIT"),
+            "category": txn.get("category") or "Others",
+            "merchant": txn.get("merchant") or txn.get("payee") or "",
+            "hour_of_day": int(hour) if hour is not None else 12,
+            "day_of_week": int(txn.get("day_of_week") or 3),
+            "is_weekend": txn.get("is_weekend", False),
+            "is_night_txn": bool(txn.get("is_night_txn", False)),
+            "balance_after": float(txn.get("balance_after") or 100000.0),
+            "payment_method": txn.get("payment_method") or "UPI",
+        }
+        df = pd.DataFrame([row])
+        try:
+            feat_mat = self.engineer_features(df, uid)
+            scaled = self.scalers[uid].transform(feat_mat)
+            raw = float(self.models[uid].score_samples(scaled)[0])
+            risk_score = int(round(float(self._risk_scores_from_samples(np.array([raw]))[0])))
+        except Exception as exc:  # noqa: BLE001
+            ms = (time.perf_counter() - t0) * 1000
+            return ScoreResult.cold_start(
+                detector_version=self.DETECTOR_VERSION, latency_ms=ms
+            )
+
+        unsup = min(max(risk_score / 100.0, 0.0), 1.0)
+        signals: dict[str, Any] = {
+            "reason": "isolation_forest",
+            "ml_score": risk_score,
+            "isolation_forest": risk_score,
+        }
+        if features:
+            for key in (
+                "amt_ratio_30d",
+                "hours_since_prev",
+                "velocity_inr_per_hour",
+                "merchant_changed",
+                "graph_ring_risk",
+                "graph_shared_merchant_count",
+            ):
+                if key in features:
+                    signals[key] = features[key]
+
+        ms = (time.perf_counter() - t0) * 1000
+        return ScoreResult(
+            risk_score=risk_score,
+            risk_level=self.get_risk_level(risk_score),
+            unsup_score=unsup,
+            sup_score=None,
+            signals=signals,
+            explanation=self.get_anomaly_reason(row, uid),
+            detector_version=self.DETECTOR_VERSION,
+            latency_ms=ms,
+        )
+
+    def warm_start(self, user_id: int) -> bool:
+        """Train IF model for user if enough history exists."""
+        return self.train(int(user_id))
+
+    def retrain(self, user_id: int, include_labels: bool = False) -> bool:
+        """Retrain IF; ``include_labels`` reserved for future supervised blend."""
+        _ = include_labels
+        return self.train(int(user_id))
 
     def train_all_users(self) -> None:
         conn = self.get_db_connection()

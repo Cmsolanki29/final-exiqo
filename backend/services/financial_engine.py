@@ -110,7 +110,7 @@ def recalculate_financial_state(
         for r in purchase_rows
     ]
 
-    # ── 4. Festival monthly provision (upcoming within 90 days) ──────────────
+    # ── 4. Festival monthly provision (upcoming within 180 days) ─────────────
     cur.execute(
         """
         SELECT id, festival_name, COALESCE(monthly_target,0), festival_date,
@@ -118,7 +118,7 @@ def recalculate_financial_state(
         FROM festival_budgets
         WHERE user_id=%s
           AND festival_date >= CURRENT_DATE
-          AND festival_date <= CURRENT_DATE + INTERVAL '90 days'
+          AND festival_date <= CURRENT_DATE + INTERVAL '180 days'
           AND UPPER(COALESCE(status,'UPCOMING')) <> 'COMPLETED'
         """,
         (user_id,),

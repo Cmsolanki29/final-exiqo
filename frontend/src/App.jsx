@@ -49,6 +49,7 @@ const TransactionsTab = lazy(() => import("./components/app-tabs/TransactionsTab
 const InsightsTab = lazy(() => import("./components/app-tabs/InsightsTab"));
 const TripPlannerPage = lazy(() => import("./pages/AIActions/TripPlannerPage"));
 const CyberSafeConnectPage = lazy(() => import("./pages/RiskAwareness/CyberSafeConnectPage"));
+const FraudShieldVigil = lazy(() => import("./components/FraudShield/index"));
 /** Legacy `activeTab === "simulator"` only (sidebar tab removed); renders Insights. */
 const SimulatorTab = lazy(() => import("./components/app-tabs/SimulatorTab"));
 const SettingsTab = lazy(() => import("./components/app-tabs/SettingsTab"));
@@ -138,6 +139,40 @@ const App = () => {
       /* ignore */
     }
   }, []);
+
+  /** Deep-link `/fraud-shield` → Risk Awareness FraudShield Vigil page. */
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const path = url.pathname.replace(/\/+$/, "") || "/";
+      if (path === "/fraud-shield" || path.endsWith("/fraud-shield")) {
+        setActiveTab("fraud-shield");
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  /** Keep `/fraud-shield` in sync with the Risk Awareness tab. */
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      if (activeTab === "fraud-shield") {
+        if (!url.pathname.endsWith("/fraud-shield")) {
+          url.pathname = "/fraud-shield";
+          window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+        }
+        return;
+      }
+      if (url.pathname.endsWith("/fraud-shield")) {
+        url.pathname = "/";
+        const q = url.searchParams.toString();
+        window.history.replaceState({}, "", `${url.pathname}${q ? `?${q}` : ""}${url.hash}`);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [activeTab]);
 
   /** Clear CyberSafe screen param when leaving Risk Awareness tab. */
   useEffect(() => {
@@ -425,6 +460,11 @@ const App = () => {
                 {activeTab === "cybersafe-connect" && (
                   <Suspense fallback={<SkeletonCard lines={4} height={120} />}>
                     <CyberSafeConnectPage />
+                  </Suspense>
+                )}
+                {activeTab === "fraud-shield" && (
+                  <Suspense fallback={<SkeletonCard lines={4} height={120} />}>
+                    <FraudShieldVigil onNavigate={setActiveTab} />
                   </Suspense>
                 )}
 

@@ -1,7 +1,6 @@
 import React from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Activity, ChevronRight, Sparkles } from "lucide-react";
-import { GlassCard } from "../intro/GlassCard";
+import { Activity, ChevronRight } from "lucide-react";
 import { SkeletonCard } from "../common/SkeletonCard";
 
 export type CommandCard = {
@@ -23,34 +22,42 @@ type Props = {
   aiActive: boolean;
 };
 
-const urgencyStyles: Record<
-  CommandCard["urgency"],
-  { ring: string; badge: string; glow: string }
+type CardVariant = "critical" | "migration" | "optimization" | "neutral";
+
+function urgencyToVariant(urgency: CommandCard["urgency"]): CardVariant {
+  if (urgency === "critical") return "critical";
+  if (urgency === "warning" || urgency === "opportunity") return "migration";
+  if (urgency === "safe") return "optimization";
+  return "neutral";
+}
+
+const variantStyles: Record<
+  CardVariant,
+  { border: string; shadow: string; badgeBg: string; badgeColor: string }
 > = {
   critical: {
-    ring: "border-rose-500/35 hover:border-rose-400/50",
-    badge: "bg-rose-500/20 text-rose-200 ring-1 ring-rose-500/30",
-    glow: "bg-rose-500/15",
+    border: "1px solid rgba(239, 68, 68, 0.35)",
+    shadow: "0 0 20px rgba(239, 68, 68, 0.08)",
+    badgeBg: "rgba(239, 68, 68, 0.18)",
+    badgeColor: "rgb(252, 165, 165)",
   },
-  warning: {
-    ring: "border-amber-500/35 hover:border-amber-400/50",
-    badge: "bg-amber-500/20 text-amber-100 ring-1 ring-amber-500/30",
-    glow: "bg-amber-500/12",
+  migration: {
+    border: "1px solid rgba(234, 179, 8, 0.35)",
+    shadow: "0 0 20px rgba(234, 179, 8, 0.08)",
+    badgeBg: "rgba(234, 179, 8, 0.18)",
+    badgeColor: "rgb(253, 224, 71)",
   },
-  opportunity: {
-    ring: "border-violet-500/35 hover:border-violet-400/50",
-    badge: "bg-violet-500/20 text-violet-100 ring-1 ring-violet-500/30",
-    glow: "bg-violet-500/12",
+  optimization: {
+    border: "1px solid rgba(34, 197, 94, 0.35)",
+    shadow: "0 0 20px rgba(34, 197, 94, 0.08)",
+    badgeBg: "rgba(34, 197, 94, 0.18)",
+    badgeColor: "rgb(134, 239, 172)",
   },
-  safe: {
-    ring: "border-emerald-500/30 hover:border-emerald-400/45",
-    badge: "bg-emerald-500/20 text-emerald-100 ring-1 ring-emerald-500/25",
-    glow: "bg-emerald-500/10",
-  },
-  info: {
-    ring: "border-cyan-500/25 hover:border-cyan-400/40",
-    badge: "bg-cyan-500/15 text-cyan-50 ring-1 ring-cyan-500/25",
-    glow: "bg-cyan-500/10",
+  neutral: {
+    border: "1px solid rgba(255, 255, 255, 0.12)",
+    shadow: "none",
+    badgeBg: "rgba(255, 255, 255, 0.1)",
+    badgeColor: "rgba(255, 255, 255, 0.75)",
   },
 };
 
@@ -58,71 +65,94 @@ export default function AIFinancialCommandCenter({ signalCount, cards, loading, 
   const reduce = useReducedMotion();
 
   return (
-    <GlassCard
-      surface="panel"
-      padding="md"
-      className="relative mb-6 overflow-hidden border-purple-500/20 bg-gradient-to-br from-purple-950/40 via-[#0c0a18]/90 to-cyan-950/25 ring-1 ring-white/[0.06]"
+    <section
+      className="relative mb-6 font-sans"
+      style={{ background: "#0d0f14" }}
+      aria-labelledby="ai-command-center-heading"
     >
-      {!reduce ? (
-        <div
-          className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-purple-500/15 blur-3xl"
-          aria-hidden
-        />
-      ) : null}
-      {!reduce ? (
-        <div
-          className="pointer-events-none absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-cyan-500/10 blur-3xl"
-          aria-hidden
-        />
-      ) : null}
-
-      <div className="relative z-10 mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="mb-1 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
-            <Sparkles className="h-3.5 w-3.5 text-cyan-300" aria-hidden />
-            Live layer
-          </div>
-          <h2 className="mt-2 font-heading text-2xl font-bold tracking-tight text-white sm:text-3xl">
+      <motion.div
+        initial={reduce ? false : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+        className="relative flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between"
+      >
+        <motion.div
+          initial={reduce ? false : { opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          className="min-w-0 flex-1"
+        >
+          <h2
+            id="ai-command-center-heading"
+            className="text-2xl font-semibold tracking-tight text-white sm:text-[1.75rem]"
+          >
             AI financial command center
           </h2>
-          <p className="mt-1 max-w-xl text-sm text-white/60">
+          <p className="mt-1.5 max-w-xl text-sm font-normal" style={{ color: "rgba(255,255,255,0.50)" }}>
             Pro signals from subscriptions, spend, and health — prioritized for action.
           </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 rounded-2xl border border-white/10 bg-black/30 px-4 py-2.5">
-          <span className="relative flex h-2.5 w-2.5">
+        </motion.div>
+
+        <motion.div
+          initial={reduce ? false : { opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.05, ease: [0.22, 1, 0.36, 1] }}
+          className="flex shrink-0 items-center gap-2 self-start rounded-full px-4 py-2"
+          style={{
+            background: "rgba(255,255,255,0.07)",
+            border: "1px solid rgba(255,255,255,0.1)",
+          }}
+        >
+          <span className="relative flex h-2 w-2">
             {aiActive ? (
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
+              <span
+                className="absolute inline-flex h-full w-full animate-ping rounded-full"
+                style={{ background: "rgba(52, 211, 153, 0.5)" }}
+              />
             ) : null}
             <span
-              className={`relative inline-flex h-2.5 w-2.5 rounded-full ${aiActive ? "bg-emerald-400" : "bg-white/30"}`}
+              className="relative inline-flex h-2 w-2 rounded-full"
+              style={{ background: aiActive ? "rgb(52, 211, 153)" : "rgba(255,255,255,0.35)" }}
             />
           </span>
-          <div className="text-right">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-white/45">Status</p>
-            <p className="text-sm font-semibold text-white">{aiActive ? "AI active" : "Standby"}</p>
-          </div>
-          <Activity className="h-5 w-5 text-cyan-300/80" aria-hidden />
-          <span className="rounded-lg bg-white/[0.06] px-2 py-1 text-xs font-bold tabular-nums text-white/90">
-            {signalCount}
+          <span className="text-sm font-semibold text-white">
+            {aiActive ? "AI active" : "Standby"}
           </span>
-        </div>
-      </div>
+          <span className="text-sm font-normal" style={{ color: "rgba(255,255,255,0.45)" }}>
+            ·
+          </span>
+          <span className="text-sm font-semibold tabular-nums text-white">{signalCount}</span>
+          <Activity
+            className="h-4 w-4"
+            strokeWidth={1.75}
+            style={{ color: "rgba(255,255,255,0.55)" }}
+            aria-hidden
+          />
+        </motion.div>
+      </motion.div>
 
       {loading ? (
-        <div className="relative z-10 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <SkeletonCard key={i} lines={4} height={148} />
           ))}
         </div>
       ) : cards.length === 0 ? (
-        <p className="relative z-10 rounded-2xl border border-white/10 bg-black/25 px-4 py-6 text-center text-sm text-white/60">
+        <p
+          className="mt-6 rounded-xl px-5 py-6 text-center text-sm font-normal"
+          style={{
+            background: "rgba(255,255,255,0.07)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            color: "rgba(255,255,255,0.50)",
+          }}
+        >
           No prioritized alerts right now. Keep spending steady — we will surface waste, upgrades, and wins here.
         </p>
       ) : (
-        <div className="relative z-10 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {cards.map((c, idx) => {
-            const u = urgencyStyles[c.urgency];
+            const variant = urgencyToVariant(c.urgency);
+            const vs = variantStyles[variant];
             return (
               <motion.button
                 key={c.id}
@@ -131,33 +161,53 @@ export default function AIFinancialCommandCenter({ signalCount, cards, loading, 
                 initial={reduce ? false : { opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: reduce ? 0 : 0.05 * idx, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                className={`group relative overflow-hidden rounded-2xl border bg-black/25 p-5 text-left backdrop-blur-sm transition-all duration-300 hover:bg-white/[0.04] ${u.ring}`}
+                className="group w-full text-left transition-opacity duration-200 hover:opacity-95"
+                style={{
+                  background: "rgba(255,255,255,0.07)",
+                  border: vs.border,
+                  boxShadow: vs.shadow,
+                  borderRadius: "12px",
+                  padding: "20px",
+                }}
               >
-                {!reduce ? (
-                  <div
-                    className={`pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full blur-2xl ${u.glow}`}
-                    aria-hidden
-                  />
-                ) : null}
-                <div className="relative z-10 flex items-start justify-between gap-2">
-                  <span className={`inline-flex max-w-[85%] items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${u.badge}`}>
-                    {c.badge}
-                  </span>
-                </div>
-                <h3 className="relative z-10 mt-3 text-base font-bold leading-snug text-white">{c.title}</h3>
-                <p className="relative z-10 mt-2 text-sm leading-relaxed text-white/60">{c.body}</p>
-                <div className="relative z-10 mt-4 flex items-end justify-between gap-3">
+                <span
+                  className="inline-block text-[11px] font-semibold uppercase tracking-wide"
+                  style={{
+                    background: vs.badgeBg,
+                    color: vs.badgeColor,
+                    padding: "4px 10px",
+                    borderRadius: "20px",
+                  }}
+                >
+                  {c.badge}
+                </span>
+                <h3 className="mt-3 text-base font-semibold leading-snug text-white">{c.title}</h3>
+                <p className="mt-2 text-sm font-normal leading-relaxed" style={{ color: "rgba(255,255,255,0.50)" }}>
+                  {c.body}
+                </p>
+                <div className="mt-4 flex items-end justify-between gap-3">
                   <div>
                     {c.metricLabel ? (
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-white/45">{c.metricLabel}</p>
+                      <p
+                        className="text-[11px] font-semibold uppercase tracking-wide"
+                        style={{ color: "rgba(255,255,255,0.45)" }}
+                      >
+                        {c.metricLabel}
+                      </p>
                     ) : null}
                     {c.metricValue ? (
-                      <p className="mt-0.5 text-xl font-bold tabular-nums text-white">{c.metricValue}</p>
+                      <p className="mt-0.5 text-xl font-semibold tabular-nums text-white">{c.metricValue}</p>
                     ) : null}
                   </div>
-                  <span className="inline-flex items-center gap-1 rounded-xl border border-white/15 bg-white/[0.06] px-3 py-2 text-xs font-semibold text-white/90 transition group-hover:border-white/25 group-hover:bg-white/[0.1]">
+                  <span
+                    className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold text-white transition group-hover:bg-white/[0.12]"
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.15)",
+                      background: "rgba(255,255,255,0.06)",
+                    }}
+                  >
                     {c.ctaLabel}
-                    <ChevronRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" aria-hidden />
+                    <ChevronRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" strokeWidth={1.75} aria-hidden />
                   </span>
                 </div>
               </motion.button>
@@ -165,6 +215,6 @@ export default function AIFinancialCommandCenter({ signalCount, cards, loading, 
           })}
         </div>
       )}
-    </GlassCard>
+    </section>
   );
 }

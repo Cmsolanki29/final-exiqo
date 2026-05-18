@@ -17,6 +17,7 @@ import {
   Wallet,
 } from "lucide-react";
 import useSmartSpend from "../../hooks/useSmartSpend";
+import { humanizeVerdictReason } from "../../utils/subscriptionVerdictCopy";
 import { useAuth } from "../../context/AuthContext";
 import {
   apiUtils,
@@ -28,11 +29,7 @@ import {
   getHealthNarrative,
   getSubscriptions,
 } from "../../services/api";
-import {
-  getAISummary,
-  getInsightsFeed,
-  markInsightRead,
-} from "../../services/subscriptionIntelligence";
+import { getAISummary } from "../../services/subscriptionIntelligence";
 import HealthScoreGauge from "../Charts/HealthScoreGauge";
 import MonthlyTrendChart from "../Charts/MonthlyTrendChart";
 import SpendingPieChart from "../Charts/SpendingPieChart";
@@ -43,9 +40,7 @@ import DashboardGreeting from "./DashboardGreeting";
 import KPICard from "./shared/KPICard";
 import QuickActionCard from "./shared/QuickActionCard";
 import PremiumCard from "./shared/PremiumCard";
-import NerveCentreCard from "./NerveCentreCard";
 import AIFinancialCommandCenter, { type CommandCard } from "./AIFinancialCommandCenter";
-import LiveInsightsFeed, { type FeedItem } from "./LiveInsightsFeed";
 
 const monthKey = (y: number, m: number) => `${y}-${String(m).padStart(2, "0")}`;
 
@@ -56,21 +51,7 @@ type BreakdownData = {
   mode: string;
   sources: BreakdownSource[];
   total_spend: number;
-  has_duplicates: boolean;
 };
-
-async function runDeduplication(userId: number): Promise<void> {
-  try {
-    const res = await fetch(`/api/dashboard/deduplicate?user_id=${userId}`, { method: "POST" });
-    const data = await res.json();
-    if (data.success) {
-      window.alert(`✅ Fixed ${data.marked_as_internal} duplicate transaction(s)`);
-      window.dispatchEvent(new CustomEvent("dashboardModeChanged"));
-    }
-  } catch {
-    window.alert("Deduplication failed. Please try again.");
-  }
-}
 
 function SourceBreakdownCard({ userId }: { userId: number }) {
   const [breakdown, setBreakdown] = useState<BreakdownData | null>(null);
@@ -99,7 +80,7 @@ function SourceBreakdownCard({ userId }: { userId: number }) {
 
   if (loadingBd || !breakdown || breakdown.sources.length === 0) return null;
 
-  const { sources, total_spend, has_duplicates } = breakdown;
+  const { sources, total_spend } = breakdown;
   const fmt = (n: number) =>
     new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
@@ -161,33 +142,8 @@ function SourceBreakdownCard({ userId }: { userId: number }) {
         </div>
       )}
 
-      {has_duplicates && (
-        <div className="mt-4 flex flex-col gap-2 rounded-xl border border-rose-500/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-200 sm:flex-row sm:items-center sm:justify-between">
-          <span>⚠️ Possible CC bill payment double-count detected.</span>
-          <button
-            type="button"
-            onClick={() => void runDeduplication(userId)}
-            className="shrink-0 rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-600"
-          >
-            Fix duplicates
-          </button>
-        </div>
-      )}
     </div>
   );
-}
-
-function formatRelativeTime(iso: string | null | undefined): string {
-  if (!iso) return "Recently";
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return "Recently";
-  const mins = Math.floor((Date.now() - t) / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
 }
 
 type TrendPoint = { month: string; income?: number; expense?: number; saved?: number };
@@ -213,7 +169,7 @@ export default function Dashboard({
 }: DashboardProps) {
   const reduce = useReducedMotion();
   const { user: authUser } = useAuth();
-  const { spending, trends, health, anomalies, loading, error, loadWarnings, refetch } = useSmartSpend(
+  const { spending, trends, health, loading, error, loadWarnings, refetch } = useSmartSpend(
     userId,
     month,
     year
@@ -224,8 +180,7 @@ export default function Dashboard({
   const [aiIntel, setAiIntel] = useState<{
     loading: boolean;
     summary: Awaited<ReturnType<typeof getAISummary>> | null;
-    insights: Array<Record<string, unknown>>;
-  }>({ loading: false, summary: null, insights: [] });
+  }>({ loading: false, summary: null });
 
   const [intel, setIntel] = useState({
     loading: true,
@@ -310,6 +265,22 @@ export default function Dashboard({
     return () => window.removeEventListener("dashboardModeChanged", handler);
   }, [loadIntel, userId]);
 
+  // Refresh health score + KPIs when EMI/purchase/festival data changes
+  useEffect(() => {
+    const handler = () => {
+      refetch();
+      loadIntel();
+    };
+    window.addEventListener("smartspend:health-score-changed", handler);
+    window.addEventListener("smartspend:purchase-goals-changed", handler);
+    window.addEventListener("smartspend-financial-sync", handler);
+    return () => {
+      window.removeEventListener("smartspend:health-score-changed", handler);
+      window.removeEventListener("smartspend:purchase-goals-changed", handler);
+      window.removeEventListener("smartspend-financial-sync", handler);
+    };
+  }, [refetch, loadIntel]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -328,26 +299,19 @@ export default function Dashboard({
 
   useEffect(() => {
     if (!canLiveIntel || !authUser?.id) {
-      setAiIntel({ loading: false, summary: null, insights: [] });
+      setAiIntel({ loading: false, summary: null });
       return;
     }
     let cancelled = false;
     (async () => {
       setAiIntel((s) => ({ ...s, loading: true }));
       try {
-        const [sum, feed] = await Promise.all([
-          getAISummary(authUser.id),
-          getInsightsFeed(authUser.id, false, 14),
-        ]);
+        const sum = await getAISummary(authUser.id);
         if (!cancelled) {
-          setAiIntel({
-            loading: false,
-            summary: sum,
-            insights: Array.isArray(feed?.insights) ? feed.insights : [],
-          });
+          setAiIntel({ loading: false, summary: sum });
         }
       } catch {
-        if (!cancelled) setAiIntel({ loading: false, summary: null, insights: [] });
+        if (!cancelled) setAiIntel({ loading: false, summary: null });
       }
     })();
     return () => {
@@ -441,14 +405,15 @@ export default function Dashboard({
         out.push({
           id: "risk-waste",
           urgency: "critical",
-          badge: "Critical",
+          badge: "CRITICAL",
           title: firstRisk
-            ? `${String(firstRisk.subscription_name || "Subscription")} flagged`
-            : "Subscription waste detected",
-          body: String(
-            firstRisk?.reasoning || "Declining or dormant usage — review renewals and overlap."
-          ),
-          metricLabel: "Flagged waste",
+            ? `Review ${String(firstRisk.subscription_name || "subscription")}`
+            : "Subscriptions to review",
+          body: humanizeVerdictReason(
+            String(firstRisk?.reasoning || ""),
+            String(firstRisk?.verdict || "declining")
+          ) || "Usage dropped or you rarely open this app — worth checking before the next bill.",
+          metricLabel: "Possible savings",
           metricValue: `${apiUtils.formatINR(waste)}/mo`,
           ctaLabel: "Review",
           onCta: goSubs,
@@ -461,9 +426,12 @@ export default function Dashboard({
           id: "upgrade",
           urgency: "opportunity",
           badge: "Opportunity",
-          title: `${String(u0.subscription_name || "Subscription")} — upgrade signal`,
-          body: String(u0.reasoning || "High in-app time may justify a paid tier."),
-          metricLabel: "Usage (30d)",
+          title: `${String(u0.subscription_name || "Subscription")} — paid plan may help`,
+          body: humanizeVerdictReason(
+            String(u0.reasoning || ""),
+            "upgrade_recommended"
+          ) || "You use this app a lot — a paid plan might be worth it.",
+          metricLabel: "Last 30 days",
           metricValue: `${Number(u0.current_usage_hours || 0).toFixed(0)}h`,
           ctaLabel: "Review",
           onCta: goSubs,
@@ -475,7 +443,7 @@ export default function Dashboard({
         out.push({
           id: "migration",
           urgency: "warning",
-          badge: "Migration",
+          badge: "MIGRATION",
           title: String(m0.title || "Category shift"),
           body: String(m0.description || "We detected a usage migration in the same category."),
           metricLabel: "Save up to",
@@ -489,7 +457,7 @@ export default function Dashboard({
         out.push({
           id: "savings-ytd",
           urgency: "safe",
-          badge: "Optimization",
+          badge: "OPTIMIZATION",
           title: "Year-to-date subscription savings",
           body: "Ledgered wins from cancellations and prevention.",
           metricLabel: "Saved YTD",
@@ -518,7 +486,7 @@ export default function Dashboard({
       out.push({
         id: "fraud",
         urgency: "critical",
-        badge: "Critical",
+        badge: "CRITICAL",
         title: `${intel.fraudPending} FraudShield alert${intel.fraudPending > 1 ? "s" : ""}`,
         body: "Review before large transfers or new payees.",
         metricLabel: "Queue",
@@ -554,89 +522,6 @@ export default function Dashboard({
     }
     return Math.max(4, Math.min(14, n));
   }, [canLiveIntel, aiIntel.summary, intel.fraudPending, intel.monthlyWaste]);
-
-  const feedItems = useMemo((): FeedItem[] => {
-    const rows: FeedItem[] = [];
-    const goSubs = () => setActiveTab?.("subscriptions");
-    const goTxn = () => setActiveTab?.("transactions");
-    const goInsights = () => setActiveTab?.("insights");
-
-    const markRead = async (insId: number) => {
-      if (!authUser?.id) return;
-      try {
-        await markInsightRead(authUser.id, insId);
-        setAiIntel((prev) => ({
-          ...prev,
-          insights: prev.insights.map((x) =>
-            Number(x.id) === insId ? { ...x, read_at: new Date().toISOString() } : x
-          ),
-        }));
-      } catch {
-        /* ignore */
-      }
-    };
-
-    if (canLiveIntel && aiIntel.insights.length) {
-      for (const raw of aiIntel.insights.slice(0, 6)) {
-        const ins = raw as Record<string, unknown>;
-        const typ = String(ins.insight_type || "").toLowerCase();
-        const sev: FeedItem["severity"] =
-          typ.includes("verdict") && String(ins.body || "").toLowerCase().includes("dormant")
-            ? "critical"
-            : typ.includes("migration") || typ.includes("substitution")
-              ? "warning"
-              : "info";
-        const unread = !ins.read_at;
-        rows.push({
-          id: `ins-${ins.id}`,
-          severity: sev,
-          badge: typ.replace(/_/g, " ") || "Insight",
-          timeLabel: formatRelativeTime(ins.created_at as string),
-          title: String(ins.title || "Insight"),
-          body: String(ins.body || "").slice(0, 280),
-          actions: [
-            { label: "Subscriptions", onClick: goSubs },
-            ...(unread && authUser?.id
-              ? [{ label: "Mark read", variant: "ghost" as const, onClick: () => void markRead(Number(ins.id)) }]
-              : []),
-          ],
-        });
-      }
-    }
-
-    const ax = Array.isArray(anomalies) ? anomalies : [];
-    for (const a of ax.slice(0, 4)) {
-      const rec = a as Record<string, unknown>;
-      const lvl = String(rec.risk_level || "MEDIUM").toUpperCase();
-      const sev: FeedItem["severity"] =
-        lvl === "CRITICAL" ? "critical" : lvl === "HIGH" ? "warning" : "info";
-      rows.push({
-        id: `anom-${rec.id}`,
-        severity: sev,
-        badge: `Anomaly · ${lvl}`,
-        timeLabel: formatRelativeTime(rec.transaction_date as string),
-        title: String(rec.merchant || rec.description || "Suspicious transaction"),
-        body: `Risk score ${Number(rec.risk_score || 0).toFixed(0)} · Review in Transactions.`,
-        rightLabel: "Amount",
-        rightValue: apiUtils.formatINR(Number(rec.amount || 0)),
-        actions: [{ label: "View transactions", onClick: goTxn }],
-      });
-    }
-
-    if (Array.isArray(healthRec) && healthRec[0]) {
-      rows.push({
-        id: "health-rec",
-        severity: "positive",
-        badge: "Health",
-        timeLabel: "Guidance",
-        title: "Financial health tip",
-        body: String(healthRec[0]).slice(0, 240),
-        actions: [{ label: "Insights", onClick: goInsights }],
-      });
-    }
-
-    return rows.slice(0, 8);
-  }, [canLiveIntel, aiIntel.insights, anomalies, healthRec, authUser?.id, setActiveTab]);
 
   if (loading) {
     return (
@@ -808,26 +693,7 @@ export default function Dashboard({
         </div>
       </section>
 
-      <div className="mt-6">
-        <LiveInsightsFeed
-          items={feedItems}
-          loading={Boolean(canLiveIntel && aiIntel.loading && feedItems.length === 0)}
-          onViewAll={() => setActiveTab?.("insights")}
-        />
-      </div>
-
-      <motion.section
-        className="mt-6"
-        initial={reduce ? false : { opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: reduce ? 0 : 0.12, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-      >
-        <PremiumCard variant="purple" className="!p-0" interactive={false}>
-          <NerveCentreCard userId={userId} setActiveTab={setActiveTab} />
-        </PremiumCard>
-      </motion.section>
-
-      {/* Row 2 — Quick action cards */}
+      {/* Quick action cards */}
       <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <QuickActionCard
           variant="emerald"

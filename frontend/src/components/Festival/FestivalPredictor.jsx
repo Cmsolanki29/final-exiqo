@@ -2,10 +2,13 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   deleteFestivalImportantDay,
   getFestivals,
+  getFestivalEventDetails,
   getFestivalImportantDays,
+  postFestivalAddEvent,
   postFestivalImportantDay,
   postFestivalSetBudget,
   putFestivalImportantDay,
+  putFestivalImportantDayReminder,
   putFestivalUpdateSavings,
 } from "../../services/api";
 import { useToast } from "../common/Toast";
@@ -54,16 +57,9 @@ function dispatchPlannerSync(userId) {
   }
 }
 
-/** Typical spend lines per festival — mirrors backend calendar hints (user-friendly presets). */
-const FESTIVAL_TYPICAL_CATEGORIES = {
-  Holi: ["Clothes", "Food", "Colors"],
-  "Eid al-Fitr": ["Clothes", "Food", "Gifts"],
-  Navratri: ["Clothes", "Jewelry", "Events"],
-  Dussehra: ["Shopping", "Food", "Travel"],
-  Diwali: ["Gifts", "Shopping", "Food", "Crackers", "Travel"],
-  Christmas: ["Gifts", "Food", "Travel"],
-  "New Year": ["Party", "Travel", "Shopping"],
-};
+function festCardKey(f) {
+  return `${f.festival_name}::${f.festival_date || ""}`;
+}
 
 function newRowId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
@@ -79,16 +75,6 @@ function breakdownToRows(breakdown) {
     name: String(name),
     amount: amount === "" || amount == null ? "" : String(Number(amount)),
   }));
-}
-
-function typicalForFestival(festivalName) {
-  if (!festivalName) return [];
-  const direct = FESTIVAL_TYPICAL_CATEGORIES[festivalName];
-  if (direct) return direct;
-  const key = Object.keys(FESTIVAL_TYPICAL_CATEGORIES).find(
-    (k) => k.toLowerCase() === festivalName.toLowerCase(),
-  );
-  return key ? FESTIVAL_TYPICAL_CATEGORIES[key] : [];
 }
 
 const FestivalPredictor = ({ userId }) => {
@@ -108,6 +94,11 @@ const FestivalPredictor = ({ userId }) => {
   const [festSaveInput, setFestSaveInput] = useState({});
   const [savingFest, setSavingFest] = useState(null);
   const [highlightFest, setHighlightFest] = useState(null);
+  const [festDetailOverrides, setFestDetailOverrides] = useState({});
+  const [loadingFestDetails, setLoadingFestDetails] = useState({});
+  const [eventModal, setEventModal] = useState(null);
+  const [savingEvent, setSavingEvent] = useState(false);
+  const [togglingReminderId, setTogglingReminderId] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -121,6 +112,7 @@ const FestivalPredictor = ({ userId }) => {
         throw festRes.reason;
       }
       setData(festRes.value);
+      setFestDetailOverrides({});
       if (dayRes.status === "fulfilled") {
         setImportantDays(dayRes.value.important_days || []);
       } else {
@@ -163,10 +155,12 @@ const FestivalPredictor = ({ userId }) => {
     setCategoryRows(breakdownToRows(f.category_breakdown));
   };
 
-  const suggestedCategories = useMemo(
-    () => (budgetFest ? typicalForFestival(budgetFest.festival_name) : []),
-    [budgetFest],
-  );
+  const suggestedCategories = useMemo(() => {
+    if (!budgetFest) return [];
+    const fromApi = budgetFest.suggested_categories;
+    if (Array.isArray(fromApi) && fromApi.length) return fromApi;
+    return ["Gifts", "Food", "Travel"];
+  }, [budgetFest]);
 
   const categoryRowsTotal = useMemo(() => {
     let sum = 0;
@@ -258,6 +252,7 @@ const FestivalPredictor = ({ userId }) => {
     try {
       await postFestivalSetBudget(userId, {
         festival_name: budgetFest.festival_name,
+        festival_date: budgetFest.festival_date,
         planned_budget: parseFloat(planned) || 0,
         category_budgets: cats,
       });
@@ -273,12 +268,15 @@ const FestivalPredictor = ({ userId }) => {
   };
 
   const openDayCreate = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 14);
     setDayModal({
       mode: "create",
       title: "",
-      event_date: "",
+      event_date: d.toISOString().slice(0, 10),
       notes: "",
       repeats_yearly: false,
+      reminder_enabled: true,
     });
   };
 
@@ -290,7 +288,28 @@ const FestivalPredictor = ({ userId }) => {
       event_date: (d.event_date || "").slice(0, 10),
       notes: d.notes || "",
       repeats_yearly: !!d.repeats_yearly,
+      reminder_enabled: d.reminder_enabled !== false,
     });
+  };
+
+  const toggleDayReminder = async (d) => {
+    setTogglingReminderId(d.id);
+    try {
+      const enabling = !d.reminder_enabled;
+      await putFestivalImportantDayReminder(userId, d.id, { reminder_enabled: enabling });
+      await load();
+      dispatchPlannerSync(userId);
+      showToast(
+        enabling
+          ? `Reminders on for “${d.title}” — pings at T-30, T-14, T-7, T-3, T-1`
+          : `Reminders paused for “${d.title}”`,
+        "success",
+      );
+    } catch (e) {
+      showToast(e.message || "Could not update reminder", "error");
+    } finally {
+      setTogglingReminderId(null);
+    }
   };
 
   const submitDayModal = async () => {
@@ -309,6 +328,7 @@ const FestivalPredictor = ({ userId }) => {
         event_date: dayModal.event_date,
         notes: (dayModal.notes || "").trim(),
         repeats_yearly: !!dayModal.repeats_yearly,
+        reminder_enabled: !!dayModal.reminder_enabled,
       };
       if (dayModal.mode === "create") {
         await postFestivalImportantDay(userId, payload);
@@ -319,8 +339,9 @@ const FestivalPredictor = ({ userId }) => {
       }
       setDayModal(null);
       await load();
+      dispatchPlannerSync(userId);
     } catch (e) {
-      showToast(e.message || "Could not save");
+      showToast(e.message || "Could not save", "error");
     } finally {
       setSavingDay(false);
     }
@@ -333,14 +354,96 @@ const FestivalPredictor = ({ userId }) => {
       await deleteFestivalImportantDay(userId, d.id);
       showToast("Removed");
       await load();
+      dispatchPlannerSync(userId);
     } catch (e) {
-      showToast(e.message || "Could not delete");
+      showToast(e.message || "Could not delete", "error");
     } finally {
       setDeletingId(null);
     }
   };
 
-  const upcoming = data?.upcoming_festivals || [];
+  const openEventCreate = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    setEventModal({
+      festival_name: "",
+      festival_date: d.toISOString().slice(0, 10),
+      planned_budget: "",
+    });
+  };
+
+  const submitEventModal = async () => {
+    if (!eventModal?.festival_name?.trim()) {
+      showToast("Enter an event name");
+      return;
+    }
+    if (!eventModal.festival_date) {
+      showToast("Pick a date");
+      return;
+    }
+    setSavingEvent(true);
+    try {
+      const planned = parseFloat(String(eventModal.planned_budget).replace(/,/g, "")) || 0;
+      const res = await postFestivalAddEvent(userId, {
+        festival_name: eventModal.festival_name.trim(),
+        festival_date: eventModal.festival_date,
+        planned_budget: planned,
+        category_budgets: {},
+      });
+      setEventModal(null);
+      await load();
+      dispatchPlannerSync(userId);
+      showToast(
+        res?.fallback === "purchase_goal"
+          ? "Saved as purchase goal (EMI tracker) — restart backend on port 8002 for full festival cards."
+          : "Event plan added — synced with EMI tracker ✅",
+      );
+    } catch (e) {
+      showToast(e.message || "Could not add event", "error");
+    } finally {
+      setSavingEvent(false);
+    }
+  };
+
+  const mergeFestWithDetails = (f) => {
+    const key = festCardKey(f);
+    const patch = festDetailOverrides[key];
+    return patch ? { ...f, ...patch } : f;
+  };
+
+  const fetchFestDetails = async (f, force = false) => {
+    const key = festCardKey(f);
+    if (!force && festDetailOverrides[key]?.ai_advice) return;
+    setLoadingFestDetails((s) => ({ ...s, [key]: true }));
+    try {
+      const res = await getFestivalEventDetails(userId, f.festival_name, f.festival_date, true);
+      const ev = res?.event;
+      if (ev) {
+        setFestDetailOverrides((s) => ({
+          ...s,
+          [key]: {
+            ai_advice: ev.ai_advice,
+            saving_tip: ev.saving_tip,
+            if_no_saving_warning: ev.if_no_saving_warning,
+            category_breakdown: ev.category_breakdown,
+            recommended_budget: ev.recommended_budget,
+            saved_so_far: ev.saved_so_far,
+            monthly_saving_needed: ev.monthly_saving_needed,
+            weekly_saving_needed: ev.weekly_saving_needed,
+            daily_saving_needed: ev.daily_saving_needed,
+            progress_pct: ev.progress_pct,
+            linked_goals: ev.linked_goals,
+          },
+        }));
+      }
+    } catch {
+      showToast("Could not refresh details");
+    } finally {
+      setLoadingFestDetails((s) => ({ ...s, [key]: false }));
+    }
+  };
+
+  const upcoming = (data?.upcoming_festivals || []).map(mergeFestWithDetails);
   const next = data?.next_festival;
   const nf = upcoming[0];
 
@@ -375,21 +478,26 @@ const FestivalPredictor = ({ userId }) => {
     });
   }, [importantDays]);
 
-  const toggleExpand = (name) => {
-    setExpanded((e) => ({ ...e, [name]: !e[name] }));
+  const toggleExpand = async (f) => {
+    const key = festCardKey(f);
+    const willOpen = !expanded[key];
+    setExpanded((e) => ({ ...e, [key]: willOpen }));
+    if (willOpen) await fetchFestDetails(f);
   };
 
   const logFestSavings = async (fest) => {
-    const raw = festSaveInput[fest.festival_name];
+    const key = festCardKey(fest);
+    const raw = festSaveInput[key];
     const amt = parseFloat(raw);
     if (Number.isNaN(amt) || amt <= 0) return;
-    setSavingFest(fest.festival_name);
+    setSavingFest(key);
     try {
       await putFestivalUpdateSavings(userId, {
         festival_name: fest.festival_name,
+        festival_date: fest.festival_date,
         amount_saved: amt,
       });
-      setFestSaveInput((s) => ({ ...s, [fest.festival_name]: "" }));
+      setFestSaveInput((s) => ({ ...s, [key]: "" }));
       await load();
       dispatchPlannerSync(userId);
       showToast("Festival savings logged! 🎉");
@@ -400,11 +508,13 @@ const FestivalPredictor = ({ userId }) => {
     }
   };
 
-  const scrollToFest = (name) => {
-    setHighlightFest(name);
-    setExpanded((e) => ({ ...e, [name]: true }));
+  const scrollToFest = (f) => {
+    const key = festCardKey(f);
+    setHighlightFest(key);
+    setExpanded((e) => ({ ...e, [key]: true }));
+    fetchFestDetails(f);
     setTimeout(() => {
-      document.getElementById(`fest-card-${name}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      document.getElementById(`fest-card-${key}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 80);
     setTimeout(() => setHighlightFest(null), 2000);
   };
@@ -421,12 +531,43 @@ const FestivalPredictor = ({ userId }) => {
 
   return (
     <div className="festival-page fade-in">
-      <PageHeader
-        eyebrow="PLANNING · FESTIVALS & EVENTS"
-        title="Festivals & Event Planner"
-        subtitle="Save before festivals hit. Celebrate guilt-free."
-        accentHex={ACCENT}
-      />
+      <div className="fest-page-head-row" style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 4 }}>
+        <PageHeader
+          eyebrow="PLANNING · FESTIVALS & EVENTS"
+          title="Festivals & Event Planner"
+          subtitle="Save before festivals hit. Celebrate guilt-free. Plans sync with EMI Tracker headroom."
+          accentHex={ACCENT}
+        />
+        {!loading && !err && (
+          <button type="button" className="btn-primary" onClick={openEventCreate} style={{ flexShrink: 0, marginTop: 8 }}>
+            + Add event plan
+          </button>
+        )}
+      </div>
+
+      {!loading && !err && data?.emi_constraints && (
+        <div
+          className="glass-card feature-card"
+          style={{
+            marginBottom: 14,
+            borderColor: data.emi_constraints.available_monthly_surplus < 5000 ? "rgba(245,158,11,0.45)" : "rgba(16,185,129,0.35)",
+          }}
+        >
+          <p className="small" style={{ margin: 0, fontWeight: 600, color: "#e2e8f0" }}>
+            EMI-aware budget headroom
+          </p>
+          <p className="muted small" style={{ margin: "8px 0 0" }}>
+            Income {inr(data.emi_constraints.monthly_income)}/mo − active EMIs{" "}
+            {inr(data.emi_constraints.active_emi_monthly)}/mo − purchase goals{" "}
+            {inr(data.emi_constraints.purchase_goals_monthly)}/mo − fixed{" "}
+            {inr(data.emi_constraints.fixed_expenses_monthly)}/mo ={" "}
+            <strong style={{ color: "#a7f3d0" }}>
+              {inr(data.emi_constraints.available_monthly_surplus)}/mo available
+            </strong>{" "}
+            for festival saving.
+          </p>
+        </div>
+      )}
 
       {!loading && !err && (
         <div className="planner-kpi-grid">
@@ -499,7 +640,7 @@ const FestivalPredictor = ({ userId }) => {
                     key={item.key}
                     type="button"
                     className="planner-h-node"
-                    onClick={() => scrollToFest(item.festival.festival_name)}
+                    onClick={() => scrollToFest(item.festival)}
                   >
                     <span className={`planner-h-node-dot ${urgencyDot(item.festival.urgency)}`} />
                     <span className="planner-h-node-name">{item.festival.festival_name}</span>
@@ -522,47 +663,78 @@ const FestivalPredictor = ({ userId }) => {
         <section className="glass-card fest-important-panel">
           <div className="fest-important-head">
             <div>
-              <h3>Your important days</h3>
-              <p className="muted small">
-                Birthdays, anniversaries, fees, travel — anything you want on your money calendar. Add, edit, or remove
-                anytime.
-              </p>
+              <h3>🔔 Date reminders</h3>
             </div>
             <button type="button" className="btn-primary" onClick={openDayCreate}>
-              + Add date
+              + Set reminder
             </button>
           </div>
 
           {importantDaysSorted.length === 0 ? (
             <p className="muted small" style={{ marginTop: 10 }}>
-              No dates yet. Tap <strong>+ Add date</strong> to add your first entry.
+              No reminders yet. Tap <strong>+ Set reminder</strong> for your first date.
             </p>
           ) : (
-            <div>
-              {importantDaysSorted.map((d) => (
-                <div key={d.id} className="planner-important-card">
-                  <div>
-                    <strong>🎂 {d.title}</strong>
-                    <p className="muted small">
-                      {d.days_until != null ? `${d.days_until} days` : "—"} ·{" "}
-                      {d.repeats_yearly ? "repeats yearly" : "one-time"}
-                    </p>
+            <div className="fest-reminder-list">
+              {importantDaysSorted.map((d) => {
+                const on = d.reminder_enabled !== false;
+                const due = d.reminder_due || d.reminder_status === "due_today";
+                const nextLabel = d.next_reminder_label || (on ? "Scheduled" : "Off");
+                const nextWhen =
+                  d.days_until_reminder != null && d.days_until_reminder > 0
+                    ? `in ${d.days_until_reminder}d`
+                    : due
+                      ? "today"
+                      : d.next_reminder_on
+                        ? new Date(`${d.next_reminder_on}T12:00:00`).toLocaleDateString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                          })
+                        : "";
+                return (
+                  <div
+                    key={d.id}
+                    className={`planner-important-card fest-reminder-card ${due ? "fest-reminder-due" : ""}`}
+                  >
+                    <div className="fest-reminder-main">
+                      <strong>{d.title}</strong>
+                      <p className="muted small">
+                        {d.days_until != null ? `${d.days_until} days to event` : "Past date"} ·{" "}
+                        {d.repeats_yearly ? "yearly" : "one-time"}
+                        {d.estimated_budget ? ` · budget ${fmt(d.estimated_budget)}` : ""}
+                      </p>
+                      {on && (
+                        <span
+                          className={`fest-reminder-pill ${due ? "due" : d.reminder_status === "due_soon" ? "soon" : ""}`}
+                        >
+                          {due ? "Ping today" : `${nextLabel}${nextWhen ? ` · ${nextWhen}` : ""}`}
+                        </span>
+                      )}
+                    </div>
+                    <div className="fest-reminder-actions">
+                      <button
+                        type="button"
+                        className={on ? "btn-primary fest-remind-btn" : "btn-outline fest-remind-btn"}
+                        disabled={togglingReminderId === d.id}
+                        onClick={() => toggleDayReminder(d)}
+                      >
+                        {togglingReminderId === d.id ? "…" : on ? "🔔 On" : "🔔 Remind me"}
+                      </button>
+                      <button type="button" className="btn-outline" onClick={() => openDayEdit(d)}>
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-outline"
+                        disabled={deletingId === d.id}
+                        onClick={() => confirmDeleteDay(d)}
+                      >
+                        {deletingId === d.id ? "…" : "Delete"}
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button type="button" className="btn-outline" onClick={() => openDayEdit(d)}>
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-outline"
-                      disabled={deletingId === d.id}
-                      onClick={() => confirmDeleteDay(d)}
-                    >
-                      {deletingId === d.id ? "…" : "Delete"}
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
@@ -602,8 +774,8 @@ const FestivalPredictor = ({ userId }) => {
         <div className="glass-card festival-empty feature-card">
           <EmptyState
             icon="🪔"
-            title="No upcoming festivals in the next 6 months"
-            subtitle="Check back later or extend your planning window when the calendar updates."
+            title="No upcoming events in the next 6 months"
+            subtitle='Use "+ Add event plan" to create a savings goal, or add personal dates below.'
           />
         </div>
       )}
@@ -612,14 +784,16 @@ const FestivalPredictor = ({ userId }) => {
         {!loading &&
           !err &&
           upcoming.map((f) => {
-            const isOpen = !!expanded[f.festival_name];
+            const cardKey = festCardKey(f);
+            const isOpen = !!expanded[cardKey];
             const pct = Math.min(100, Number(f.progress_pct ?? 0));
             const gap = Math.max(0, (f.recommended_budget || 0) - (f.saved_so_far || 0));
+            const detailsLoading = !!loadingFestDetails[cardKey];
             return (
               <article
-                key={f.festival_name}
-                id={`fest-card-${f.festival_name}`}
-                className={`glass-card planner-card-v2 ${isOpen ? "is-expanded" : ""} ${highlightFest === f.festival_name ? "ring-2 ring-pink-400/50" : ""}`}
+                key={cardKey}
+                id={`fest-card-${cardKey}`}
+                className={`glass-card planner-card-v2 ${isOpen ? "is-expanded" : ""} ${highlightFest === cardKey ? "ring-2 ring-pink-400/50" : ""}`}
               >
                 {(f.linked_goals || []).length > 0 && (
                   <div className="planner-link-banner fest">
@@ -628,13 +802,15 @@ const FestivalPredictor = ({ userId }) => {
                 )}
                 <header
                   className="planner-card-head-v2"
-                  onClick={() => toggleExpand(f.festival_name)}
-                  onKeyDown={(e) => e.key === "Enter" && toggleExpand(f.festival_name)}
+                  onClick={() => toggleExpand(f)}
+                  onKeyDown={(e) => e.key === "Enter" && toggleExpand(f)}
                   role="button"
                   tabIndex={0}
                 >
                   <div>
-                    <h3>🪔 {f.festival_name}</h3>
+                    <h3>
+                      {f.is_custom ? "📅" : "🪔"} {f.festival_name}
+                    </h3>
                     <p className="muted small">
                       {new Date(f.festival_date + "T12:00:00").toLocaleDateString("en-IN", {
                         day: "numeric",
@@ -670,26 +846,25 @@ const FestivalPredictor = ({ userId }) => {
                       type="number"
                       min="0"
                       placeholder="₹ log savings"
-                      value={festSaveInput[f.festival_name] || ""}
-                      onChange={(e) =>
-                        setFestSaveInput((s) => ({ ...s, [f.festival_name]: e.target.value }))
-                      }
+                      value={festSaveInput[cardKey] || ""}
+                      onChange={(e) => setFestSaveInput((s) => ({ ...s, [cardKey]: e.target.value }))}
                     />
                     <button
                       type="button"
                       className="btn-outline"
-                      disabled={savingFest === f.festival_name}
+                      disabled={savingFest === cardKey}
                       onClick={() => logFestSavings(f)}
                     >
-                      {savingFest === f.festival_name ? "…" : "+ Add"}
+                      {savingFest === cardKey ? "…" : "Log"}
                     </button>
                   </div>
-                  <button type="button" className="btn-outline" onClick={() => toggleExpand(f.festival_name)}>
+                  <button type="button" className="btn-outline" onClick={() => toggleExpand(f)}>
                     {isOpen ? "Hide ▲" : "Details ▼"}
                   </button>
                 </div>
                 {isOpen && (
                   <div className="planner-card-body-v2">
+                    {detailsLoading && <p className="muted small">Refreshing personalized tips…</p>}
                     {Object.keys(f.category_breakdown || {}).length > 0 && (
                       <div className="planner-chip-row">
                         {Object.entries(f.category_breakdown || {}).map(([k, v]) => (
@@ -720,6 +895,59 @@ const FestivalPredictor = ({ userId }) => {
             );
           })}
       </div>
+      {eventModal && (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="fest-event-title"
+          onClick={(e) => e.target === e.currentTarget && setEventModal(null)}
+        >
+          <div className="modal-card glass-card fest-budget-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 id="fest-event-title">Add event plan</h3>
+            <p className="fest-budget-hint">
+              Weddings, trips, school fees — any dated spend goal. Syncs with EMI Tracker headroom automatically.
+            </p>
+            <label className="fraud-field" style={{ marginTop: 12 }}>
+              Event name
+              <input
+                value={eventModal.festival_name}
+                onChange={(e) => setEventModal({ ...eventModal, festival_name: e.target.value })}
+                placeholder="e.g. Cousin’s wedding"
+                maxLength={120}
+                autoComplete="off"
+              />
+            </label>
+            <label className="fraud-field">
+              Target date
+              <input
+                type="date"
+                value={eventModal.festival_date}
+                onChange={(e) => setEventModal({ ...eventModal, festival_date: e.target.value })}
+              />
+            </label>
+            <label className="fraud-field">
+              Planned budget (optional)
+              <input
+                type="number"
+                min="0"
+                value={eventModal.planned_budget}
+                onChange={(e) => setEventModal({ ...eventModal, planned_budget: e.target.value })}
+                placeholder="e.g. 25000"
+              />
+            </label>
+            <div className="fest-card-actions" style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button type="button" className="btn-outline" onClick={() => setEventModal(null)}>
+                Cancel
+              </button>
+              <button type="button" className="btn-primary" disabled={savingEvent} onClick={submitEventModal}>
+                {savingEvent ? "Saving…" : "Add plan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {dayModal && (
         <div
           className="modal-overlay"
@@ -730,11 +958,10 @@ const FestivalPredictor = ({ userId }) => {
         >
           <div className="modal-card glass-card fest-budget-modal" onClick={(e) => e.stopPropagation()}>
             <h3 id="fest-day-title">
-              {dayModal.mode === "create" ? "Add important day" : "Edit important day"}
+              {dayModal.mode === "create" ? "Set date reminder" : "Edit reminder"}
             </h3>
             <p className="fest-budget-hint">
-              For yearly events, pick the next date (or the real date this year). We roll it forward automatically each
-              year.
+              We ping you at T-30, T-14, T-7, T-3, and T-1 before the date. Yearly events roll forward automatically.
             </p>
             <label className="fraud-field" style={{ marginTop: 12 }}>
               Title
@@ -761,6 +988,14 @@ const FestivalPredictor = ({ userId }) => {
                 onChange={(e) => setDayModal({ ...dayModal, repeats_yearly: e.target.checked })}
               />
               <span>Repeats every year (birthdays, anniversaries)</span>
+            </label>
+            <label className="fraud-field-checkbox">
+              <input
+                type="checkbox"
+                checked={dayModal.reminder_enabled !== false}
+                onChange={(e) => setDayModal({ ...dayModal, reminder_enabled: e.target.checked })}
+              />
+              <span>Enable bell reminders (T-30 → T-1)</span>
             </label>
             <label className="fraud-field">
               Notes (optional)

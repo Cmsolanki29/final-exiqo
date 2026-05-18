@@ -619,7 +619,168 @@ def alert_action(user_id: int, alert_id: int, body: AlertActionRequest, conn=Dep
             """,
             (act, alert_id, user_id),
         )
+    cur.execute(
+        "SELECT transaction_id FROM fraud_alerts WHERE id = %s AND user_id = %s;",
+        (alert_id, user_id),
+    )
+    txn_row = cur.fetchone()
+    conn.commit()
     cur.close()
+
+    if txn_row and txn_row[0]:
+        try:
+            from services.fraud_pipeline import record_alert_feedback
+
+            record_alert_feedback(user_id, int(txn_row[0]), act)
+        except Exception:
+            pass
+
+    msg = "Updated successfully."
+    extra: dict[str, Any] = {"cybercrime_url": CYBER_CRIME_URL, "helpline": HELPLINE_1930}
+    if act == "REPORTED":
+        msg = (
+            "Fraud reported — please also file on the National Cyber Crime portal. "
+            f"Helpline: {HELPLINE_1930}."
+        )
+        extra["report_url"] = CYBER_CRIME_URL
+
+    return {"success": True, "message": msg, "user_action": act, "money_saved": money_saved, **extra}
+
+
+@router.post("/{user_id}/alerts/by-transaction/{transaction_id}/action")
+def alert_action_by_transaction(
+    user_id: int,
+    transaction_id: int,
+    body: AlertActionRequest,
+    conn=Depends(get_db),
+):
+    """Record ALLOWED / BLOCKED / REPORTED for a transaction (creates fraud_alerts row if missing)."""
+    act = (body.action or "").strip().upper()
+    if act not in {"BLOCKED", "ALLOWED", "REPORTED"}:
+        raise HTTPException(400, "action must be BLOCKED, ALLOWED, or REPORTED")
+
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM users WHERE id = %s;", (user_id,))
+    if not cur.fetchone():
+        cur.close()
+        raise HTTPException(404, "User not found")
+
+    mode = fetch_dashboard_mode(cur, user_id)
+    scope = transaction_scope_sql("t", mode)
+    cur.execute(
+        f"""
+        SELECT t.id, t.amount, t.merchant, t.description, t.user_id,
+               COALESCE(t.risk_score, 0), t.transaction_date, t.transaction_time,
+               t.payment_method
+        FROM transactions t
+        WHERE t.id = %s AND t.user_id = %s AND ({scope})
+        """,
+        (transaction_id, user_id),
+    )
+    txn = cur.fetchone()
+    if not txn:
+        cur.close()
+        raise HTTPException(404, "Transaction not found for this user and dashboard view")
+
+    amount_at_risk = float(txn[1] or 0)
+    payee = (txn[2] or txn[3] or "").strip()
+    td = txn[6]
+    tt = txn[7]
+    if isinstance(td, date) and tt is not None:
+        at = datetime.combine(td, tt)
+    else:
+        at = datetime.now()
+
+    uh = _load_user_history(conn, user_id, payee, at)
+    score_tx = {
+        "payee": payee,
+        "merchant": payee,
+        "amount": float(txn[1] or 0),
+        "hour": at.hour,
+        "minute": at.minute,
+        "description": (txn[3] or ""),
+        "payment_method": (txn[8] or "CARD"),
+    }
+    res = calculate_fraud_risk_score(score_tx, uh)
+    risk = int(res.get("risk_score") or 0)
+    pattern = str(res.get("pattern_matched") or "UNUSUAL_TRANSACTION")
+    warn = (
+        (res.get("risk_factors") or ["Scored by FraudShield"])[0]
+        if isinstance(res.get("risk_factors"), list) and res.get("risk_factors")
+        else "Scored by FraudShield"
+    )
+    sev = str(res.get("risk_level") or "MEDIUM").upper()
+
+    cur.execute(
+        """
+        SELECT id FROM fraud_alerts
+        WHERE user_id = %s AND transaction_id = %s
+        ORDER BY id DESC
+        LIMIT 1;
+        """,
+        (user_id, transaction_id),
+    )
+    existing = cur.fetchone()
+
+    money_saved = 0.0
+    if act == "BLOCKED":
+        money_saved = amount_at_risk
+
+    if existing:
+        alert_id = int(existing[0])
+        if act == "BLOCKED":
+            cur.execute(
+                """
+                UPDATE fraud_alerts
+                SET user_action = %s, money_saved = %s, pattern_matched = %s, risk_score = %s,
+                    warning_message = %s, severity = %s
+                WHERE id = %s AND user_id = %s;
+                """,
+                (act, money_saved, pattern, risk, warn, sev, alert_id, user_id),
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE fraud_alerts
+                SET user_action = %s, pattern_matched = %s, risk_score = %s,
+                    warning_message = %s, severity = %s
+                WHERE id = %s AND user_id = %s;
+                """,
+                (act, pattern, risk, warn, sev, alert_id, user_id),
+            )
+    else:
+        cur.execute(
+            """
+            INSERT INTO fraud_alerts (
+                user_id, transaction_id, pattern_matched, risk_score, amount_at_risk,
+                warning_message, hinglish_explanation, user_action, money_saved,
+                severity, merchant_name
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+            """,
+            (
+                user_id,
+                transaction_id,
+                pattern,
+                risk,
+                amount_at_risk,
+                warn,
+                "",
+                act,
+                money_saved if act == "BLOCKED" else 0.0,
+                sev,
+                payee[:255] if payee else "",
+            ),
+        )
+
+    conn.commit()
+    cur.close()
+
+    try:
+        from services.fraud_pipeline import record_alert_feedback
+
+        record_alert_feedback(user_id, int(transaction_id), act)
+    except Exception:
+        pass
 
     msg = "Updated successfully."
     extra: dict[str, Any] = {"cybercrime_url": CYBER_CRIME_URL, "helpline": HELPLINE_1930}
@@ -662,25 +823,62 @@ def fraud_stats(user_id: int, conn=Depends(get_db)):
         patterns[p] = patterns.get(p, 0) + 1
     most_common = max(patterns, key=patterns.get) if patterns else "—"
 
+    pending_hi = sum(1 for a in pending if int(a.get("risk_score") or 0) >= 50)
     max_risk = max((int(a.get("risk_score") or 0) for a in alerts), default=0)
     if attempts > 0:
-        reviewed = threats_blocked + sum(1 for a in alerts if (a.get("user_action") or "").upper() in ("ALLOWED", "REPORTED"))
-        detection_rate = threats_blocked / max(reviewed, 1)
-        safety_score = min(99, int(88 + detection_rate * 10 - (money_lost_total / 500)))
-        safety_score = max(35, safety_score - max(0, len(pending) - 3) * 4)
+        risks = [int(a.get("risk_score") or 0) for a in alerts]
+        avg_r = sum(risks) / len(risks)
+        # 0–100: higher when typical risk is low and few high-risk items await review
+        safety_score = int(
+            max(0, min(100, round(100 - 0.5 * max_risk - 0.28 * avg_r - 2.8 * pending_hi - 0.002 * money_lost_total)))
+        )
     else:
-        safety_score = 94
+        safety_score = 100
 
-    fraud_free_days = 999 if money_lost_total <= 0 else 0
+    # Days since last high-risk "allowed" loss in DB (honest; no placeholder cap)
+    mode = fetch_dashboard_mode(cur, user_id)
+    scope = transaction_scope_sql("t", mode)
+    cur.execute(
+        """
+        SELECT MAX(fa.created_at::date)
+        FROM fraud_alerts fa
+        WHERE fa.user_id = %s
+          AND UPPER(COALESCE(fa.user_action, '')) = 'ALLOWED'
+          AND COALESCE(fa.risk_score, 0) >= 45
+          AND COALESCE(fa.amount_at_risk, 0) > 0
+        """,
+        (user_id,),
+    )
+    row_loss = cur.fetchone()
+    last_loss_d: date | None = row_loss[0] if row_loss and row_loss[0] else None
 
-    if money_lost_total <= 0 and attempts and money_saved_total > 0:
+    cur.execute(
+        f"""
+        SELECT MIN(t.transaction_date)
+        FROM transactions t
+        WHERE t.user_id = %s AND ({scope})
+        """,
+        (user_id,),
+    )
+    row_first = cur.fetchone()
+    first_tx_d: date | None = row_first[0] if row_first and row_first[0] else None
+
+    today = date.today()
+    if last_loss_d:
+        fraud_free_days = (today - last_loss_d).days
+    elif first_tx_d:
+        fraud_free_days = max(0, (today - first_tx_d).days)
+    else:
+        fraud_free_days = 0
+
+    if safety_score >= 72 and not pending_hi:
         badge = "VIGILANT"
-    elif money_lost_total > 0 and money_lost_total < 5000:
+    elif safety_score >= 52:
         badge = "CAREFUL"
-    elif money_lost_total >= 5000:
-        badge = "AT_RISK" if money_lost_total < 25000 else "VULNERABLE"
+    elif safety_score >= 34:
+        badge = "AT_RISK"
     else:
-        badge = "CAREFUL" if pending else "VIGILANT"
+        badge = "VULNERABLE"
 
     cur.close()
 
@@ -878,36 +1076,9 @@ def fraud_rings(conn=Depends(get_db)) -> dict[str, Any]:
                 "edges": edges,
             })
 
-        # Fallback: synthetic rings if DB has no data
+        # No synthetic rings — empty result is honest when the graph has nothing to show
         if not rings:
-            rings = [
-                {
-                    "ring_id": "ring_001",
-                    "risk_level": "HIGH",
-                    "nodes": [
-                        {"id": "user_A", "type": "user",     "label": "User A",      "fraud_score": 0.91},
-                        {"id": "merchant_X", "type": "merchant", "label": "Merchant X", "fraud_score": 0.74},
-                        {"id": "device_123", "type": "device",   "label": "Device #1",  "fraud_score": 0.88},
-                    ],
-                    "edges": [
-                        {"from": "user_A", "to": "merchant_X",  "weight": 0.85, "label": "shared_merchant"},
-                        {"from": "user_A", "to": "device_123",  "weight": 0.92, "label": "shared_device"},
-                    ],
-                },
-                {
-                    "ring_id": "ring_002",
-                    "risk_level": "MEDIUM",
-                    "nodes": [
-                        {"id": "user_B",     "type": "user",     "label": "User B",    "fraud_score": 0.61},
-                        {"id": "user_C",     "type": "user",     "label": "User C",    "fraud_score": 0.58},
-                        {"id": "merchant_Y", "type": "merchant", "label": "Merchant Y","fraud_score": 0.52},
-                    ],
-                    "edges": [
-                        {"from": "user_B", "to": "merchant_Y", "weight": 0.65, "label": "shared_merchant"},
-                        {"from": "user_C", "to": "merchant_Y", "weight": 0.60, "label": "shared_merchant"},
-                    ],
-                },
-            ]
+            return {"rings": [], "total": 0, "note": "No shared high-risk merchant clusters found in current data."}
 
         return {"rings": rings, "total": len(rings)}
     except Exception as e:
@@ -916,18 +1087,25 @@ def fraud_rings(conn=Depends(get_db)) -> dict[str, Any]:
         cur.close()
 
 
-def _orchestrator_tier(risk_score: int) -> dict[str, Any]:
-    """Map a 0-100 risk score to an orchestrator tier decision."""
-    s = risk_score
-    if s < 30:
-        return {"tier": 0, "tier_label": "Tier 0 — Auto-allow",         "decision": "ALLOW",  "reason": "Risk below threshold — XGBoost fast path"}
-    if s < 55:
-        return {"tier": 1, "tier_label": "Tier 1 — Enriched screening",  "decision": "ALLOW",  "reason": "Low-medium risk — anomaly checks passed"}
-    if s < 75:
-        return {"tier": 2, "tier_label": "Tier 2 — Graph analysis",      "decision": "FLAG",   "reason": "Elevated risk — GNN ring check triggered"}
-    if s < 90:
-        return {"tier": 3, "tier_label": "Tier 3 — LLM investigation",   "decision": "FLAG",   "reason": "High risk — LLM investigator engaged"}
-    return     {"tier": 4, "tier_label": "Tier 4 — Full AI stack",        "decision": "BLOCK",  "reason": "Critical risk — all models active, transaction blocked"}
+@router.get("/phases-status")
+def fraud_phases_status(user_id: int | None = None) -> dict[str, Any]:
+    """Live status for all 12 FraudShield phases (control-room grid)."""
+    from services.fraud_phase_status import get_phases_status
+
+    return get_phases_status(user_id)
+
+
+@router.get("/{user_id}/phases-status")
+def fraud_phases_status_for_user(user_id: int, conn=Depends(get_db)) -> dict[str, Any]:
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM users WHERE id = %s;", (user_id,))
+    if not cur.fetchone():
+        cur.close()
+        raise HTTPException(404, "User not found")
+    cur.close()
+    from services.fraud_phase_status import get_phases_status
+
+    return get_phases_status(user_id)
 
 
 @router.post("/{user_id}/check-transaction")
@@ -959,125 +1137,31 @@ def check_transaction(user_id: int, body: TransactionCheckRequest, conn=Depends(
         "payment_method": body.payment_method or "UPI",
     }
 
-    result = calculate_fraud_risk_score(tx, uh)
-    risk_score = result["risk_score"]
-    pattern = result["pattern_matched"]
-    risk_factors = result["risk_factors"]
+    from services.fraud_pipeline import score_transaction_sync
+
+    pr = score_transaction_sync(user_id, tx, uh, conn=conn)
+    risk_score = pr.risk_score
+    pattern = pr.pattern_matched
+    risk_factors = pr.risk_factors
 
     security_advice = generate_fraud_transaction_advice(tx, pattern, risk_score, user_name, risk_factors)
 
     warning_message = (
-        f"Risk {risk_score}/100 ({result['risk_level']}). "
+        f"Risk {risk_score}/100 ({pr.risk_level}). "
         + (f"Pattern: {pattern}. " if pattern else "")
+        + (f"Action: {pr.final_action.upper()}. " if pr.final_action else "")
         + "Review factors before proceeding."
     )
 
     rec = _recommendation(risk_score)
-    should_proceed = risk_score < 85
+    should_proceed = pr.final_action not in ("block", "challenge") and risk_score < 85
 
-    # ── Multi-model comparison breakdown ──────────────────────────────────────
-    # XGBoost: the primary rule-based + ML scorer; normalize score to 0-1 range.
-    xgb_score = round(risk_score / 100, 3)
-    xgb_decision = "ALLOW" if risk_score < 60 else "FLAG"
-
-    # GNN: approximates a graph-network signal. A payee seen fewer than 2
-    # times is treated as "new" (potential ring member), and small probing
-    # debits to the same payee are a known ring indicator.
-    is_new_payee = uh.get("payee_previous_debit_count", 0) < 2
-    has_small_probing_debits = uh.get("small_debits_to_payee_30d", 0) > 0
-    gnn_ring_flag = bool(
-        is_new_payee
-        or has_small_probing_debits
-        or (pattern and "ring" in str(pattern).lower())
+    return pr.to_check_transaction_response(
+        warning_message=warning_message,
+        security_advice=security_advice,
+        recommendation=rec,
+        should_proceed=should_proceed,
     )
-    # Boost score slightly if night + suspicious pattern (GNN temporal signal)
-    gnn_score_raw = min(1.0, xgb_score + (0.2 if gnn_ring_flag else 0.0) + (0.1 if h >= 22 else 0.0))
-    gnn_score = round(gnn_score_raw, 3)
-    gnn_decision = "FLAG" if gnn_score >= 0.55 else "ALLOW"
-    gnn_reason = (
-        "New payee — no prior transaction history" if is_new_payee and not has_small_probing_debits
-        else "Small probing debits detected on this payee" if has_small_probing_debits
-        else ("Unusual hour flagged by temporal GNN" if h >= 22 else "Graph topology looks normal")
-    )
-
-    # Orchestrator: final tier routing based on the combined risk score.
-    orch = _orchestrator_tier(risk_score)
-    conflict = (xgb_decision != gnn_decision)
-
-    # ── SHAP-style feature contributions ─────────────────────────────────────
-    # Derive per-feature contribution scores from the rule weights used in
-    # calculate_fraud_risk_score.  Scores are on 0-1 scale.
-    _FACTOR_WEIGHTS = {
-        "payee": 0,
-        "amount": 0,
-        "time": 0,
-        "velocity": 0,
-        "escalation": 0,
-        "pattern": 0,
-    }
-    payee_prev = uh.get("payee_previous_debit_count", 0)
-    _FACTOR_WEIGHTS["payee"] = 0.25 if payee_prev == 0 else (0.10 if payee_prev <= 2 else 0.0)
-    avg_debit = float(uh.get("avg_debit_last_30d", 0) or 0)
-    baseline = max(avg_debit, 500.0)
-    amt_ratio = body.amount / baseline if baseline else 0
-    _FACTOR_WEIGHTS["amount"] = 0.20 if amt_ratio > 5 else (0.12 if amt_ratio > 3 else (0.06 if amt_ratio > 2 else 0.0))
-    _FACTOR_WEIGHTS["time"] = 0.20 if (h >= 23 or h < 5) else (0.10 if h >= 22 else 0.0)
-    _FACTOR_WEIGHTS["velocity"] = round(min(uh.get("debits_last_30_min", 0), 3) * 5 / 100, 2)
-    _FACTOR_WEIGHTS["escalation"] = 0.15 if (uh.get("small_debits_to_payee_30d", 0) > 0 and body.amount > 50) else 0.0
-    _FACTOR_WEIGHTS["pattern"] = round(min(risk_score / 100 - sum(_FACTOR_WEIGHTS.values()), 0.30), 2) if pattern else 0.0
-    _FACTOR_WEIGHTS["pattern"] = max(0.0, _FACTOR_WEIGHTS["pattern"])
-
-    _LABELS = {
-        "payee": "Payee trust" if payee_prev > 0 else "Unknown payee",
-        "amount": f"Amount ({amt_ratio:.1f}x avg)" if amt_ratio > 1 else "Transaction amount",
-        "time": "Transaction time",
-        "velocity": "Payment velocity",
-        "escalation": "Escalation pattern",
-        "pattern": f"Pattern: {pattern}" if pattern else "Fraud pattern check",
-    }
-    feature_scores: list[dict] = [
-        {
-            "feature": _LABELS[k],
-            "score": round(v, 2),
-            "impact": "high" if v >= 0.15 else ("medium" if v >= 0.07 else "low"),
-        }
-        for k, v in _FACTOR_WEIGHTS.items()
-        if v > 0
-    ]
-
-    return {
-        "risk_score": risk_score,
-        "risk_level": result["risk_level"],
-        "should_proceed": should_proceed,
-        "warning_message": warning_message,
-        "ai_security_message": security_advice,
-        "hinglish_warning": security_advice,
-        "risk_factors": risk_factors,
-        "feature_scores": feature_scores,
-        "pattern_matched": pattern,
-        "recommendation": rec,
-        "alert_id": None,
-        "cybercrime_url": CYBER_CRIME_URL,
-        "helpline": HELPLINE_1930,
-        # Three-model comparison (for UI decision panel)
-        "model_comparison": {
-            "xgboost": {
-                "decision": xgb_decision,
-                "score": xgb_score,
-                "reason": "Rule-based + ML score" + (f" · pattern: {pattern}" if pattern else ""),
-            },
-            "gnn": {
-                "decision": gnn_decision,
-                "score": gnn_score,
-                "reason": gnn_reason,
-            },
-            "orchestrator": {
-                **orch,
-                "conflict": conflict,
-                "conflict_note": "XGBoost and GNN disagreed — Orchestrator adjudicated" if conflict else None,
-            },
-        },
-    }
 
 
 @router.get("/{user_id}/live-events")

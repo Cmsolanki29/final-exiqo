@@ -15,9 +15,9 @@ def transaction_scope_sql(table_alias: str, mode: str | None) -> str:
     SQL boolean expression (no bind params) for rows in ``table_alias`` that count
     toward the user's dashboard for the given mode.
 
-    - merged: seed/unlinked (NULL source) OR linked rows whose source is visible.
-    - bank_only: NULL source OR visible bank / statement / UPI / other (not credit_card).
-    - credit_card_only: only visible credit_card rows (excludes NULL source demo bank).
+    Only transactions linked to a visible ``connected_sources`` row are included.
+    Orphan rows (NULL ``connected_source_id``), e.g. legacy demo seed, are excluded
+    so upload-first users see statement data only.
     """
     a = table_alias
     m = normalize_dashboard_mode(mode)
@@ -45,8 +45,8 @@ def transaction_scope_sql(table_alias: str, mode: str | None) -> str:
 
     if m == "bank_only":
         return f"""(
-          {a}.connected_source_id IS NULL
-          OR EXISTS (
+          {a}.connected_source_id IS NOT NULL
+          AND EXISTS (
             SELECT 1 FROM connected_sources cs
             WHERE cs.id = {a}.connected_source_id
               AND cs.user_id = {a}.user_id
@@ -56,10 +56,10 @@ def transaction_scope_sql(table_alias: str, mode: str | None) -> str:
           )
         )"""
 
-    # merged
+    # merged — visible linked sources only
     return f"""(
-      {a}.connected_source_id IS NULL
-      OR {visible}
+      {a}.connected_source_id IS NOT NULL
+      AND {visible}
     )"""
 
 

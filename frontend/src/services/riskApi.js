@@ -133,6 +133,12 @@ export const decideReviewItem = (queueId, resolution, notes = "") =>
     .post(`/admin/review-queue/${queueId}/decide`, { resolution, notes })
     .then(d);
 
+/** Resolve own review-queue item (JWT) — no admin token. */
+export const selfResolveReviewQueue = (queueId, { resolution, notes = "" }) =>
+  riskClient
+    .post(`/risk/review-queue/${queueId}/self-resolve`, { resolution, notes })
+    .then(d);
+
 // ── Model status (real trained model metrics) ─────────────────────────────
 export const getModelStatus = () =>
   riskClient.get("/risk/model-status").then(d);
@@ -147,11 +153,11 @@ export const getRiskFeed = (_since) =>
 
 /** Get the latest investigation for a transaction. */
 export const getInvestigation = (txnId) =>
-  adminClient.get(`/risk/investigations/${txnId}`).then(d);
+  riskClient.get(`/risk/investigations/${txnId}`).then(d);
 
 /** Manually trigger an LLM investigation for a transaction. */
 export const triggerInvestigation = (txnId, userId = null, triggeredBy = "manual") =>
-  adminClient
+  riskClient
     .post(`/risk/investigations/${txnId}/run`, null, {
       timeout: 90_000,
       params: { ...(userId != null ? { user_id: userId } : {}), triggered_by: triggeredBy },
