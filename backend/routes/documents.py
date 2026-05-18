@@ -381,6 +381,15 @@ async def upload_statement(
                 trigger_id=doc_id,
                 trigger_summary=f"Imported {result.get('imported', 0)} transactions",
             )
+            from services.transaction_enrichment import sync_monthly_summaries_for_document
+
+            sync_monthly_summaries_for_document(conn, user_id, result.get("date_range"))
+            try:
+                from services.ml_model import ml_detector
+
+                ml_detector.detect_and_update(user_id, process_all=False)
+            except Exception:
+                logger.exception("[upload] ML anomaly pass failed user_id=%s", user_id)
             conn.commit()
         except Exception:
             logger.exception("[upload] post-upload recalc failed user_id=%s", user_id)

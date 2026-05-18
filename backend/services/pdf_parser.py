@@ -11,8 +11,11 @@ import re
 from datetime import datetime
 from typing import Any
 
+from services.categorizer import resolve_category
 from services.document_parser_service import classify_and_extract_monster
 from services.monster_extraction import extract_with_retry, update_extraction_llm_result
+from services.statement_line_parser import parse_axis_style_statement
+from services.transaction_enrichment import heuristic_anomaly
 
 logger = logging.getLogger(__name__)
 
@@ -31,25 +34,25 @@ _CREDIT_NARRATION_HINTS = (
     "interest paid",
     "credit interest",
 )
-_TRANSFER_KEYWORDS = {
+_TRANSFER_KEYWORDS = (
     "credit card payment",
     "cc payment",
-    "card payment",
     "cc bill payment",
+    "card bill payment",
+    "payment towards credit card",
     "payment towards card",
-    "payment towards credit",
-    "payment received",
-    "payment towards",
+    "payment towards cc",
+    "payment to card",
+    "cc autopay",
+    "card autopay",
     "autopay cc",
-    "autopay",
-    "inward transfer",
-    "outward transfer",
-    "self transfer",
+    "autopay card",
     "imps self",
     "neft self",
     "transfer to self",
     "fund transfer self",
-}
+    "self transfer",
+)
 
 
 def _normalise_type(raw: str | None, description: str = "") -> str:
@@ -124,6 +127,21 @@ class PDFParserAgent:
             tables=extraction.get("tables"),
         )
         transactions = parsed.get("transactions", [])
+        deterministic = parse_axis_style_statement(text)
+        if len(deterministic) >= len(transactions):
+            transactions = deterministic
+            parsed["method"] = "axis_line_parser"
+        elif deterministic:
+            seen = {
+                f"{t.get('date','')}|{float(t.get('amount',0)):.2f}|{str(t.get('description',''))[:24].lower()}"
+                for t in transactions
+            }
+            for t in deterministic:
+                key = f"{t.get('date','')}|{float(t.get('amount',0)):.2f}|{str(t.get('description',''))[:24].lower()}"
+                if key not in seen:
+                    transactions.append(t)
+                    seen.add(key)
+            parsed["method"] = (parsed.get("method") or "") + "+axis_merge"
         validation_issues: list[str] = list(extraction.get("quality_issues") or [])
         if parsed.get("validation_issues"):
             validation_issues.extend(parsed["validation_issues"])
@@ -160,25 +178,36 @@ class PDFParserAgent:
                 duplicates += 1
                 continue
 
+            category = resolve_category(merchant, txn.get("category"))
+            anomaly_flag, risk_score, risk_level, anomaly_reason = heuristic_anomaly(
+                merchant, desc, amount, raw_type
+            )
+
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO transactions
                       (user_id, amount, type, category, merchant,
                        transaction_date, description,
-                       uploaded_document_id, connected_source_id, data_origin)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'monster_upload')
+                       uploaded_document_id, connected_source_id, data_origin,
+                       anomaly_flag, risk_score, risk_level, anomaly_reason, ml_processed)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'monster_upload',
+                            %s, %s, %s, %s, TRUE)
                     """,
                     (
                         user_id,
                         amount,
                         raw_type,
-                        txn.get("category", "other"),
+                        category,
                         merchant,
                         txn_date,
                         desc,
                         document_id,
                         connected_source_id,
+                        anomaly_flag,
+                        risk_score,
+                        risk_level,
+                        anomaly_reason,
                     ),
                 )
             imported += 1
@@ -197,12 +226,12 @@ class PDFParserAgent:
             document_id,
             user_id,
             llm_raw=llm_raw,
-            model=parsed.get("llm_model") or parsed.get("method") or "router",
+            model=str(parsed.get("llm_model") or parsed.get("method") or "router")[:48],
             extracted=len(transactions),
             after_validation=len(transactions) - invalid,
             validation_issues=validation_issues,
             stored=imported,
-            categorization_method=parsed.get("method", "chunked_llm"),
+            categorization_method=str(parsed.get("method", "chunked_llm"))[:48],
             status="completed",
         )
 
