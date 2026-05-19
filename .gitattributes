@@ -15,10 +15,8 @@
 # this, files committed before this rule may still appear "modified"
 # in `git status`.
 # =============================================================================
-
 # Default — let Git auto-detect text vs binary, normalize to LF in the repo.
 * text=auto eol=lf
-
 # ---------- Source code (always LF in repo) ----------
 *.py        text eol=lf
 *.pyi       text eol=lf
@@ -45,12 +43,10 @@
 .gitattributes text eol=lf
 Dockerfile  text eol=lf
 *.dockerfile text eol=lf
-
 # ---------- Windows-specific scripts (keep CRLF) ----------
 *.ps1       text eol=crlf
 *.bat       text eol=crlf
 *.cmd       text eol=crlf
-
 # ---------- Binary assets (Git won't try to diff or normalize) ----------
 *.png       binary
 *.jpg       binary
@@ -75,5 +71,5 @@ Dockerfile  text eol=lf
 *.woff2     binary
 *.ttf       binary
 *.eot       binary
-*.mp4       binary
+*.mp4 filter=lfs diff=lfs merge=lfs -text
 *.mp3       binary
